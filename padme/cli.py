@@ -25,7 +25,7 @@ except ImportError:
     load_dotenv = None
 
 from .config import Config
-from .engine import Engine, build_notifier
+from .engine import Engine, build_notifiers
 from .levels import Level, filter_events, parse_level
 from .models import Event
 from .notify import TelegramNotifier, format_events
@@ -57,7 +57,7 @@ async def _cmd_scan(cfg: Config, args) -> int:
     level = parse_level(cfg.telegram.level)
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
-    notifier = build_notifier(cfg) if args.notify else None
+    notifiers = build_notifiers(cfg) if args.notify else []
     try:
         for target in cfg.targets:
             first = not storage.is_known_target(target)
@@ -66,10 +66,11 @@ async def _cmd_scan(cfg: Config, args) -> int:
             _print_events(target, events, baseline=first)
             for err in result.errors:
                 log.debug("erro: %s", err)
-            if notifier and not first:
+            if notifiers and not first:
                 enviar = filter_events(events, level)
                 if enviar:
-                    await notifier.notify_events(target, enviar)
+                    for n in notifiers:
+                        await n.notify_events(target, enviar)
                 elif events:
                     log.info("[%s] %d mudança(s) abaixo do nível '%s' — não notificado.",
                              target, len(events), level.name.lower())
