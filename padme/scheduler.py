@@ -12,25 +12,30 @@ import logging
 from datetime import datetime, timedelta
 
 from .config import Config
-from .engine import Engine, build_notifier
+from .engine import Engine, build_notifiers
 from .levels import filter_events, parse_level
 from .storage import Storage
 
 log = logging.getLogger("padme")
 
 
+async def _announce(notifiers: list, msg: str) -> None:
+    for n in notifiers:
+        await n.announce(msg)
+
+
 async def run_monitor(cfg: Config) -> None:
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
-    notifier = build_notifier(cfg)
+    notifiers = build_notifiers(cfg)
     interval = cfg.interval_seconds
     level = parse_level(cfg.telegram.level)
 
-    if notifier:
-        await notifier.send(
-            f"🛰️ <b>Padmé</b> em modo sentinela — {len(cfg.targets)} alvo(s), "
-            f"varredura a cada {interval}s, nível <code>{level.name.lower()}</code>."
-        )
+    await _announce(
+        notifiers,
+        f"modo sentinela — {len(cfg.targets)} alvo(s), varredura a cada "
+        f"{interval}s, nível {level.name.lower()}.",
+    )
     log.info(
         "Sentinela ativa: %d alvo(s), varredura a cada %ds, nível '%s'. Ctrl+C para parar.",
         len(cfg.targets),
@@ -54,11 +59,11 @@ async def run_monitor(cfg: Config) -> None:
                 if first:
                     log.info("[%s] baseline gravado (%d itens).", target, len(events))
                 elif events:
-                    enviar = filter_events(events, level) if notifier else []
+                    enviar = filter_events(events, level) if notifiers else []
                     log.info("[%s] %d mudança(s); %d no nível '%s'.",
                              target, len(events), len(enviar), level.name.lower())
-                    if enviar:
-                        await notifier.notify_events(target, enviar)
+                    for n in notifiers:
+                        await n.notify_events(target, enviar)
                 else:
                     log.info("[%s] sem mudanças.", target)
 
@@ -67,7 +72,6 @@ async def run_monitor(cfg: Config) -> None:
             await asyncio.sleep(interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
         log.info("Encerrando sentinela.")
-        if notifier:
-            await notifier.send("🛰️ <b>Padmé</b> encerrou o monitoramento.")
+        await _announce(notifiers, "monitoramento encerrado.")
     finally:
         storage.close()
