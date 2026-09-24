@@ -18,7 +18,7 @@ import httpx
 from .collectors import dns, http, ports, subdomains, takeover, tls
 from .config import Config
 from .models import Event, Record, ScanResult
-from .notify import TelegramNotifier
+from .notify import DiscordNotifier, TelegramNotifier, WebhookNotifier
 from .storage import Storage
 
 log = logging.getLogger("padme")
@@ -91,12 +91,30 @@ async def _safe(coro, host: str, name: str, result: ScanResult) -> list[Record]:
         return []
 
 
-def build_notifier(cfg: Config) -> TelegramNotifier | None:
+def build_notifiers(cfg: Config) -> list:
+    """Monta a lista de canais ativos (Telegram, Discord, webhook)."""
+    out: list = []
+
     tg = cfg.telegram
-    if not tg.enabled:
-        return None
-    notifier = TelegramNotifier(tg.bot_token, tg.chat_id)
-    if not notifier.configured:
-        log.warning("Telegram habilitado mas token/chat_id ausentes — sem notificação.")
-        return None
-    return notifier
+    if tg.enabled:
+        n = TelegramNotifier(tg.bot_token, tg.chat_id)
+        if n.configured:
+            out.append(n)
+        else:
+            log.warning("Telegram habilitado mas token/chat_id ausentes — ignorado.")
+
+    dc = cfg.discord
+    if dc.enabled:
+        if dc.webhook_url:
+            out.append(DiscordNotifier(dc.webhook_url))
+        else:
+            log.warning("Discord habilitado mas webhook_url ausente — ignorado.")
+
+    wh = cfg.webhook
+    if wh.enabled:
+        if wh.url:
+            out.append(WebhookNotifier(wh.url))
+        else:
+            log.warning("Webhook habilitado mas url ausente — ignorado.")
+
+    return out
