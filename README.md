@@ -31,7 +31,7 @@ subdomains (CT logs)  ─┐
 dns  A/AAAA/CNAME/MX   ─┤
 http status/server     ─┤
 tls  emissor/validade  ─┼─►  Records ─► diff vs. estado ─► eventos ─► nível ─► Telegram
-takeover (CNAME+fp)    ─┤        (SQLite)
+takeover (CNAME+fp)    ─┤    (SQLite)
 ports  connect-scan    ─┘
 ```
 
@@ -127,7 +127,7 @@ Defina em `config.yaml` (`telegram.level: high`) ou na hora
 (`--level critical`). O `monitor` loga o nível ativo e, a cada ciclo, quantas
 mudanças passaram no filtro.
 
-## ⏱️ Rodando 24/7
+## Rodando 24/7
 
 - **systemd** (recomendado em servidor): crie um service que roda
   `python -m padme monitor` e reinicia sozinho.
@@ -156,7 +156,7 @@ pip install pytest
 pytest -q
 ```
 
-## 📁 Estrutura
+## Estrutura
 
 ```
 padme/
