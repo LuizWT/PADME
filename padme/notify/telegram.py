@@ -152,6 +152,9 @@ class TelegramNotifier:
         msg = format_events(target, events)
         return await self.send(msg)
 
+    async def announce(self, msg: str) -> bool:
+        return await self.send(f"<b>Padmé</b> — {_esc(msg)}")
+
 
 def _split(text: str, limit: int) -> list[str]:
     if len(text) <= limit:
