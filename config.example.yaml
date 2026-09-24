@@ -45,3 +45,15 @@ telegram:
   #   chat_id:   ${PADME_TG_CHAT}
   bot_token: "SEU_BOT_TOKEN_AQUI"
   chat_id: "SEU_CHAT_ID_AQUI"
+
+# Discord: cole a URL de um Webhook de canal (Configurações do canal -> Integrações).
+discord:
+  enabled: false
+  webhook_url: ${PADME_DISCORD_WEBHOOK}
+
+# Webhook genérico: recebe um JSON estruturado a cada mudança (ideal p/ n8n).
+# Payload: { source, type, target, time, count, events[], text }
+webhook:
+  enabled: false
+  url: ${PADME_WEBHOOK_URL}
+
