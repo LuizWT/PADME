@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────
+#  Padmé — Attack Surface Monitoring
+#  Copie para config.yaml e ajuste. Monitore SOMENTE ativos seus
+#  ou que você tem autorização explícita para testar.
+# ─────────────────────────────────────────────────────────────
+
+# Confirmação de escopo — precisa ser true para o Padmé rodar.
+scope_confirmed: false
+
+# Domínios apex a monitorar.
+targets:
+  - exemplo.com
+  # - outrodominio.com.br
+
+# Intervalo entre ciclos no modo monitor (segundos). 3600 = 1h.
+interval_seconds: 3600
+
+# Concorrência de rede e timeout (segundos) por requisição.
+concurrency: 50
+timeout: 8.0
+
+# Banco de estado/histórico (SQLite).
+db_path: padme.db
+
+collectors:
+  subdomains: true    # passivo — CT logs (crt.name / crt.sh)
+  dns: true           # passivo — A/AAAA/CNAME/MX
+  http: true          # ativo leve — 1 GET por host
+  tls: true           # ativo leve — handshake p/ ler o certificado
+  takeover: true      # subdomain takeover (CNAME dangling + fingerprint)
+  ports: false        # ativo — connect-scan (ligue com consciência)
+  ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
+
+telegram:
+  enabled: true
+  # limiar mínimo de severidade enviado ao Telegram (o terminal sempre mostra tudo):
+  #   debug    = tudo (inclui DNS)
+  #   low      = remoções e mudanças menores
+  #   medium   = HTTP/TLS mudou, serviço novo   (padrão)
+  #   high     = porta nova / subdomínio novo
+  #   critical = só subdomain takeover
+  level: medium
+  # Dica: use variáveis de ambiente para não versionar segredos:
+  #   bot_token: ${PADME_TG_TOKEN}
+  #   chat_id:   ${PADME_TG_CHAT}
+  bot_token: "SEU_BOT_TOKEN_AQUI"
+  chat_id: "SEU_CHAT_ID_AQUI"
