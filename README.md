@@ -127,6 +127,33 @@ Defina em `config.yaml` (`telegram.level: high`) ou na hora
 (`--level critical`). O `monitor` loga o nível ativo e, a cada ciclo, quantas
 mudanças passaram no filtro.
 
+## 📣 Canais de notificação
+
+Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados:
+
+- **Telegram** — formatação HTML estilo diff, com blocos recolhíveis.
+- **Discord** — cole a URL de um *Webhook* de canal em `discord.webhook_url`
+  (mensagem em Markdown).
+- **Webhook genérico** — `webhook.url` recebe um **JSON estruturado** a cada
+  mudança, ideal para **n8n** e automações:
+
+  ```json
+  {
+    "source": "padme",
+    "type": "changes",
+    "target": "alvo.com",
+    "time": "2026-09-24T00:46:00",
+    "count": 2,
+    "events": [
+      {"severity": "critical", "kind": "takeover", "type": "added",
+       "key": "blog.alvo.com", "old": null, "new": "GitHub Pages | ..."}
+    ],
+    "text": "**PADMÉ** · `alvo.com` ..."
+  }
+  ```
+
+Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
+
 ## Rodando 24/7
 
 - **systemd** (recomendado em servidor): crie um service que roda
@@ -141,7 +168,9 @@ mudanças passaram no filtro.
 
 - [x] Detecção de subdomain takeover (CNAME dangling + fingerprint)
 - [x] Níveis de notificação por severidade
-- [ ] Notificadores extras: Discord, webhook genérico, e-mail
+- [x] Notificadores extras: Discord + webhook genérico (JSON)
+- [ ] Aviso de expiração de certificado TLS
+- [ ] Notificador de e-mail
 - [ ] Wordlist de subdomínios (brute passivo → ativo opcional)
 - [ ] Diff mais rico em TLS (aviso de expiração próxima)
 - [ ] Export do estado para JSON/CSV
@@ -170,9 +199,9 @@ padme/
 │   ├── engine.py         # orquestra collectors + diff
 │   ├── scheduler.py      # loop do modo sentinela (monitor)
 │   ├── collectors/       # subdomains, dns, http, tls, takeover, ports
-│   └── notify/           # telegram (formatação + níveis)
+│   └── notify/           # telegram, discord, webhook genérico (JSON)
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # differ, takeover, levels
+└── tests/                # differ, takeover, levels, notify
 ```
