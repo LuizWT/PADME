@@ -27,6 +27,24 @@ class TelegramConfig:
 
 
 @dataclass
+class DiscordConfig:
+    enabled: bool = False
+    webhook_url: str = ""
+
+    def resolved(self) -> "DiscordConfig":
+        return DiscordConfig(enabled=self.enabled, webhook_url=_expand(self.webhook_url))
+
+
+@dataclass
+class WebhookConfig:
+    enabled: bool = False
+    url: str = ""
+
+    def resolved(self) -> "WebhookConfig":
+        return WebhookConfig(enabled=self.enabled, url=_expand(self.url))
+
+
+@dataclass
 class CollectorsConfig:
     subdomains: bool = True   # passivo (crt.sh / CT logs)
     dns: bool = True          # passivo
@@ -49,6 +67,8 @@ class Config:
     db_path: str = "padme.db"
     collectors: CollectorsConfig = field(default_factory=CollectorsConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    discord: DiscordConfig = field(default_factory=DiscordConfig)
+    webhook: WebhookConfig = field(default_factory=WebhookConfig)
 
     @staticmethod
     def load(path: str | Path) -> "Config":
@@ -66,6 +86,8 @@ class Config:
 
         col = raw.get("collectors") or {}
         tg = raw.get("telegram") or {}
+        dc = raw.get("discord") or {}
+        wh = raw.get("webhook") or {}
 
         return Config(
             targets=targets,
@@ -88,6 +110,14 @@ class Config:
                 bot_token=str(tg.get("bot_token", "")),
                 chat_id=str(tg.get("chat_id", "")),
                 level=str(tg.get("level", "medium")),
+            ).resolved(),
+            discord=DiscordConfig(
+                enabled=bool(dc.get("enabled", False)),
+                webhook_url=str(dc.get("webhook_url", "")),
+            ).resolved(),
+            webhook=WebhookConfig(
+                enabled=bool(wh.get("enabled", False)),
+                url=str(wh.get("url", "")),
             ).resolved(),
         )
 
