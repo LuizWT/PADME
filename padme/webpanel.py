@@ -115,7 +115,11 @@ def serve(cfg: Config, host: str = "127.0.0.1", port: int = 8787) -> None:
         def log_message(self, *args):
             pass
 
-    with socketserver.ThreadingTCPServer((host, port), Handler) as httpd:
+    class Server(socketserver.ThreadingTCPServer):
+        allow_reuse_address = True  # evita "Address already in use" ao reiniciar
+        daemon_threads = True
+
+    with Server((host, port), Handler) as httpd:
         print(f"Painel em http://{host}:{port}  (Ctrl+C para parar)")
         try:
             httpd.serve_forever()

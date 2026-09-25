@@ -12,3 +12,5 @@ config.yaml
 
 # Segredos
 .env
+*.db-wal
+*.db-shm

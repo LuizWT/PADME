@@ -33,7 +33,7 @@ from .config import Config
 from .engine import Engine, build_notifiers
 from .levels import Level, filter_events, parse_level
 from .models import Event
-from .notify import TelegramNotifier, format_events
+from .notify import TelegramNotifier
 from .scheduler import run_monitor
 from .storage import Storage
 

@@ -43,8 +43,12 @@ CREATE INDEX IF NOT EXISTS idx_events_target_ts ON events (target, ts);
 class Storage:
     def __init__(self, db_path: str | Path):
         self.db_path = str(db_path)
-        self._conn = sqlite3.connect(self.db_path)
+        self._conn = sqlite3.connect(self.db_path, timeout=5.0)
         self._conn.row_factory = sqlite3.Row
+        # WAL + busy_timeout: leitura (web/export) e escrita (monitor) simultâneas
+        # no mesmo banco sem "database is locked".
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=3000")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 

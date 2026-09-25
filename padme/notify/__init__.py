@@ -1,9 +1,15 @@
-"""Camada de notificação: Telegram, Discord e webhook genérico (JSON)."""
+"""Camada de notificação: Telegram, Discord, webhook genérico (JSON) e e-mail."""
 
-from .email import EmailNotifier, format_events_plain  # noqa: F401
-from .telegram import TelegramNotifier, format_events  # noqa: F401
-from .webhook import (  # noqa: F401
-    DiscordNotifier,
-    WebhookNotifier,
-    format_events_md,
-)
+from .email import EmailNotifier, format_events_plain
+from .telegram import TelegramNotifier, format_events
+from .webhook import DiscordNotifier, WebhookNotifier, format_events_md
+
+__all__ = [
+    "TelegramNotifier",
+    "DiscordNotifier",
+    "WebhookNotifier",
+    "EmailNotifier",
+    "format_events",
+    "format_events_md",
+    "format_events_plain",
+]
