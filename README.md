@@ -208,8 +208,12 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] CI (GitHub Actions) rodando os testes
 - [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
 - [x] Dedupe do GET entre HTTP e takeover
-- [ ] Notificador extra (Slack) e templates de mensagem
-- [ ] Persistência opcional em Postgres (além de SQLite)
+- [ ] Execução resiliente (heartbeat / restart)
+- [~] Qualidade de sinal — subdomínio `live`/`quiet` (em andamento)
+- [ ] Visão de tendência no painel
+- [ ] Empacotamento (Docker / pipx)
+
+> Detalhamento (problema · solução · valor · esforço) em [`ROADMAP.md`](ROADMAP.md).
 
 ---
 

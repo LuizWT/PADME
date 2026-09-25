@@ -17,7 +17,7 @@ import httpx
 
 from .collectors import bruteforce, dns, http, ports, subdomains, takeover, tls
 from .config import Config
-from .models import Event, Record, ScanResult
+from .models import Event, Kind, Record, ScanResult
 from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNotifier
 from .storage import Storage
 
@@ -66,6 +66,8 @@ class Engine:
             tasks = [self._scan_host(h, client, result) for h in sorted(hosts)]
             await asyncio.gather(*tasks)
 
+        # 3. qualidade de sinal: marca subdomínio como live (tem serviço) ou quiet
+        result.records = annotate_liveness(result.records)
         return result
 
     async def _scan_host(
@@ -101,6 +103,26 @@ async def _safe(coro, host: str, name: str, result: ScanResult) -> list[Record]:
     except Exception as exc:  # noqa: BLE001
         result.errors.append(f"{name}[{host}]: {exc}")
         return []
+
+
+def annotate_liveness(records: list[Record]) -> list[Record]:
+    """Marca cada subdomínio como 'live' (tem HTTP/TLS/porta viva no scan) ou
+    'quiet' (só resolve em DNS). Reduz ruído: alerta vira 'alvo vivo', não só
+    'existe um nome'. Um 'quiet -> live' futuro é sinal de host que acordou."""
+    live: set[str] = set()
+    for r in records:
+        if r.kind == Kind.HTTP:
+            live.add(r.key.split("://", 1)[-1].split("/", 1)[0])
+        elif r.kind in (Kind.TLS, Kind.PORT):
+            live.add(r.key.rsplit(":", 1)[0])
+
+    out: list[Record] = []
+    for r in records:
+        if r.kind == Kind.SUBDOMAIN:
+            out.append(Record(Kind.SUBDOMAIN, r.key, "live" if r.key in live else "quiet"))
+        else:
+            out.append(r)
+    return out
 
 
 def build_notifiers(cfg: Config) -> list:

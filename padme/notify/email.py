@@ -26,6 +26,8 @@ def _plain_line(e: Event) -> str:
         return f"  {mark} {e.key}{suffix}\n      {e.old_value} -> {e.new_value}"
     if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY):
         return f"  {mark} {e.key}{suffix}\n      {e.new_value}"
+    if e.kind == Kind.SUBDOMAIN and e.event_type == EventType.ADDED and e.new_value:
+        return f"  {mark} {e.key}{suffix} [{e.new_value}]"
     return f"  {mark} {e.key}{suffix}"
 
 
