@@ -1,37 +1,42 @@
-# PADMÉ — Attack Surface Monitoring
+# 🛰️ Padmé — Attack Surface Monitoring
 
 > Vigia a superfície de ataque dos **seus** ativos ao longo do tempo e te avisa
 > no **Telegram** sempre que algo muda: subdomínio novo, porta aberta,
-> certificado trocado, serviço que subiu ou caiu, com um **possível subdomain
+> certificado trocado, serviço que subiu ou caiu — e **possível subdomain
 > takeover**.
 
-Esta ferramenta guarda o estado e só
-te chama quando ele muda.
+O AutoRecon faz uma foto. A **Padmé faz um filme** — ela guarda o estado e só
+te chama quando a paisagem muda.
+
+**Destaques**
 
 - Monitoramento contínuo com **diff** entre varreduras (estado em SQLite).
 - Alerta no **Telegram** com formatação estilo `git diff` e blocos recolhíveis.
 - **Níveis de notificação** por severidade (`debug` → `critical`).
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
+- **Aviso de expiração de certificado TLS** (antes de virar incidente).
+- **Export** do estado para JSON/CSV.
 - Modo **sentinela** (`monitor`) que roda sozinho, 24/7.
 
 ---
 
->[!WARNING]
->Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
+## ⚖️ Uso responsável
+
+Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
 explícita** para testar. A coleta ativa (HTTP, TLS e principalmente o scan de
 portas) toca nos alvos. O `scope_confirmed: true` no config é uma trava
 consciente — deixe-a como `true` só depois de confirmar seu escopo.
 
 ---
 
-## Como funciona?
+## 🧩 Como funciona
 
 ```
 subdomains (CT logs)  ─┐
 dns  A/AAAA/CNAME/MX   ─┤
 http status/server     ─┤
 tls  emissor/validade  ─┼─►  Records ─► diff vs. estado ─► eventos ─► nível ─► Telegram
-takeover (CNAME+fp)    ─┤    (SQLite)
+takeover (CNAME+fp)    ─┤        (SQLite)
 ports  connect-scan    ─┘
 ```
 
@@ -44,7 +49,7 @@ Fontes de subdomínio (passivas, Certificate Transparency):
 `crt.name` e `crt.sh`. O parser é defensivo — extrai hostnames válidos sob o
 apex independente do formato exato da resposta.
 
-### Subdomain takeover
+### 🎯 Subdomain takeover
 
 Para cada host com **CNAME**, a Padmé casa o alvo contra uma base de serviços
 (baseada no **can-i-take-over-xyz**: GitHub Pages, S3, Heroku, Azure, Shopify,
@@ -58,9 +63,18 @@ Fastly, Zendesk, etc.) e confirma de dois jeitos:
 Host sem CNAME nem entra na checagem (custo zero). Um achado vira um evento
 `TAKEOVER`, que aparece no **topo** do alerta (severidade `critical`).
 
+### ⏰ Expiração de certificado
+
+O collector de TLS parseia o certificado (via `cryptography`, então funciona
+até em cert self-signed ou já expirado) e, se ele estiver a **≤ N dias** de
+expirar (`collectors.cert_expiry_days`, padrão 14), emite um evento
+`CERT_EXPIRY` (severidade `high`). O valor gravado é estável (a data), então
+você recebe **um** aviso ao entrar na janela — não um por dia. Se expirar de
+vez, o evento vira `EXPIRADO`.
+
 ---
 
-## Instalação
+## 🚀 Instalação
 
 ```bash
 git clone <seu-repo> padme && cd padme
@@ -69,7 +83,7 @@ pip install -r requirements.txt         # ou: pip install -e .
 cp config.example.yaml config.yaml      # e edite
 ```
 
-## Configuração do Telegram
+## ⚙️ Configuração do Telegram
 
 1. `@BotFather` → `/newbot` → copie o **bot token**.
 2. Descubra seu **chat_id**: mande uma msg pro bot e abra
@@ -88,7 +102,7 @@ Teste:
 python -m padme test-telegram
 ```
 
-## Uso
+## 🕹️ Uso
 
 ```bash
 # Scan único — grava/atualiza o baseline e imprime as mudanças
@@ -105,12 +119,16 @@ python -m padme monitor --interval 600 --level high
 
 # Ver o histórico de eventos gravados
 python -m padme events --limit 50
+
+# Exportar o estado atual (JSON no stdout, ou CSV para um arquivo)
+python -m padme export --format json
+python -m padme export --format csv --out superficie.csv
 ```
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
 
-## Níveis de notificação
+## 🔔 Níveis de notificação
 
 O **terminal sempre mostra tudo**. O nível é o limiar mínimo de severidade que
 é **enviado ao Telegram**:
@@ -154,7 +172,7 @@ Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados
 
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 
-## Rodando 24/7
+## ⏱️ Rodando 24/7
 
 - **systemd** (recomendado em servidor): crie um service que roda
   `python -m padme monitor` e reinicia sozinho.
@@ -164,28 +182,27 @@ Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 
 ---
 
-## Roadmap (ideias)
+## 🗺️ Roadmap (ideias)
 
 - [x] Detecção de subdomain takeover (CNAME dangling + fingerprint)
 - [x] Níveis de notificação por severidade
 - [x] Notificadores extras: Discord + webhook genérico (JSON)
-- [ ] Aviso de expiração de certificado TLS
+- [x] Aviso de expiração de certificado TLS
+- [x] Export do estado para JSON/CSV
 - [ ] Notificador de e-mail
 - [ ] Wordlist de subdomínios (brute passivo → ativo opcional)
-- [ ] Diff mais rico em TLS (aviso de expiração próxima)
-- [ ] Export do estado para JSON/CSV
 - [ ] Painelzinho web read-only do histórico
 
 ---
 
-## Testes
+## 🧪 Testes
 
 ```bash
 pip install pytest
 pytest -q
 ```
 
-## Estrutura
+## 📁 Estrutura
 
 ```
 padme/
@@ -203,5 +220,5 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # differ, takeover, levels, notify
+└── tests/                # differ, takeover, levels, notify, certexpiry, export
 ```

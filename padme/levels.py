@@ -57,6 +57,8 @@ def severity(e: Event) -> Level:
     k, t = e.kind, e.event_type
     if k == Kind.TAKEOVER:
         return Level.CRITICAL
+    if k == Kind.CERT_EXPIRY:
+        return Level.HIGH
     if t == EventType.ADDED and k in (Kind.PORT, Kind.SUBDOMAIN):
         return Level.HIGH
     if k in (Kind.HTTP, Kind.TLS):

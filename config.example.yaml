@@ -27,6 +27,7 @@ collectors:
   dns: true           # passivo — A/AAAA/CNAME/MX
   http: true          # ativo leve — 1 GET por host
   tls: true           # ativo leve — handshake p/ ler o certificado
+  cert_expiry_days: 14  # avisa quando o cert está a <= N dias de expirar
   takeover: true      # subdomain takeover (CNAME dangling + fingerprint)
   ports: false        # ativo — connect-scan (ligue com consciência)
   ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
@@ -46,14 +47,13 @@ telegram:
   bot_token: "SEU_BOT_TOKEN_AQUI"
   chat_id: "SEU_CHAT_ID_AQUI"
 
-# Discord: cole a URL de um Webhook de canal (Configurações do canal -> Integrações).
+# Discord — cole a URL de um Webhook de canal (Configurações do canal → Integrações).
 discord:
   enabled: false
   webhook_url: ${PADME_DISCORD_WEBHOOK}
 
-# Webhook genérico: recebe um JSON estruturado a cada mudança (ideal p/ n8n).
+# Webhook genérico — recebe um JSON estruturado a cada mudança (ideal p/ n8n).
 # Payload: { source, type, target, time, count, events[], text }
 webhook:
   enabled: false
   url: ${PADME_WEBHOOK_URL}
-

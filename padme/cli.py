@@ -14,8 +14,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import io
+import json
 import logging
 import sys
+from datetime import datetime
+from pathlib import Path
 
 from . import __version__
 
@@ -103,6 +108,50 @@ async def _cmd_events(cfg: Config, args) -> int:
     return 0
 
 
+def _iso(ts) -> str:
+    try:
+        return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
+    except Exception:
+        return ""
+
+
+def _render_export(rows: list[dict], fmt: str) -> str:
+    out = [
+        {
+            "target": r["target"],
+            "kind": r["kind"],
+            "key": r["key"],
+            "value": r["value"],
+            "first_seen": _iso(r["first_seen"]),
+            "last_seen": _iso(r["last_seen"]),
+        }
+        for r in rows
+    ]
+    if fmt == "csv":
+        buf = io.StringIO()
+        cols = ["target", "kind", "key", "value", "first_seen", "last_seen"]
+        w = csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        w.writerows(out)
+        return buf.getvalue()
+    return json.dumps(out, indent=2, ensure_ascii=False)
+
+
+async def _cmd_export(cfg: Config, args) -> int:
+    storage = Storage(cfg.db_path)
+    try:
+        rows = storage.all_state(cfg.targets)
+    finally:
+        storage.close()
+    text = _render_export(rows, args.format)
+    if args.out:
+        Path(args.out).write_text(text, encoding="utf-8")
+        print(f"{len(rows)} registro(s) exportado(s) -> {args.out}")
+    else:
+        print(text)
+    return 0
+
+
 async def _cmd_test_telegram(cfg: Config, args) -> int:
     tg = cfg.telegram
     notifier = TelegramNotifier(tg.bot_token, tg.chat_id)
@@ -141,6 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     ep.add_argument("--limit", type=int, default=30)
     ep.set_defaults(func=_cmd_events)
 
+    xp = sub.add_parser("export", help="exporta o estado atual (JSON/CSV)")
+    xp.add_argument("--format", choices=["json", "csv"], default="json")
+    xp.add_argument("--out", default=None, help="arquivo de saída (padrão: stdout)")
+    xp.set_defaults(func=_cmd_export)
+
     tp = sub.add_parser("test-telegram", help="envia mensagem de teste")
     tp.set_defaults(func=_cmd_test_telegram)
 
@@ -162,7 +216,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Erro de config: {exc}", file=sys.stderr)
         return 2
 
-    if not cfg.scope_confirmed:
+    # comandos read-only (só leem o banco) não exigem confirmação de escopo
+    read_only = args.command in ("events", "export")
+    if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"
             "    Confirme que você é dono ou tem AUTORIZAÇÃO para monitorar os alvos\n"

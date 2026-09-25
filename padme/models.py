@@ -26,6 +26,7 @@ class Kind(str, Enum):
     HTTP = "http"
     TLS = "tls"
     TAKEOVER = "takeover"
+    CERT_EXPIRY = "cert_expiry"
 
 
 class EventType(str, Enum):

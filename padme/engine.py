@@ -69,7 +69,9 @@ class Engine:
             if col.http:
                 result.records.extend(await _safe(http.collect_host(host, client), host, "http", result))
             if col.tls:
-                result.records.extend(await _safe(tls.collect_host(host, self.cfg.timeout), host, "tls", result))
+                result.records.extend(await _safe(
+                    tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days),
+                    host, "tls", result))
             if col.takeover:
                 result.records.extend(
                     await _safe(takeover.collect_host(host, client, self.cfg.timeout), host, "takeover", result)

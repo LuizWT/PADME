@@ -64,6 +64,16 @@ class Storage:
         )
         return cur.fetchone() is not None
 
+    def all_state(self, targets: list[str] | None = None) -> list[dict]:
+        """Estado atual completo (para export), opcionalmente filtrado por alvo."""
+        q = "SELECT target, kind, key, value, first_seen, last_seen FROM state"
+        params: tuple = ()
+        if targets:
+            q += f" WHERE target IN ({','.join('?' * len(targets))})"
+            params = tuple(targets)
+        q += " ORDER BY target, kind, key"
+        return [dict(r) for r in self._conn.execute(q, params).fetchall()]
+
     def recent_events(self, target: str, limit: int = 50) -> list[Event]:
         cur = self._conn.execute(
             "SELECT * FROM events WHERE target = ? ORDER BY ts DESC LIMIT ?",

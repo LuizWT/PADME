@@ -21,13 +21,14 @@ _MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
 
 _KIND_LABEL = {
     Kind.TAKEOVER: "TAKEOVER",
+    Kind.CERT_EXPIRY: "CERT",
     Kind.SUBDOMAIN: "SUBDOMAIN",
     Kind.PORT: "PORT",
     Kind.HTTP: "HTTP",
     Kind.TLS: "TLS",
     Kind.DNS: "DNS",
 }
-_KIND_ORDER = [Kind.TAKEOVER, Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS]
+_KIND_ORDER = [Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS]
 
 # descrição técnica curta por (categoria, tipo de evento)
 _DESC = {
@@ -37,6 +38,7 @@ _DESC = {
     Kind.TLS: {"added": "certificado novo", "removed": "TLS parou de responder", "changed": "certificado alterado"},
     Kind.DNS: {"added": "registro novo", "removed": "registro removido", "changed": "registro alterado"},
     Kind.TAKEOVER: {"added": "possível subdomain takeover", "removed": "takeover resolvido", "changed": "takeover alterado"},
+    Kind.CERT_EXPIRY: {"added": "certificado expira em breve", "removed": "certificado renovado", "changed": "situação do certificado mudou"},
 }
 
 
@@ -67,7 +69,7 @@ def _event_line(e: Event) -> str:
     if e.event_type == EventType.CHANGED:
         return f"{mark} {_key_html(e)}{_desc(e)}\n    {_esc(e.old_value)} <b>→</b> {_esc(e.new_value)}"
 
-    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER):
+    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY):
         return f"{mark} {_key_html(e)}{_desc(e)}\n    {_esc(e.new_value)}"
 
     return f"{mark} {_key_html(e)}{_desc(e)}"
@@ -153,7 +155,7 @@ class TelegramNotifier:
         return await self.send(msg)
 
     async def announce(self, msg: str) -> bool:
-        return await self.send(f"<b>Padmé</b> — {_esc(msg)}")
+        return await self.send(f"🛰️ <b>Padmé</b> — {_esc(msg)}")
 
 
 def _split(text: str, limit: int) -> list[str]:
