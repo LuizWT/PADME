@@ -1,0 +1,21 @@
+# Padmé como sentinela 24/7 com restart automático.
+#
+#   mkdir -p data
+#   cp config.example.yaml data/config.yaml      # edite os alvos/canais
+#   # opcional: coloque os segredos em data/.env  (lido sozinho)
+#   docker compose up -d
+#   docker compose logs -f
+#
+# O bind mount ./data guarda config.yaml, .env e padme.db (persistem entre
+# reinícios). `user` faz os arquivos ficarem do seu usuário — ajuste se o seu
+# `id -u`/`id -g` não for 1000.
+services:
+  padme:
+    build: .
+    image: padme:local
+    container_name: padme
+    restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - ./data:/data
+    command: ["monitor"]

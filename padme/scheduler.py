@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 from .config import Config
 from .engine import Engine, build_notifiers
+from .heartbeat import from_config as heartbeat_from_config
 from .levels import filter_events, parse_level
 from .storage import Storage
 
@@ -24,51 +25,75 @@ async def _announce(notifiers: list, msg: str) -> None:
         await n.announce(msg)
 
 
-async def run_monitor(cfg: Config) -> None:
+async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
+                     notifiers: list, level, cycle: int) -> bool:
+    """Roda um ciclo (todos os alvos). Devolve True se todos varreram sem erro
+    — é o `ok` do heartbeat: um ciclo com falha vira ping de falha."""
+    cycle_ok = True
+    for target in cfg.targets:
+        first = not storage.is_known_target(target)
+        try:
+            result = await engine.scan_target(target)
+            events = engine.apply(result)
+        except Exception as exc:  # noqa: BLE001
+            log.error("[%s] scan falhou: %s", target, exc)
+            cycle_ok = False
+            continue
+
+        if first:
+            log.info("[%s] baseline gravado (%d itens).", target, len(events))
+        elif events:
+            enviar = filter_events(events, level) if notifiers else []
+            log.info("[%s] %d mudança(s); %d no nível '%s'.",
+                     target, len(events), len(enviar), level.name.lower())
+            for n in notifiers:
+                await n.notify_events(target, enviar)
+        else:
+            log.info("[%s] sem mudanças.", target)
+    return cycle_ok
+
+
+async def run_monitor(cfg: Config, once: bool = False) -> None:
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
     notifiers = build_notifiers(cfg)
+    heartbeat = heartbeat_from_config(cfg)
     interval = cfg.interval_seconds
     level = parse_level(cfg.telegram.level)
 
-    await _announce(
-        notifiers,
-        f"modo sentinela — {len(cfg.targets)} alvo(s), varredura a cada "
-        f"{interval}s, nível {level.name.lower()}.",
-    )
-    log.info(
-        "Sentinela ativa: %d alvo(s), varredura a cada %ds, nível '%s'. Ctrl+C para parar.",
-        len(cfg.targets),
-        interval,
-        level.name.lower(),
-    )
+    if once:
+        log.info("Ciclo único (--once): %d alvo(s), nível '%s'.",
+                 len(cfg.targets), level.name.lower())
+    else:
+        await _announce(
+            notifiers,
+            f"modo sentinela — {len(cfg.targets)} alvo(s), varredura a cada "
+            f"{interval}s, nível {level.name.lower()}.",
+        )
+        log.info(
+            "Sentinela ativa: %d alvo(s), varredura a cada %ds, nível '%s'. Ctrl+C para parar.",
+            len(cfg.targets), interval, level.name.lower(),
+        )
+    if heartbeat:
+        log.info("Heartbeat ativo (a cada %d ciclo(s)%s).",
+                 heartbeat.every_cycles, " + ping" if heartbeat.url else "")
 
     cycle = 0
     try:
         while True:
             cycle += 1
-            for target in cfg.targets:
-                first = not storage.is_known_target(target)
-                try:
-                    result = await engine.scan_target(target)
-                    events = engine.apply(result)
-                except Exception as exc:  # noqa: BLE001
-                    log.error("[%s] scan falhou: %s", target, exc)
-                    continue
+            cycle_ok = await _run_cycle(cfg, engine, storage, notifiers, level, cycle)
+            if heartbeat:
+                await heartbeat.beat(cycle, ok=cycle_ok)
 
-                if first:
-                    log.info("[%s] baseline gravado (%d itens).", target, len(events))
-                elif events:
-                    enviar = filter_events(events, level) if notifiers else []
-                    log.info("[%s] %d mudança(s); %d no nível '%s'.",
-                             target, len(events), len(enviar), level.name.lower())
-                    for n in notifiers:
-                        await n.notify_events(target, enviar)
-                else:
-                    log.info("[%s] sem mudanças.", target)
+            if once:
+                log.info("Ciclo único concluído (%s).", "ok" if cycle_ok else "com falhas")
+                break
 
             next_run = datetime.now() + timedelta(seconds=interval)
-            log.info("Ciclo #%d ok. Próxima varredura às %s.", cycle, next_run.strftime("%H:%M:%S"))
+            log.info("Ciclo #%d %s. Próxima varredura às %s.",
+                     cycle, "ok" if cycle_ok else "com falhas",
+                     next_run.strftime("%H:%M:%S"))
             await asyncio.sleep(interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
         log.info("Encerrando sentinela.")

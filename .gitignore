@@ -5,6 +5,11 @@ __pycache__/
 venv/
 .pytest_cache/
 *.egg-info/
+build/
+dist/
+
+# Docker
+data/
 
 # Padmé
 config.yaml

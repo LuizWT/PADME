@@ -1,0 +1,23 @@
+# Contexto de build enxuto — o Dockerfile copia só pyproject/requirements/README/padme.
+.git
+.github
+.gitignore
+tests
+data
+*.md
+!README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Estado / segredos (nunca vão pra imagem)
+config.yaml
+.env
+*.db
+*.db-wal
+*.db-shm

@@ -89,7 +89,16 @@ async def _cmd_monitor(cfg: Config, args) -> int:
         cfg.interval_seconds = args.interval
     if args.level:
         cfg.telegram.level = args.level
-    await run_monitor(cfg)
+    if args.lock:
+        from .singleton import AlreadyRunning, single_instance
+        try:
+            with single_instance(args.lock):
+                await run_monitor(cfg, once=args.once)
+        except AlreadyRunning as exc:
+            print(f"⏭️  {exc} — pulando esta execução.", file=sys.stderr)
+            return 4
+    else:
+        await run_monitor(cfg, once=args.once)
     return 0
 
 
@@ -203,6 +212,10 @@ def build_parser() -> argparse.ArgumentParser:
     mp.add_argument("--interval", type=int, default=None, help="sobrescreve interval_seconds")
     mp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
                     help="limiar de severidade enviado ao Telegram (sobrescreve o config)")
+    mp.add_argument("--once", action="store_true",
+                    help="roda um único ciclo e sai (ideal p/ cron)")
+    mp.add_argument("--lock", default=None, metavar="PATH",
+                    help="lock de instância única (flock); sai se já houver uma rodando")
     mp.set_defaults(func=_cmd_monitor)
 
     ep = sub.add_parser("events", help="lista eventos gravados")

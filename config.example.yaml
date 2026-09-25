@@ -62,6 +62,16 @@ webhook:
   enabled: false
   url: ${PADME_WEBHOOK_URL}
 
+# Heartbeat / dead-man's switch — a Padmé avisa que está viva a cada N ciclos.
+# Um processo morto não avisa que morreu, então o sinal vai pra um watchdog
+# externo (healthchecks.io, Uptime Kuma, cronitor...): se o ping some, ELE te
+# alerta. `file` grava o timestamp da última vida localmente (opcional).
+heartbeat:
+  enabled: false
+  url: ${PADME_HEARTBEAT_URL}   # sucesso -> GET url ; falha no ciclo -> GET url/fail
+  every_cycles: 1               # emite o sinal a cada N ciclos
+  file: ""                      # ex.: /tmp/padme.alive (opcional)
+
 # E-mail (SMTP com STARTTLS). Para Gmail, use uma "App Password".
 email:
   enabled: false

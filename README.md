@@ -21,17 +21,25 @@ te chama quando a paisagem muda.
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
   (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
-- **Export** para JSON/CSV e **painel web** read-only do histórico.
-- Modo **sentinela** (`monitor`) que roda sozinho, 24/7.
+- **Export** para JSON/CSV e **painel web** read-only, com **gráfico de
+  tendência** (eventos/dia nos últimos 30d) — enxerga a superfície crescer/encolher.
+- Modo **sentinela** (`monitor`) que roda sozinho, 24/7, com **heartbeat /
+  dead-man's switch** (avisa que está vivo; silêncio = watchdog externo alerta).
+- `--once` + `--lock` (flock) para rodar via **cron** sem execuções sobrepostas.
 
 ---
 
 ## Uso responsável
 
-Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
-explícita** para testar. A coleta ativa (HTTP, TLS e principalmente o scan de
-portas) toca nos alvos. O `scope_confirmed: true` no config é uma trava
-consciente — deixe-a como `true` só depois de confirmar seu escopo.
+> [!WARNING]
+> Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
+> explícita** para testar. A coleta ativa (HTTP, TLS e principalmente o scan de
+> portas) toca nos alvos.
+
+> [!IMPORTANT]
+> O `scope_confirmed: true` no config é uma trava consciente — deixe-a como
+> `true` só depois de confirmar seu escopo. Sem ela, os comandos que varrem
+> alvos se recusam a rodar.
 
 ---
 
@@ -89,6 +97,52 @@ pip install -r requirements.txt         # ou: pip install -e .
 cp config.example.yaml config.yaml      # e edite
 ```
 
+Ou instale como comando isolado, sem mexer no seu Python, com **pipx**:
+
+```bash
+pipx install .                          # do diretório do repo (usa o pyproject)
+# ou direto do Git:
+pipx install "git+https://github.com/LuizWT/PADME.git"
+padme --version
+```
+
+## Docker (sentinela 24/7)
+
+O modo de uso principal é rodar em loop com **restart automático**. Com Docker o
+deploy vira um comando; a config, o `.env` e o `padme.db` ficam num volume em
+`/data`.
+
+```bash
+# 1) build
+docker build -t padme .
+
+# 2) prepare a config num diretório que será montado em /data
+mkdir -p data && cp config.example.yaml data/config.yaml   # edite os alvos/canais
+#    (opcional) segredos em data/.env — são lidos sozinhos
+
+# 3) rode o sentinela em background, reiniciando sozinho
+docker run -d --name padme --restart unless-stopped \
+    -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme monitor
+
+docker logs -f padme
+```
+
+Comandos avulsos usam a mesma imagem — ex.: `docker run --rm -v "$PWD/data:/data" \
+--user "$(id -u):$(id -g)" padme test-notify`.
+
+Ou, mais simples, com **docker compose** (o `docker-compose.yml` já traz
+`restart: unless-stopped`):
+
+```bash
+mkdir -p data && cp config.example.yaml data/config.yaml   # edite
+docker compose up -d
+docker compose logs -f
+```
+
+> [!TIP]
+> `--user "$(id -u):$(id -g)"` faz o `padme.db` sair com o dono certo no host.
+> No compose, ajuste `user:` se o seu `id -u`/`id -g` não for `1000`.
+
 ## Configuração do Telegram
 
 1. `@BotFather` → `/newbot` → copie o **bot token**.
@@ -122,6 +176,9 @@ python -m padme monitor
 
 # Sobrescrevendo intervalo e nível na hora
 python -m padme monitor --interval 600 --level high
+
+# Um único ciclo e sai (ideal p/ cron) + lock de instância única (não sobrepõe)
+python -m padme monitor --once --lock /tmp/padme.lock
 
 # Ver o histórico de eventos gravados
 python -m padme events --limit 50
@@ -189,11 +246,22 @@ Teste todos de uma vez com `python -m padme test-notify`.
 
 ## Rodando 24/7
 
-- **systemd** (recomendado em servidor): crie um service que roda
-  `python -m padme monitor` e reinicia sozinho.
-- **cron + `scan --notify`**: se preferir não deixar processo vivo, agende
-  `padme scan --notify` de hora em hora.
+- **Docker / compose** (recomendado): `docker compose up -d` — restart
+  automático embutido. Ver a seção [Docker](#docker-sentinela-247).
+- **systemd** (em servidor sem Docker): crie um service que roda
+  `padme monitor` com `Restart=always`.
+- **cron + `monitor --once --lock`**: se preferir não deixar processo vivo,
+  agende `padme monitor --once --lock /tmp/padme.lock` — um ciclo por vez, sem
+  sobrepor execuções (o `--lock` sai na hora se o ciclo anterior ainda roda).
 - **tmux/screen**: pro rápido e sujo.
+
+> [!NOTE]
+> **Heartbeat / dead-man's switch.** Um processo morto não avisa que morreu —
+> por isso o sinal de vida vai pra fora. Configure `heartbeat.url`
+> (healthchecks.io, Uptime Kuma, cronitor…) e a Padmé faz um ping a cada N
+> ciclos; se o ping some, o watchdog **externo** te alerta. Um ciclo com falha
+> vira ping em `url/fail`. Opcionalmente `heartbeat.file` grava o timestamp da
+> última vida localmente.
 
 ---
 
@@ -210,10 +278,10 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] CI (GitHub Actions) rodando os testes
 - [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
 - [x] Dedupe do GET entre HTTP e takeover
-- [ ] Execução resiliente (heartbeat / restart)
+- [x] Execução resiliente — restart (Docker) + **heartbeat/dead-man's switch** + `--once`/`--lock`
 - [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
-- [ ] Visão de tendência no painel
-- [ ] Empacotamento (Docker / pipx)
+- [x] Visão de tendência no painel (gráfico de eventos/dia, 30d)
+- [x] Empacotamento (Docker / pipx)
 
 > Detalhamento (problema · solução · valor · esforço) em [`ROADMAP.md`](ROADMAP.md).
 
@@ -238,14 +306,20 @@ padme/
 │   ├── storage.py        # SQLite: estado + histórico
 │   ├── differ.py         # engine de diff (puro, testável)
 │   ├── engine.py         # orquestra collectors + diff
-│   ├── scheduler.py      # loop do modo sentinela (monitor)
-│   ├── webpanel.py       # painel web read-only (stdlib)
+│   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat
+│   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
+│   ├── singleton.py      # lock de instância única (flock) p/ cron
+│   ├── webpanel.py       # painel web read-only + gráfico de tendência (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
 │   └── notify/           # telegram, discord, webhook (JSON), email
 ├── .github/workflows/    # CI: pytest a cada push
+├── Dockerfile            # imagem do sentinela (roda `padme`)
+├── docker-compose.yml    # sobe o monitor 24/7 com restart automático
+├── .dockerignore
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
 └── tests/                # differ, takeover, levels, notify, certexpiry, export,
-                          # bruteforce, webpanel, email, signal, wildcard
+                          # bruteforce, webpanel, email, signal, wildcard, cli,
+                          # heartbeat, singleton
 ```
