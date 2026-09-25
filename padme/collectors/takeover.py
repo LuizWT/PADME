@@ -79,17 +79,22 @@ async def _cname_target(host: str, timeout: float) -> tuple[str | None, bool]:
         return target, True  # inconclusivo -> não crava dangling
 
 
-async def _body(client: httpx.AsyncClient, host: str) -> str:
+async def _body(client: httpx.AsyncClient, host: str, cache: dict[str, str] | None = None) -> str:
     for scheme in ("https", "http"):
+        url = f"{scheme}://{host}"
+        if cache is not None and url in cache:  # reaproveita o GET do collector HTTP
+            return cache[url]
         try:
-            r = await client.get(f"{scheme}://{host}", follow_redirects=True)
+            r = await client.get(url, follow_redirects=True)
             return r.text or ""
         except Exception:
             continue
     return ""
 
 
-async def collect_host(host: str, client: httpx.AsyncClient, timeout: float) -> list[Record]:
+async def collect_host(
+    host: str, client: httpx.AsyncClient, timeout: float, cache: dict[str, str] | None = None
+) -> list[Record]:
     target, resolves = await _cname_target(host, timeout)
     if not target:
         return []
@@ -102,7 +107,7 @@ async def collect_host(host: str, client: httpx.AsyncClient, timeout: float) -> 
         if not resolves:
             reason = "CNAME dangling (NXDOMAIN)"
     elif fp["fingerprint"]:
-        body = await _body(client, host)
+        body = await _body(client, host, cache)
         if fp["fingerprint"].lower() in body.lower():
             reason = "fingerprint de recurso não reivindicado"
 

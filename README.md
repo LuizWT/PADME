@@ -206,8 +206,10 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] Wordlist de subdomínios (bruteforce DNS opcional)
 - [x] Painel web read-only do histórico
 - [x] CI (GitHub Actions) rodando os testes
-- [ ] Diff de TLS com aviso de expiração por buckets (7d / 1d)
-- [ ] Dedupe do GET entre HTTP e takeover
+- [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
+- [x] Dedupe do GET entre HTTP e takeover
+- [ ] Notificador extra (Slack) e templates de mensagem
+- [ ] Persistência opcional em Postgres (além de SQLite)
 
 ---
 

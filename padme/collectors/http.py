@@ -22,7 +22,9 @@ def _title(html: str) -> str:
     return re.sub(r"\s+", " ", m.group(1)).strip()[:120]
 
 
-async def collect_host(host: str, client: httpx.AsyncClient) -> list[Record]:
+async def collect_host(
+    host: str, client: httpx.AsyncClient, cache: dict[str, str] | None = None
+) -> list[Record]:
     records: list[Record] = []
     for scheme in ("https", "http"):
         url = f"{scheme}://{host}"
@@ -30,6 +32,8 @@ async def collect_host(host: str, client: httpx.AsyncClient) -> list[Record]:
             r = await client.get(url, follow_redirects=True)
         except Exception:
             continue
+        if cache is not None:  # reaproveitado pelo collector de takeover
+            cache[url] = r.text
         server = r.headers.get("server", "")
         title = ""
         ctype = r.headers.get("content-type", "")

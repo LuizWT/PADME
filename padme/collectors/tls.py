@@ -87,12 +87,15 @@ async def collect_host(
                value=f"issuer={issuer} | expira={date_str} | fp={fp}".strip())
     ]
 
-    # aviso de expiração — valor estável para não gerar alerta a cada dia
+    # aviso de expiração — valor por BUCKET: estável dentro da faixa (1 aviso),
+    # e escala (evento CHANGED) quando cruza 7d e 1d.
     if not_after is not None:
         days_left = (not_after - datetime.now(timezone.utc)).days
         if days_left < 0:
             records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"EXPIRADO em {date_str}"))
         elif days_left <= cert_expiry_days:
-            records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"expira {date_str}"))
+            buckets = sorted({b for b in (1, 7, cert_expiry_days) if b <= cert_expiry_days})
+            bucket = next(b for b in buckets if days_left <= b)
+            records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"expira em <={bucket}d ({date_str})"))
 
     return records

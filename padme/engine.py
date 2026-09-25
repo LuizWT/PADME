@@ -73,17 +73,18 @@ class Engine:
     ) -> None:
         async with self._sem:
             col = self.cfg.collectors
+            body_cache: dict[str, str] = {}  # GET reaproveitado entre http e takeover
             if col.dns:
                 result.records.extend(await _safe(dns.collect_host(host, self.cfg.timeout), host, "dns", result))
             if col.http:
-                result.records.extend(await _safe(http.collect_host(host, client), host, "http", result))
+                result.records.extend(await _safe(http.collect_host(host, client, body_cache), host, "http", result))
             if col.tls:
                 result.records.extend(await _safe(
                     tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days),
                     host, "tls", result))
             if col.takeover:
                 result.records.extend(
-                    await _safe(takeover.collect_host(host, client, self.cfg.timeout), host, "takeover", result)
+                    await _safe(takeover.collect_host(host, client, self.cfg.timeout, body_cache), host, "takeover", result)
                 )
             if col.ports:
                 result.records.extend(

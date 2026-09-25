@@ -40,3 +40,10 @@ def test_ja_expirado(monkeypatch):
     ce = _cert_events(_run(-3, monkeypatch))
     assert len(ce) == 1
     assert "EXPIRADO" in ce[0].value
+
+
+def test_buckets(monkeypatch):
+    # threshold 14 -> buckets 1/7/14; escala conforme aproxima
+    assert "<=14d" in _cert_events(_run(10, monkeypatch, threshold=14))[0].value
+    assert "<=7d" in _cert_events(_run(5, monkeypatch, threshold=14))[0].value
+    assert "<=1d" in _cert_events(_run(1, monkeypatch, threshold=14))[0].value

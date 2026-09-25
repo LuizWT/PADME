@@ -17,7 +17,7 @@ def _run(host, cname, resolves, body, monkeypatch):
     async def fake_cname(h, t):
         return cname, resolves
 
-    async def fake_body(client, h):
+    async def fake_body(client, h, cache=None):
         return body
 
     monkeypatch.setattr(takeover, "_cname_target", fake_cname)
@@ -51,3 +51,14 @@ def test_azure_nxdomain(monkeypatch):
 def test_sem_cname(monkeypatch):
     recs = _run("alvo.com", None, True, "", monkeypatch)
     assert recs == []
+
+
+def test_usa_cache_sem_refetch(monkeypatch):
+    # com cache preenchido, não deve tocar a rede (client=None provaria erro)
+    async def fake_cname(h, t):
+        return "alvo.github.io", True
+
+    monkeypatch.setattr(takeover, "_cname_target", fake_cname)
+    cache = {"https://blog.alvo.com": "There isn't a GitHub Pages site here."}
+    recs = asyncio.run(takeover.collect_host("blog.alvo.com", client=None, timeout=5, cache=cache))
+    assert len(recs) == 1 and recs[0].kind == Kind.TAKEOVER
