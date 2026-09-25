@@ -15,7 +15,7 @@ from datetime import datetime
 from .config import Config
 from .storage import Storage
 
-_KIND_ORDER = ["takeover", "cert_expiry", "subdomain", "port", "http", "tls", "dns"]
+_KIND_ORDER = ["takeover", "cert_expiry", "wildcard", "subdomain", "port", "http", "tls", "dns"]
 _ARROW = {"added": "+", "removed": "-", "changed": "~"}
 
 _CSS = """

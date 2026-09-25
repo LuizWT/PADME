@@ -19,6 +19,8 @@ te chama quando a paisagem muda.
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
 - **Aviso de expiração de certificado TLS** (antes de virar incidente).
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
+- **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
+  (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
 - **Export** para JSON/CSV e **painel web** read-only do histórico.
 - Modo **sentinela** (`monitor`) que roda sozinho, 24/7.
 
@@ -146,7 +148,7 @@ O **terminal sempre mostra tudo**. O nível é o limiar mínimo de severidade qu
 | Nível | Envia |
 |---|---|
 | `critical` | só **takeover** |
-| `high` | takeover + **porta/subdomínio novo** |
+| `high` | takeover + **porta/subdomínio novo** + cert expirando + **wildcard DNS** |
 | `medium` *(padrão)* | acima + **HTTP/TLS mudou**, serviço novo |
 | `low` | acima + remoções e mudanças menores |
 | `debug` | **tudo**, inclusive registros DNS |
@@ -209,7 +211,7 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
 - [x] Dedupe do GET entre HTTP e takeover
 - [ ] Execução resiliente (heartbeat / restart)
-- [ ] Qualidade de sinal — subdomínio `live`/`quiet` (em andamento)
+- [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
 - [ ] Visão de tendência no painel
 - [ ] Empacotamento (Docker / pipx)
 
@@ -238,12 +240,12 @@ padme/
 │   ├── engine.py         # orquestra collectors + diff
 │   ├── scheduler.py      # loop do modo sentinela (monitor)
 │   ├── webpanel.py       # painel web read-only (stdlib)
-│   ├── collectors/       # subdomains, bruteforce, dns, http, tls, takeover, ports
+│   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
 │   └── notify/           # telegram, discord, webhook (JSON), email
 ├── .github/workflows/    # CI: pytest a cada push
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
 └── tests/                # differ, takeover, levels, notify, certexpiry, export,
-                          # bruteforce, webpanel, email
+                          # bruteforce, webpanel, email, signal, wildcard
 ```

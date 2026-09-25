@@ -20,3 +20,10 @@ padme = "padme.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["padme*"]
+
+[tool.pytest.ini_options]
+# Garante que a raiz do repositório entre no sys.path ao rodar `pytest`
+# diretamente (sem `python -m`), como faz o CI — sem isso os testes falham
+# com ModuleNotFoundError: No module named 'padme'.
+pythonpath = ["."]
+testpaths = ["tests"]

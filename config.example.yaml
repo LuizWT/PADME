@@ -26,6 +26,8 @@ collectors:
   subdomains: true    # passivo — CT logs (crt.name / crt.sh)
   bruteforce: false   # ativo — resolve candidatos de uma wordlist (opcional)
   wordlist: ""        # caminho de uma wordlist (vazio = lista embutida)
+  wildcard: true      # detecta curinga de DNS e filtra falso-positivo do bruteforce
+  wildcard_probes: 3  # nomes aleatórios sondados p/ achar o curinga (>= 2)
   dns: true           # passivo — A/AAAA/CNAME/MX
   http: true          # ativo leve — 1 GET por host
   tls: true           # ativo leve — handshake p/ ler o certificado

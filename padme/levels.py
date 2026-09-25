@@ -11,6 +11,7 @@ que é enviado ao Telegram — do mais barulhento ao mais crítico:
 
 Severidade de cada evento (kind + tipo):
     takeover                  -> CRITICAL
+    cert_expiry / wildcard    -> HIGH
     port/subdomain ADDED      -> HIGH
     http/tls (add/changed)    -> MEDIUM
     http/tls REMOVED,
@@ -57,7 +58,7 @@ def severity(e: Event) -> Level:
     k, t = e.kind, e.event_type
     if k == Kind.TAKEOVER:
         return Level.CRITICAL
-    if k == Kind.CERT_EXPIRY:
+    if k in (Kind.CERT_EXPIRY, Kind.WILDCARD):
         return Level.HIGH
     if t == EventType.ADDED and k in (Kind.PORT, Kind.SUBDOMAIN):
         return Level.HIGH

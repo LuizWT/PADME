@@ -38,7 +38,7 @@ def _md_line(e: Event) -> str:
         return f"{mark} `{host}` {rtype} `{val}`{_md_desc(e)}"
     if e.event_type == EventType.CHANGED:
         return f"{mark} {_md_key(e)}{_md_desc(e)}\n    {e.old_value} → {e.new_value}"
-    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY):
+    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.WILDCARD):
         return f"{mark} {_md_key(e)}{_md_desc(e)}\n    {e.new_value}"
     if e.kind == Kind.SUBDOMAIN and e.event_type == EventType.ADDED and e.new_value:
         return f"{mark} {_md_key(e)}{_md_desc(e)} [{e.new_value}]"
