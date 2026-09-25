@@ -89,6 +89,51 @@ pip install -r requirements.txt         # ou: pip install -e .
 cp config.example.yaml config.yaml      # e edite
 ```
 
+Ou instale como comando isolado, sem mexer no seu Python, com **pipx**:
+
+```bash
+pipx install .                          # do diretório do repo (usa o pyproject)
+# ou direto do Git:
+pipx install "git+https://github.com/LuizWT/PADME.git"
+padme --version
+```
+
+## Docker (sentinela 24/7)
+
+O modo de uso principal é rodar em loop com **restart automático**. Com Docker o
+deploy vira um comando; a config, o `.env` e o `padme.db` ficam num volume em
+`/data`.
+
+```bash
+# 1) build
+docker build -t padme .
+
+# 2) prepare a config num diretório que será montado em /data
+mkdir -p data && cp config.example.yaml data/config.yaml   # edite os alvos/canais
+#    (opcional) segredos em data/.env — são lidos sozinhos
+
+# 3) rode o sentinela em background, reiniciando sozinho
+docker run -d --name padme --restart unless-stopped \
+    -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme monitor
+
+docker logs -f padme
+```
+
+Comandos avulsos usam a mesma imagem — ex.: `docker run --rm -v "$PWD/data:/data" \
+--user "$(id -u):$(id -g)" padme test-notify`.
+
+Ou, mais simples, com **docker compose** (o `docker-compose.yml` já traz
+`restart: unless-stopped`):
+
+```bash
+mkdir -p data && cp config.example.yaml data/config.yaml   # edite
+docker compose up -d
+docker compose logs -f
+```
+
+> `--user "$(id -u):$(id -g)"` faz o `padme.db` sair com o dono certo no host.
+> No compose, ajuste `user:` se o seu `id -u`/`id -g` não for `1000`.
+
 ## Configuração do Telegram
 
 1. `@BotFather` → `/newbot` → copie o **bot token**.
@@ -189,8 +234,10 @@ Teste todos de uma vez com `python -m padme test-notify`.
 
 ## Rodando 24/7
 
-- **systemd** (recomendado em servidor): crie um service que roda
-  `python -m padme monitor` e reinicia sozinho.
+- **Docker / compose** (recomendado): `docker compose up -d` — restart
+  automático embutido. Ver a seção [Docker](#docker-sentinela-247).
+- **systemd** (em servidor sem Docker): crie um service que roda
+  `padme monitor` com `Restart=always`.
 - **cron + `scan --notify`**: se preferir não deixar processo vivo, agende
   `padme scan --notify` de hora em hora.
 - **tmux/screen**: pro rápido e sujo.
@@ -210,10 +257,10 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] CI (GitHub Actions) rodando os testes
 - [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
 - [x] Dedupe do GET entre HTTP e takeover
-- [ ] Execução resiliente (heartbeat / restart)
+- [~] Execução resiliente (heartbeat / restart) — restart via Docker já; falta heartbeat
 - [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
 - [ ] Visão de tendência no painel
-- [ ] Empacotamento (Docker / pipx)
+- [x] Empacotamento (Docker / pipx)
 
 > Detalhamento (problema · solução · valor · esforço) em [`ROADMAP.md`](ROADMAP.md).
 
@@ -243,9 +290,12 @@ padme/
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
 │   └── notify/           # telegram, discord, webhook (JSON), email
 ├── .github/workflows/    # CI: pytest a cada push
+├── Dockerfile            # imagem do sentinela (roda `padme`)
+├── docker-compose.yml    # sobe o monitor 24/7 com restart automático
+├── .dockerignore
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
 └── tests/                # differ, takeover, levels, notify, certexpiry, export,
-                          # bruteforce, webpanel, email, signal, wildcard
+                          # bruteforce, webpanel, email, signal, wildcard, cli
 ```

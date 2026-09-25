@@ -73,20 +73,23 @@ padrão de quando o alvo mexe na infra.
 
 ---
 
-## 4. Empacotamento (rodar 24/7 num comando) — 🔜
+## 4. Empacotamento (rodar 24/7 num comando) — ✅
 
 **Problema.** Colocar pra rodar em outra máquina é clone + venv + instalar deps
 + configurar serviço na mão — passos que quebram (versão de Python, deps) e
 desmotivam. Prejudica reprodutibilidade.
 
-**Solução.** **Dockerfile + imagem**: `docker run ... padme monitor`, com
-restart policy embutida. Opcional publicar no GHCR pra `docker pull`. Para uso
-local, `pipx install` (o entrypoint já está no `pyproject.toml`).
+**Solução (implementada).** **Dockerfile** (usuário não-root, config/estado num
+volume `/data`, entrypoint `padme`) + **docker-compose.yml** com
+`restart: unless-stopped`, então `docker compose up -d` roda o sentinela 24/7
+e reinicia sozinho. Para uso local sem Docker, `pipx install .` (ou
+`pipx install "git+…"`) — o entrypoint `padme` já vem do `pyproject.toml`.
+Falta apenas (opcional) publicar a imagem no GHCR pra `docker pull`.
 
 **Valor.** Reduz "rodar 24/7" a **um comando** — o modo de uso principal
 (sentinela) — e resolve metade do item 1 (restart automático vem junto).
 
-**Esforço.** Baixo.
+**Esforço.** Baixo. **Concluído.**
 
 ---
 
@@ -97,4 +100,5 @@ local, `pipx install` (o entrypoint já está no `pyproject.toml`).
 - ✅ Notificação: Telegram, Discord, webhook JSON, e-mail; níveis de severidade
 - ✅ Aviso de expiração de certificado (buckets 14/7/1d)
 - ✅ Qualidade de sinal: liveness (live/quiet) + **wildcard DNS** (supressão de falso-positivo)
+- ✅ Empacotamento: Dockerfile + docker-compose (restart 24/7) · `pipx install`
 - ✅ Export JSON/CSV · painel web read-only · CI (GitHub Actions)
