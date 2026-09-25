@@ -163,6 +163,25 @@ async def _cmd_test_telegram(cfg: Config, args) -> int:
     return 0 if ok else 1
 
 
+async def _cmd_web(cfg: Config, args) -> int:
+    from .webpanel import serve
+    serve(cfg, args.host, args.port)
+    return 0
+
+
+async def _cmd_test_notify(cfg: Config, args) -> int:
+    notifiers = build_notifiers(cfg)
+    if not notifiers:
+        print("Nenhum canal habilitado/configurado (telegram/discord/webhook/email).")
+        return 1
+    all_ok = True
+    for n in notifiers:
+        ok = await n.announce("teste de conexão OK.")
+        all_ok = all_ok and ok
+        print(f"  {type(n).__name__}: {'enviado' if ok else 'FALHOU'}")
+    return 0 if all_ok else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="padme",
@@ -195,8 +214,16 @@ def build_parser() -> argparse.ArgumentParser:
     xp.add_argument("--out", default=None, help="arquivo de saída (padrão: stdout)")
     xp.set_defaults(func=_cmd_export)
 
-    tp = sub.add_parser("test-telegram", help="envia mensagem de teste")
+    tp = sub.add_parser("test-telegram", help="envia mensagem de teste no Telegram")
     tp.set_defaults(func=_cmd_test_telegram)
+
+    tn = sub.add_parser("test-notify", help="testa TODOS os canais configurados")
+    tn.set_defaults(func=_cmd_test_notify)
+
+    wb = sub.add_parser("web", help="painel web read-only do estado/histórico")
+    wb.add_argument("--host", default="127.0.0.1")
+    wb.add_argument("--port", type=int, default=8787)
+    wb.set_defaults(func=_cmd_web)
 
     return p
 
@@ -216,8 +243,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Erro de config: {exc}", file=sys.stderr)
         return 2
 
-    # comandos read-only (só leem o banco) não exigem confirmação de escopo
-    read_only = args.command in ("events", "export")
+    # comandos que não varrem alvos não exigem confirmação de escopo
+    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"

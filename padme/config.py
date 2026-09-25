@@ -45,8 +45,34 @@ class WebhookConfig:
 
 
 @dataclass
+class EmailConfig:
+    enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    username: str = ""
+    password: str = ""
+    from_addr: str = ""
+    to: list[str] = field(default_factory=list)
+    use_tls: bool = True
+
+    def resolved(self) -> "EmailConfig":
+        return EmailConfig(
+            enabled=self.enabled,
+            smtp_host=_expand(self.smtp_host),
+            smtp_port=self.smtp_port,
+            username=_expand(self.username),
+            password=_expand(self.password),
+            from_addr=_expand(self.from_addr),
+            to=[_expand(t) for t in self.to],
+            use_tls=self.use_tls,
+        )
+
+
+@dataclass
 class CollectorsConfig:
     subdomains: bool = True   # passivo (crt.sh / CT logs)
+    bruteforce: bool = False  # ativo — resolve candidatos de uma wordlist
+    wordlist: str = ""        # caminho da wordlist (vazio = lista embutida)
     dns: bool = True          # passivo
     http: bool = True         # ativo leve (GET nos hosts)
     tls: bool = True          # ativo leve (handshake)
@@ -70,6 +96,7 @@ class Config:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
 
     @staticmethod
     def load(path: str | Path) -> "Config":
@@ -89,6 +116,10 @@ class Config:
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
+        em = raw.get("email") or {}
+        em_to = em.get("to") or []
+        if isinstance(em_to, str):
+            em_to = [em_to]
 
         return Config(
             targets=targets,
@@ -99,6 +130,8 @@ class Config:
             db_path=raw.get("db_path", "padme.db"),
             collectors=CollectorsConfig(
                 subdomains=bool(col.get("subdomains", True)),
+                bruteforce=bool(col.get("bruteforce", False)),
+                wordlist=str(col.get("wordlist", "")),
                 dns=bool(col.get("dns", True)),
                 http=bool(col.get("http", True)),
                 tls=bool(col.get("tls", True)),
@@ -120,6 +153,16 @@ class Config:
             webhook=WebhookConfig(
                 enabled=bool(wh.get("enabled", False)),
                 url=str(wh.get("url", "")),
+            ).resolved(),
+            email=EmailConfig(
+                enabled=bool(em.get("enabled", False)),
+                smtp_host=str(em.get("smtp_host", "")),
+                smtp_port=int(em.get("smtp_port", 587)),
+                username=str(em.get("username", "")),
+                password=str(em.get("password", "")),
+                from_addr=str(em.get("from", "")),
+                to=[str(t) for t in em_to],
+                use_tls=bool(em.get("use_tls", True)),
             ).resolved(),
         )
 

@@ -1,5 +1,7 @@
 # 🛰️ Padmé — Attack Surface Monitoring
 
+![tests](https://github.com/LuizWT/PADME/actions/workflows/tests.yml/badge.svg)
+
 > Vigia a superfície de ataque dos **seus** ativos ao longo do tempo e te avisa
 > no **Telegram** sempre que algo muda: subdomínio novo, porta aberta,
 > certificado trocado, serviço que subiu ou caiu — e **possível subdomain
@@ -12,10 +14,12 @@ te chama quando a paisagem muda.
 
 - Monitoramento contínuo com **diff** entre varreduras (estado em SQLite).
 - Alerta no **Telegram** com formatação estilo `git diff` e blocos recolhíveis.
+- Canais: **Telegram**, **Discord**, **webhook JSON** e **e-mail** (SMTP).
 - **Níveis de notificação** por severidade (`debug` → `critical`).
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
 - **Aviso de expiração de certificado TLS** (antes de virar incidente).
-- **Export** do estado para JSON/CSV.
+- **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
+- **Export** para JSON/CSV e **painel web** read-only do histórico.
 - Modo **sentinela** (`monitor`) que roda sozinho, 24/7.
 
 ---
@@ -123,6 +127,12 @@ python -m padme events --limit 50
 # Exportar o estado atual (JSON no stdout, ou CSV para um arquivo)
 python -m padme export --format json
 python -m padme export --format csv --out superficie.csv
+
+# Painel web read-only (lê o padme.db; atualiza sozinho a cada 30s)
+python -m padme web            # http://127.0.0.1:8787
+
+# Testar todos os canais de notificação configurados
+python -m padme test-notify
 ```
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
@@ -152,6 +162,8 @@ Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados
 - **Telegram** — formatação HTML estilo diff, com blocos recolhíveis.
 - **Discord** — cole a URL de um *Webhook* de canal em `discord.webhook_url`
   (mensagem em Markdown).
+- **E-mail** — SMTP com STARTTLS (`email.*`). Para Gmail, use uma *App
+  Password*. Corpo em texto puro.
 - **Webhook genérico** — `webhook.url` recebe um **JSON estruturado** a cada
   mudança, ideal para **n8n** e automações:
 
@@ -171,6 +183,7 @@ Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados
   ```
 
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
+Teste todos de uma vez com `python -m padme test-notify`.
 
 ## ⏱️ Rodando 24/7
 
@@ -189,9 +202,12 @@ Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 - [x] Notificadores extras: Discord + webhook genérico (JSON)
 - [x] Aviso de expiração de certificado TLS
 - [x] Export do estado para JSON/CSV
-- [ ] Notificador de e-mail
-- [ ] Wordlist de subdomínios (brute passivo → ativo opcional)
-- [ ] Painelzinho web read-only do histórico
+- [x] Notificador de e-mail (SMTP)
+- [x] Wordlist de subdomínios (bruteforce DNS opcional)
+- [x] Painel web read-only do histórico
+- [x] CI (GitHub Actions) rodando os testes
+- [ ] Diff de TLS com aviso de expiração por buckets (7d / 1d)
+- [ ] Dedupe do GET entre HTTP e takeover
 
 ---
 
@@ -215,10 +231,13 @@ padme/
 │   ├── differ.py         # engine de diff (puro, testável)
 │   ├── engine.py         # orquestra collectors + diff
 │   ├── scheduler.py      # loop do modo sentinela (monitor)
-│   ├── collectors/       # subdomains, dns, http, tls, takeover, ports
-│   └── notify/           # telegram, discord, webhook genérico (JSON)
+│   ├── webpanel.py       # painel web read-only (stdlib)
+│   ├── collectors/       # subdomains, bruteforce, dns, http, tls, takeover, ports
+│   └── notify/           # telegram, discord, webhook (JSON), email
+├── .github/workflows/    # CI: pytest a cada push
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # differ, takeover, levels, notify, certexpiry, export
+└── tests/                # differ, takeover, levels, notify, certexpiry, export,
+                          # bruteforce, webpanel, email
 ```

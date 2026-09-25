@@ -15,10 +15,10 @@ import logging
 
 import httpx
 
-from .collectors import dns, http, ports, subdomains, takeover, tls
+from .collectors import bruteforce, dns, http, ports, subdomains, takeover, tls
 from .config import Config
 from .models import Event, Record, ScanResult
-from .notify import DiscordNotifier, TelegramNotifier, WebhookNotifier
+from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNotifier
 from .storage import Storage
 
 log = logging.getLogger("padme")
@@ -51,6 +51,15 @@ class Engine:
                     result.records.extend(sub_records)
                 except Exception as exc:  # noqa: BLE001
                     result.errors.append(f"subdomains: {exc}")
+            if self.cfg.collectors.bruteforce:
+                try:
+                    words = bruteforce.load_words(self.cfg.collectors.wordlist)
+                    bf_records, bf_hosts = await bruteforce.collect(
+                        target, words, self.cfg.timeout, self.cfg.concurrency)
+                    result.records.extend(bf_records)
+                    hosts |= bf_hosts
+                except Exception as exc:  # noqa: BLE001
+                    result.errors.append(f"bruteforce: {exc}")
             log.info("[%s] %d host(s) para inspecionar", target, len(hosts))
 
             # 2. host-level (concorrente)
@@ -118,5 +127,14 @@ def build_notifiers(cfg: Config) -> list:
             out.append(WebhookNotifier(wh.url))
         else:
             log.warning("Webhook habilitado mas url ausente — ignorado.")
+
+    em = cfg.email
+    if em.enabled:
+        n = EmailNotifier(em.smtp_host, em.smtp_port, em.username, em.password,
+                          em.from_addr, em.to, em.use_tls)
+        if n.configured:
+            out.append(n)
+        else:
+            log.warning("E-mail habilitado mas smtp_host/from/to ausentes — ignorado.")
 
     return out

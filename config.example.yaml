@@ -24,6 +24,8 @@ db_path: padme.db
 
 collectors:
   subdomains: true    # passivo — CT logs (crt.name / crt.sh)
+  bruteforce: false   # ativo — resolve candidatos de uma wordlist (opcional)
+  wordlist: ""        # caminho de uma wordlist (vazio = lista embutida)
   dns: true           # passivo — A/AAAA/CNAME/MX
   http: true          # ativo leve — 1 GET por host
   tls: true           # ativo leve — handshake p/ ler o certificado
@@ -57,3 +59,15 @@ discord:
 webhook:
   enabled: false
   url: ${PADME_WEBHOOK_URL}
+
+# E-mail (SMTP com STARTTLS). Para Gmail, use uma "App Password".
+email:
+  enabled: false
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  username: ${PADME_SMTP_USER}
+  password: ${PADME_SMTP_PASS}
+  from: ${PADME_SMTP_USER}
+  to:
+    - voce@dominio.com
+  use_tls: true
