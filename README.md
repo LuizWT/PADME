@@ -31,10 +31,15 @@ te chama quando a paisagem muda.
 
 ## Uso responsável
 
-Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
-explícita** para testar. A coleta ativa (HTTP, TLS e principalmente o scan de
-portas) toca nos alvos. O `scope_confirmed: true` no config é uma trava
-consciente — deixe-a como `true` só depois de confirmar seu escopo.
+> [!WARNING]
+> Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
+> explícita** para testar. A coleta ativa (HTTP, TLS e principalmente o scan de
+> portas) toca nos alvos.
+
+> [!IMPORTANT]
+> O `scope_confirmed: true` no config é uma trava consciente — deixe-a como
+> `true` só depois de confirmar seu escopo. Sem ela, os comandos que varrem
+> alvos se recusam a rodar.
 
 ---
 
@@ -134,6 +139,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
+> [!TIP]
 > `--user "$(id -u):$(id -g)"` faz o `padme.db` sair com o dono certo no host.
 > No compose, ajuste `user:` se o seu `id -u`/`id -g` não for `1000`.
 
@@ -249,11 +255,13 @@ Teste todos de uma vez com `python -m padme test-notify`.
   sobrepor execuções (o `--lock` sai na hora se o ciclo anterior ainda roda).
 - **tmux/screen**: pro rápido e sujo.
 
-**Heartbeat / dead-man's switch.** Um processo morto não avisa que morreu — por
-isso o sinal de vida vai pra fora. Configure `heartbeat.url` (healthchecks.io,
-Uptime Kuma, cronitor…) e a Padmé faz um ping a cada N ciclos; se o ping some, o
-watchdog **externo** te alerta. Um ciclo com falha vira ping em `url/fail`.
-Opcionalmente `heartbeat.file` grava o timestamp da última vida localmente.
+> [!NOTE]
+> **Heartbeat / dead-man's switch.** Um processo morto não avisa que morreu —
+> por isso o sinal de vida vai pra fora. Configure `heartbeat.url`
+> (healthchecks.io, Uptime Kuma, cronitor…) e a Padmé faz um ping a cada N
+> ciclos; se o ping some, o watchdog **externo** te alerta. Um ciclo com falha
+> vira ping em `url/fail`. Opcionalmente `heartbeat.file` grava o timestamp da
+> última vida localmente.
 
 ---
 
