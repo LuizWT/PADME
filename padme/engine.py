@@ -15,7 +15,7 @@ import logging
 
 import httpx
 
-from .collectors import bruteforce, dns, http, ports, subdomains, takeover, tls
+from .collectors import bruteforce, dns, http, ports, subdomains, takeover, tls, wildcard
 from .config import Config
 from .models import Event, Kind, Record, ScanResult
 from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNotifier
@@ -43,6 +43,21 @@ class Engine:
             limits=limits,
             verify=False,  # queremos observar hosts mesmo com TLS quebrado
         ) as client:
+            # 0. curinga de DNS: se o apex responde a qualquer nome, a
+            # enumeração ativa não é confiável — detecta e usa pra filtrar.
+            wc = wildcard.Wildcard()
+            if self.cfg.collectors.wildcard:
+                try:
+                    wc = await wildcard.detect(
+                        target, self.cfg.timeout, self.cfg.collectors.wildcard_probes)
+                    if wc.active:
+                        log.info("[%s] wildcard DNS ativo -> %s", target, ", ".join(sorted(wc.ips)))
+                        result.records.append(
+                            Record(Kind.WILDCARD, target, ", ".join(sorted(wc.ips)))
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    result.errors.append(f"wildcard: {exc}")
+
             # 1. subdomínios
             hosts: set[str] = {target}
             if self.cfg.collectors.subdomains:
@@ -55,7 +70,7 @@ class Engine:
                 try:
                     words = bruteforce.load_words(self.cfg.collectors.wordlist)
                     bf_records, bf_hosts = await bruteforce.collect(
-                        target, words, self.cfg.timeout, self.cfg.concurrency)
+                        target, words, self.cfg.timeout, self.cfg.concurrency, wildcard=wc)
                     result.records.extend(bf_records)
                     hosts |= bf_hosts
                 except Exception as exc:  # noqa: BLE001

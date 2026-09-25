@@ -27,6 +27,7 @@ class Kind(str, Enum):
     TLS = "tls"
     TAKEOVER = "takeover"
     CERT_EXPIRY = "cert_expiry"
+    WILDCARD = "wildcard"
 
 
 class EventType(str, Enum):

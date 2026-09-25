@@ -29,7 +29,7 @@ RED, é não perder o instante em que surge superfície nova no alvo.
 
 ---
 
-## 2. Qualidade de sinal — subdomínio vivo vs. só um nome em DNS — 🏗️
+## 2. Qualidade de sinal — subdomínio vivo vs. só um nome em DNS — ✅
 
 **Problema.** Hoje "subdomínio novo" reporta a mera existência em DNS. Um
 subdomínio que resolve mas **não sobe serviço** vira ruído: falso-positivo
@@ -41,14 +41,17 @@ tempo testando host morto.
   `live` (tem HTTP/TLS/porta viva no mesmo scan) ou `quiet` (só resolve). A
   flag entra no valor do evento, e um `quiet → live` posterior vira um evento
   de mudança — um host dormente que acordou é **alvo novo**.
-- **Wildcard DNS** (próxima iteração): detectar apex com resposta curinga
-  (nome aleatório resolve → tudo resolve) e agrupar/suprimir, evitando
-  inundação de subdomínios falsos.
+- **Wildcard DNS** (implementado): o apex é sondado com nomes aleatórios; se
+  respondem a tudo (catch-all), a Padmé registra o curinga como evento
+  (`WILDCARD`, severidade **high**) e o bruteforce passa a **suprimir** os
+  candidatos que só resolvem para os IPs do curinga — um host real resolve para
+  um IP diferente e sobrevive ao filtro. Sem isso, a enumeração ativa inundaria
+  de subdomínios falsos.
 
 **Valor.** Direto na **qualidade do sinal** (critério **b**). O alerta deixa de
 ser "existe um nome" e passa a "existe um **alvo vivo** pra olhar".
 
-**Esforço.** Baixo (liveness) · Médio (wildcard).
+**Esforço.** Baixo (liveness) · Médio (wildcard). **Concluído.**
 
 ---
 
@@ -93,4 +96,5 @@ local, `pipx install` (o entrypoint já está no `pyproject.toml`).
 - ✅ Diff + histórico em SQLite (WAL)
 - ✅ Notificação: Telegram, Discord, webhook JSON, e-mail; níveis de severidade
 - ✅ Aviso de expiração de certificado (buckets 14/7/1d)
+- ✅ Qualidade de sinal: liveness (live/quiet) + **wildcard DNS** (supressão de falso-positivo)
 - ✅ Export JSON/CSV · painel web read-only · CI (GitHub Actions)

@@ -22,13 +22,14 @@ _MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
 _KIND_LABEL = {
     Kind.TAKEOVER: "TAKEOVER",
     Kind.CERT_EXPIRY: "CERT",
+    Kind.WILDCARD: "WILDCARD",
     Kind.SUBDOMAIN: "SUBDOMAIN",
     Kind.PORT: "PORT",
     Kind.HTTP: "HTTP",
     Kind.TLS: "TLS",
     Kind.DNS: "DNS",
 }
-_KIND_ORDER = [Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS]
+_KIND_ORDER = [Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.WILDCARD, Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS]
 
 # descrição técnica curta por (categoria, tipo de evento)
 _DESC = {
@@ -39,6 +40,7 @@ _DESC = {
     Kind.DNS: {"added": "registro novo", "removed": "registro removido", "changed": "registro alterado"},
     Kind.TAKEOVER: {"added": "possível subdomain takeover", "removed": "takeover resolvido", "changed": "takeover alterado"},
     Kind.CERT_EXPIRY: {"added": "certificado expira em breve", "removed": "certificado renovado", "changed": "situação do certificado mudou"},
+    Kind.WILDCARD: {"added": "wildcard DNS ativo (enumeração ativa não confiável)", "removed": "wildcard DNS não responde mais", "changed": "IPs do wildcard mudaram"},
 }
 
 
@@ -69,7 +71,7 @@ def _event_line(e: Event) -> str:
     if e.event_type == EventType.CHANGED:
         return f"{mark} {_key_html(e)}{_desc(e)}\n    {_esc(e.old_value)} <b>→</b> {_esc(e.new_value)}"
 
-    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY):
+    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.WILDCARD):
         return f"{mark} {_key_html(e)}{_desc(e)}\n    {_esc(e.new_value)}"
 
     if e.kind == Kind.SUBDOMAIN and e.event_type == EventType.ADDED and e.new_value:

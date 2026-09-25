@@ -11,6 +11,7 @@ import asyncio
 from pathlib import Path
 
 from ..models import Kind, Record
+from .wildcard import Wildcard
 
 try:
     import dns.asyncresolver
@@ -41,18 +42,20 @@ def load_words(path: str = "") -> list[str]:
     return DEFAULT_WORDS
 
 
-async def _resolves(resolver, host: str) -> bool:
+async def _resolve_ips(resolver, host: str) -> set[str]:
+    ips: set[str] = set()
     for rtype in ("A", "AAAA"):
         try:
-            await resolver.resolve(host, rtype)
-            return True
+            answer = await resolver.resolve(host, rtype)
         except Exception:
             continue
-    return False
+        ips |= {r.to_text().rstrip(".") for r in answer}
+    return ips
 
 
 async def collect(target: str, words: list[str], timeout: float,
-                  concurrency: int = 50) -> tuple[list[Record], set[str]]:
+                  concurrency: int = 50,
+                  wildcard: Wildcard | None = None) -> tuple[list[Record], set[str]]:
     if not _HAS_DNS:
         return [], set()
     resolver = dns.asyncresolver.Resolver()
@@ -64,8 +67,14 @@ async def collect(target: str, words: list[str], timeout: float,
 
     async def check(host: str) -> None:
         async with sem:
-            if await _resolves(resolver, host):
-                found.add(host)
+            ips = await _resolve_ips(resolver, host)
+            if not ips:
+                return
+            # Sob curinga, descarta o que só aponta pro catch-all (host falso);
+            # um host real resolve para IP diferente e sobrevive ao filtro.
+            if wildcard is not None and wildcard.matches(ips):
+                return
+            found.add(host)
 
     await asyncio.gather(*(check(h) for h in candidates))
     return [Record(Kind.SUBDOMAIN, h) for h in sorted(found)], found

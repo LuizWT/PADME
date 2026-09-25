@@ -73,6 +73,8 @@ class CollectorsConfig:
     subdomains: bool = True   # passivo (crt.sh / CT logs)
     bruteforce: bool = False  # ativo — resolve candidatos de uma wordlist
     wordlist: str = ""        # caminho da wordlist (vazio = lista embutida)
+    wildcard: bool = True     # detecta curinga de DNS e filtra falso-positivo
+    wildcard_probes: int = 3  # nomes aleatórios sondados para achar o curinga
     dns: bool = True          # passivo
     http: bool = True         # ativo leve (GET nos hosts)
     tls: bool = True          # ativo leve (handshake)
@@ -132,6 +134,8 @@ class Config:
                 subdomains=bool(col.get("subdomains", True)),
                 bruteforce=bool(col.get("bruteforce", False)),
                 wordlist=str(col.get("wordlist", "")),
+                wildcard=bool(col.get("wildcard", True)),
+                wildcard_probes=int(col.get("wildcard_probes", 3)),
                 dns=bool(col.get("dns", True)),
                 http=bool(col.get("http", True)),
                 tls=bool(col.get("tls", True)),
