@@ -38,8 +38,80 @@ h1{font-size:20px;margin:0 0 4px}
 .ev .line{padding:1px 0 1px 12px}
 .add{color:#3fb950}.rem{color:#f85149}.chg{color:#d29922}
 .empty{color:#8b949e;padding:16px}
+.trend{padding:8px 16px;border-bottom:1px solid #21262d}
+.trend b{color:#58a6ff;font-size:11px;letter-spacing:.06em}
+.trend svg{width:100%;height:auto;display:block;margin-top:6px}
+.legend{color:#8b949e;font-size:11px;margin-top:4px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 4px 0 10px;vertical-align:middle}
 footer{color:#8b949e;font-size:11px;margin-top:24px;text-align:center}
 """
+
+_TREND_ADD = "#3fb950"
+_TREND_CHG = "#d29922"
+_TREND_REM = "#f85149"
+
+
+def _trend_svg(series: list[dict], days: int) -> str:
+    """Barras empilhadas de eventos/dia (added/changed/removed) — mostra se a
+    superfície está crescendo, estável ou encolhendo. SVG inline, sem deps."""
+    W, H = 720.0, 150.0
+    pad_l, pad_r, pad_t, pad_b = 30.0, 8.0, 10.0, 22.0
+    plot_w = W - pad_l - pad_r
+    plot_h = H - pad_t - pad_b
+    base_y = pad_t + plot_h
+    max_total = max((d["total"] for d in series), default=0)
+
+    parts = [f'<svg viewBox="0 0 {W:.0f} {H:.0f}" role="img" '
+             f'aria-label="eventos por dia nos últimos {days} dias" '
+             'preserveAspectRatio="none">']
+    # linha de base + topo (grade discreta) com rótulo do máximo
+    parts.append(f'<line x1="{pad_l}" y1="{base_y:.1f}" x2="{W - pad_r:.1f}" '
+                 f'y2="{base_y:.1f}" stroke="#30363d" stroke-width="1"/>')
+    if max_total > 0:
+        parts.append(f'<line x1="{pad_l}" y1="{pad_t:.1f}" x2="{W - pad_r:.1f}" '
+                     f'y2="{pad_t:.1f}" stroke="#21262d" stroke-width="1"/>')
+        parts.append(f'<text x="{pad_l - 4:.1f}" y="{pad_t + 4:.1f}" '
+                     'text-anchor="end" font-size="9" fill="#8b949e">'
+                     f'{max_total}</text>')
+        parts.append(f'<text x="{pad_l - 4:.1f}" y="{base_y:.1f}" '
+                     'text-anchor="end" font-size="9" fill="#8b949e">0</text>')
+
+    n = len(series)
+    slot = plot_w / n if n else plot_w
+    bar_w = max(1.0, slot - 2.0)
+    scale = (plot_h / max_total) if max_total > 0 else 0.0
+
+    def seg(x, y_bottom, h, color):
+        # 2px de respiro no topo de cada segmento (fica entre os empilhados)
+        drawn = h - 2 if h > 2 else h
+        return (f'<rect x="{x:.1f}" y="{y_bottom - drawn:.1f}" width="{bar_w:.1f}" '
+                f'height="{drawn:.1f}" fill="{color}" rx="1.5"/>')
+
+    for i, d in enumerate(series):
+        x = pad_l + i * slot + (slot - bar_w) / 2
+        y_bottom = base_y  # o 1º segmento fica ancorado na base
+        title = (f'{d["day"]}: +{d["added"]} added, ~{d["changed"]} changed, '
+                 f'-{d["removed"]} removed')
+        cells = []
+        for key, color in (("added", _TREND_ADD), ("changed", _TREND_CHG),
+                           ("removed", _TREND_REM)):
+            h = d[key] * scale
+            if h > 0:
+                cells.append(seg(x, y_bottom, h, color))
+                y_bottom -= h
+        parts.append(f'<g><title>{_esc(title)}</title>{"".join(cells)}</g>')
+
+    # rótulos de X: primeiro, meio, último (MM-DD)
+    if n:
+        for idx in sorted({0, n // 2, n - 1}):
+            label = series[idx]["day"][5:]  # MM-DD
+            cx = pad_l + idx * slot + slot / 2
+            anchor = "start" if idx == 0 else ("end" if idx == n - 1 else "middle")
+            parts.append(f'<text x="{cx:.1f}" y="{H - 6:.1f}" text-anchor="{anchor}" '
+                         f'font-size="9" fill="#8b949e">{label}</text>')
+
+    parts.append("</svg>")
+    return "".join(parts)
 
 
 def _esc(s) -> str:
@@ -47,10 +119,12 @@ def _esc(s) -> str:
 
 
 def _render(cfg: Config) -> str:
+    trend_days = 30
     storage = Storage(cfg.db_path)
     try:
         rows = storage.all_state(cfg.targets)
         events = {t: storage.recent_events(t, 25) for t in cfg.targets}
+        trend = {t: storage.events_per_day(t, trend_days) for t in cfg.targets}
     finally:
         storage.close()
 
@@ -82,6 +156,22 @@ def _render(cfg: Config) -> str:
                 val = f"  <span class=v>{_esc(it['value'])}</span>" if it["value"] else ""
                 parts.append(f"<div class=row><span class=k>{_esc(it['key'])}</span>{val}</div>")
             parts.append("</div>")
+
+        serie = trend.get(target, [])
+        total_periodo = sum(d["total"] for d in serie)
+        parts.append(f"<div class=trend><b>TENDÊNCIA · {trend_days}d</b>")
+        if total_periodo:
+            parts.append(_trend_svg(serie, trend_days))
+            parts.append(
+                "<div class=legend>"
+                f"<i style='background:{_TREND_ADD}'></i>added"
+                f"<i style='background:{_TREND_CHG}'></i>changed"
+                f"<i style='background:{_TREND_REM}'></i>removed"
+                f" · {total_periodo} evento(s) no período</div>"
+            )
+        else:
+            parts.append(f"<div class=empty>sem eventos nos últimos {trend_days} dias.</div>")
+        parts.append("</div>")
 
         evs = events.get(target, [])
         if evs:

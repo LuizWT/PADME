@@ -4,6 +4,9 @@ Foco do projeto: **segurança ofensiva (RED)** — recon contínuo de superfíci
 ataque em alvos autorizados. Os itens abaixo são polimento de **operação** e
 **qualidade de sinal**, não novas categorias de feature.
 
+> **Status:** os 4 itens de polimento abaixo estão **concluídos**. A seção fica
+> como registro do racional (problema · solução · valor · esforço) de cada um.
+
 Legenda de status: ✅ feito · 🔜 planejado · 🏗️ em andamento
 
 ---
@@ -60,21 +63,24 @@ ser "existe um nome" e passa a "existe um **alvo vivo** pra olhar".
 
 ---
 
-## 3. Visão de tendência (a superfície ao longo do tempo) — 🔜
+## 3. Visão de tendência (a superfície ao longo do tempo) — ✅
 
 **Problema.** Você vê eventos pontuais (o diff), mas não a foto no tempo. Não
 dá pra responder "a superfície do alvo está **crescendo** ou estável?" nem
 "quando esse host apareceu pela primeira vez?". Em engajamento longo, tendência
 é sinal: pico de hosts novos = deploy = janela.
 
-**Solução.** O dado já existe (`events` + `first_seen`/`last_seen`). Falta só
-visualizar no painel: um gráfico simples (hosts/portas por dia) e uma timeline
-de eventos. Sem storage novo — query + render.
+**Solução (implementada).** O dado já existia (`events`); faltava visualizar.
+`storage.events_per_day(target, days)` devolve uma série densa (dias sem evento
+vêm zerados) e o painel renderiza um **gráfico de barras empilhadas** de
+eventos/dia por tipo (added/changed/removed) — SVG inline, sem dependência
+nova — logo acima da timeline de eventos. Um pico de barras verdes = deploy =
+janela; barras vermelhas = superfície encolhendo.
 
 **Valor.** Transforma histórico morto em **inteligência de alvo**; enxergar o
 padrão de quando o alvo mexe na infra.
 
-**Esforço.** Médio, mas barato pelo dado já estar gravado.
+**Esforço.** Médio, mas barato pelo dado já estar gravado. **Concluído.**
 
 ---
 
@@ -107,4 +113,5 @@ Falta apenas (opcional) publicar a imagem no GHCR pra `docker pull`.
 - ✅ Qualidade de sinal: liveness (live/quiet) + **wildcard DNS** (supressão de falso-positivo)
 - ✅ Empacotamento: Dockerfile + docker-compose (restart 24/7) · `pipx install`
 - ✅ Execução resiliente: heartbeat/dead-man's switch + `monitor --once`/`--lock` (cron)
+- ✅ Visão de tendência: gráfico de eventos/dia (30d) no painel
 - ✅ Export JSON/CSV · painel web read-only · CI (GitHub Actions)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .models import Event, EventType, Kind, Record
@@ -77,6 +78,37 @@ class Storage:
             params = tuple(targets)
         q += " ORDER BY target, kind, key"
         return [dict(r) for r in self._conn.execute(q, params).fetchall()]
+
+    def events_per_day(self, target: str, days: int = 30) -> list[dict]:
+        """Série densa dos últimos `days` dias: contagem de eventos por tipo por
+        dia (added/removed/changed). Dias sem evento vêm com zero, então o
+        gráfico fica com espaçamento uniforme. Base pra 'a superfície está
+        crescendo ou estável?'."""
+        cur = self._conn.execute(
+            "SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime') AS day,"
+            "       event_type, COUNT(*) AS n"
+            " FROM events WHERE target = ?"
+            "   AND ts >= strftime('%s', 'now', ?)"
+            " GROUP BY day, event_type",
+            (target, f"-{max(1, days) - 1} days"),
+        )
+        counts: dict[str, dict[str, int]] = {}
+        for r in cur.fetchall():
+            counts.setdefault(r["day"], {})[r["event_type"]] = r["n"]
+
+        today = datetime.now().date()
+        out: list[dict] = []
+        for i in range(max(1, days) - 1, -1, -1):
+            day = (today - timedelta(days=i)).isoformat()
+            c = counts.get(day, {})
+            added = c.get("added", 0)
+            removed = c.get("removed", 0)
+            changed = c.get("changed", 0)
+            out.append({
+                "day": day, "added": added, "removed": removed,
+                "changed": changed, "total": added + removed + changed,
+            })
+        return out
 
     def recent_events(self, target: str, limit: int = 50) -> list[Event]:
         cur = self._conn.execute(

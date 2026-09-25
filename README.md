@@ -21,7 +21,8 @@ te chama quando a paisagem muda.
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
   (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
-- **Export** para JSON/CSV e **painel web** read-only do histórico.
+- **Export** para JSON/CSV e **painel web** read-only, com **gráfico de
+  tendência** (eventos/dia nos últimos 30d) — enxerga a superfície crescer/encolher.
 - Modo **sentinela** (`monitor`) que roda sozinho, 24/7, com **heartbeat /
   dead-man's switch** (avisa que está vivo; silêncio = watchdog externo alerta).
 - `--once` + `--lock` (flock) para rodar via **cron** sem execuções sobrepostas.
@@ -271,7 +272,7 @@ Opcionalmente `heartbeat.file` grava o timestamp da última vida localmente.
 - [x] Dedupe do GET entre HTTP e takeover
 - [x] Execução resiliente — restart (Docker) + **heartbeat/dead-man's switch** + `--once`/`--lock`
 - [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
-- [ ] Visão de tendência no painel
+- [x] Visão de tendência no painel (gráfico de eventos/dia, 30d)
 - [x] Empacotamento (Docker / pipx)
 
 > Detalhamento (problema · solução · valor · esforço) em [`ROADMAP.md`](ROADMAP.md).
@@ -300,7 +301,7 @@ padme/
 │   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (flock) p/ cron
-│   ├── webpanel.py       # painel web read-only (stdlib)
+│   ├── webpanel.py       # painel web read-only + gráfico de tendência (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
 │   └── notify/           # telegram, discord, webhook (JSON), email
 ├── .github/workflows/    # CI: pytest a cada push
