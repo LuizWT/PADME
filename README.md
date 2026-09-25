@@ -209,7 +209,7 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
 - [x] Dedupe do GET entre HTTP e takeover
 - [ ] Execução resiliente (heartbeat / restart)
-- [~] Qualidade de sinal — subdomínio `live`/`quiet` (em andamento)
+- [ ] Qualidade de sinal — subdomínio `live`/`quiet` (em andamento)
 - [ ] Visão de tendência no painel
 - [ ] Empacotamento (Docker / pipx)
 
