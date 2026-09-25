@@ -38,6 +38,13 @@ h1{font-size:20px;margin:0 0 4px}
 .ev .line{padding:1px 0 1px 12px}
 .add{color:#3fb950}.rem{color:#f85149}.chg{color:#d29922}
 .empty{color:#8b949e;padding:16px}
+.tiles{display:flex;flex-wrap:wrap;gap:8px;padding:12px 16px;border-bottom:1px solid #21262d}
+.tile{flex:1 1 88px;min-width:88px;border:1px solid #30363d;border-radius:8px;padding:8px 10px;background:#0f141a}
+.tile .num{font-size:20px;font-weight:600;color:#c9d1d9;line-height:1.1}
+.tile .lab{font-size:10px;letter-spacing:.05em;color:#8b949e;margin-top:2px;text-transform:uppercase}
+.tile .sub{font-size:10px;color:#8b949e;margin-top:2px}
+.tile.crit{border-color:#f85149}.tile.crit .num{color:#f85149}
+.tile.warn{border-color:#d29922}.tile.warn .num{color:#d29922}
 .trend{padding:8px 16px;border-bottom:1px solid #21262d}
 .trend b{color:#58a6ff;font-size:11px;letter-spacing:.06em}
 .trend svg{width:100%;height:auto;display:block;margin-top:6px}
@@ -49,6 +56,39 @@ footer{color:#8b949e;font-size:11px;margin-top:24px;text-align:center}
 _TREND_ADD = "#3fb950"
 _TREND_CHG = "#d29922"
 _TREND_REM = "#f85149"
+
+
+def _tile(num, lab: str, sub: str = "", cls: str = "") -> str:
+    sub_html = f"<div class=sub>{_esc(sub)}</div>" if sub else ""
+    klass = f"tile {cls}".strip()
+    return (f"<div class='{klass}'><div class=num>{_esc(num)}</div>"
+            f"<div class=lab>{_esc(lab)}</div>{sub_html}</div>")
+
+
+def _stat_tiles(kinds: dict[str, list]) -> str:
+    """Foto rápida da superfície atual: KPIs de leitura em 1s, com os achados
+    críticos (takeover/wildcard/cert) destacados por cor de status."""
+    subs = kinds.get("subdomain", [])
+    live = sum(1 for s in subs if s["value"] == "live")
+    quiet = sum(1 for s in subs if s["value"] == "quiet")
+
+    tiles = [
+        _tile(len(subs), "subdomínios", f"{live} live · {quiet} quiet" if subs else ""),
+        _tile(len(kinds.get("http", [])), "serviços http"),
+        _tile(len(kinds.get("port", [])), "portas abertas"),
+        _tile(len(kinds.get("tls", [])), "certificados"),
+    ]
+    # críticos: só aparecem quando existem, com cor de status
+    n_takeover = len(kinds.get("takeover", []))
+    n_wildcard = len(kinds.get("wildcard", []))
+    n_cert = len(kinds.get("cert_expiry", []))
+    if n_takeover:
+        tiles.append(_tile(n_takeover, "takeover", "crítico", cls="crit"))
+    if n_cert:
+        tiles.append(_tile(n_cert, "cert expirando", cls="warn"))
+    if n_wildcard:
+        tiles.append(_tile(n_wildcard, "wildcard dns", cls="warn"))
+    return f"<div class=tiles>{''.join(tiles)}</div>"
 
 
 def _trend_svg(series: list[dict], days: int) -> str:
@@ -147,6 +187,8 @@ def _render(cfg: Config) -> str:
         parts.append(f"<div class=tgt><h2>{_esc(target)}<span class=badge>{total} itens</span></h2>")
         if not kinds:
             parts.append("<div class=empty>sem baseline ainda — rode um scan.</div>")
+        else:
+            parts.append(_stat_tiles(kinds))
         for kind in _KIND_ORDER:
             items = kinds.get(kind)
             if not items:

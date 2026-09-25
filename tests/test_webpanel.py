@@ -26,6 +26,25 @@ def test_render():
     # a seção de tendência aparece; com 1 scan (2 added) há eventos no período
     assert "TENDÊNCIA" in out
     assert "<svg" in out
+    # stat tiles da superfície atual
+    assert "class=tiles" in out
+    assert "subdomínios" in out and "portas abertas" in out
+
+
+def test_stat_tiles_destaca_criticos():
+    from padme.webpanel import _stat_tiles
+    kinds = {
+        "subdomain": [{"key": "a.x.com", "value": "live"},
+                      {"key": "b.x.com", "value": "quiet"}],
+        "takeover": [{"key": "c.x.com", "value": "GitHub Pages"}],
+        "wildcard": [{"key": "x.com", "value": "1.2.3.4"}],
+    }
+    html = _stat_tiles(kinds)
+    assert "1 live · 1 quiet" in html
+    assert "tile crit" in html          # takeover destacado
+    assert "tile warn" in html          # wildcard destacado
+    # sem cert_expiry -> não deve aparecer o tile de cert
+    assert "cert expirando" not in html
 
 
 def test_events_per_day_serie_densa():
