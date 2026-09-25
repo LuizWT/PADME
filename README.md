@@ -1,13 +1,13 @@
-# 🛰️ Padmé — Attack Surface Monitoring
+# Padmé — Attack Surface Monitoring
 
 ![tests](https://github.com/LuizWT/PADME/actions/workflows/tests.yml/badge.svg)
 
 > Vigia a superfície de ataque dos **seus** ativos ao longo do tempo e te avisa
-> no **Telegram** sempre que algo muda: subdomínio novo, porta aberta,
+> no **Telegram, Discord, E-mail e/ou outro** sempre que algo muda: subdomínio novo, porta aberta,
 > certificado trocado, serviço que subiu ou caiu — e **possível subdomain
 > takeover**.
 
-O AutoRecon faz uma foto. A **Padmé faz um filme** — ela guarda o estado e só
+**A Padmé faz um filme:** guardando o estado e só
 te chama quando a paisagem muda.
 
 **Destaques**
@@ -24,7 +24,7 @@ te chama quando a paisagem muda.
 
 ---
 
-## ⚖️ Uso responsável
+## Uso responsável
 
 Monitore **apenas** domínios/hosts que você é dono ou tem **autorização
 explícita** para testar. A coleta ativa (HTTP, TLS e principalmente o scan de
@@ -33,14 +33,14 @@ consciente — deixe-a como `true` só depois de confirmar seu escopo.
 
 ---
 
-## 🧩 Como funciona
+## Como funciona?
 
 ```
 subdomains (CT logs)  ─┐
 dns  A/AAAA/CNAME/MX   ─┤
 http status/server     ─┤
 tls  emissor/validade  ─┼─►  Records ─► diff vs. estado ─► eventos ─► nível ─► Telegram
-takeover (CNAME+fp)    ─┤        (SQLite)
+takeover (CNAME+fp)    ─┤    (SQLite)
 ports  connect-scan    ─┘
 ```
 
@@ -53,7 +53,7 @@ Fontes de subdomínio (passivas, Certificate Transparency):
 `crt.name` e `crt.sh`. O parser é defensivo — extrai hostnames válidos sob o
 apex independente do formato exato da resposta.
 
-### 🎯 Subdomain takeover
+### Subdomain takeover
 
 Para cada host com **CNAME**, a Padmé casa o alvo contra uma base de serviços
 (baseada no **can-i-take-over-xyz**: GitHub Pages, S3, Heroku, Azure, Shopify,
@@ -67,7 +67,7 @@ Fastly, Zendesk, etc.) e confirma de dois jeitos:
 Host sem CNAME nem entra na checagem (custo zero). Um achado vira um evento
 `TAKEOVER`, que aparece no **topo** do alerta (severidade `critical`).
 
-### ⏰ Expiração de certificado
+### Expiração de certificado
 
 O collector de TLS parseia o certificado (via `cryptography`, então funciona
 até em cert self-signed ou já expirado) e, se ele estiver a **≤ N dias** de
@@ -78,7 +78,7 @@ vez, o evento vira `EXPIRADO`.
 
 ---
 
-## 🚀 Instalação
+## Instalação
 
 ```bash
 git clone <seu-repo> padme && cd padme
@@ -87,7 +87,7 @@ pip install -r requirements.txt         # ou: pip install -e .
 cp config.example.yaml config.yaml      # e edite
 ```
 
-## ⚙️ Configuração do Telegram
+## Configuração do Telegram
 
 1. `@BotFather` → `/newbot` → copie o **bot token**.
 2. Descubra seu **chat_id**: mande uma msg pro bot e abra
@@ -106,7 +106,7 @@ Teste:
 python -m padme test-telegram
 ```
 
-## 🕹️ Uso
+## Uso
 
 ```bash
 # Scan único — grava/atualiza o baseline e imprime as mudanças
@@ -138,7 +138,7 @@ python -m padme test-notify
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
 
-## 🔔 Níveis de notificação
+## Níveis de notificação
 
 O **terminal sempre mostra tudo**. O nível é o limiar mínimo de severidade que
 é **enviado ao Telegram**:
@@ -155,7 +155,7 @@ Defina em `config.yaml` (`telegram.level: high`) ou na hora
 (`--level critical`). O `monitor` loga o nível ativo e, a cada ciclo, quantas
 mudanças passaram no filtro.
 
-## 📣 Canais de notificação
+## Canais de notificação
 
 Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados:
 
@@ -185,7 +185,7 @@ Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 Teste todos de uma vez com `python -m padme test-notify`.
 
-## ⏱️ Rodando 24/7
+## Rodando 24/7
 
 - **systemd** (recomendado em servidor): crie um service que roda
   `python -m padme monitor` e reinicia sozinho.
@@ -195,7 +195,7 @@ Teste todos de uma vez com `python -m padme test-notify`.
 
 ---
 
-## 🗺️ Roadmap (ideias)
+## Roadmap (ideias)
 
 - [x] Detecção de subdomain takeover (CNAME dangling + fingerprint)
 - [x] Níveis de notificação por severidade
@@ -217,14 +217,14 @@ Teste todos de uma vez com `python -m padme test-notify`.
 
 ---
 
-## 🧪 Testes
+## Testes
 
 ```bash
 pip install pytest
 pytest -q
 ```
 
-## 📁 Estrutura
+## Estrutura
 
 ```
 padme/
