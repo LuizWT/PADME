@@ -22,7 +22,9 @@ te chama quando a paisagem muda.
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
   (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
 - **Export** para JSON/CSV e **painel web** read-only do histórico.
-- Modo **sentinela** (`monitor`) que roda sozinho, 24/7.
+- Modo **sentinela** (`monitor`) que roda sozinho, 24/7, com **heartbeat /
+  dead-man's switch** (avisa que está vivo; silêncio = watchdog externo alerta).
+- `--once` + `--lock` (flock) para rodar via **cron** sem execuções sobrepostas.
 
 ---
 
@@ -168,6 +170,9 @@ python -m padme monitor
 # Sobrescrevendo intervalo e nível na hora
 python -m padme monitor --interval 600 --level high
 
+# Um único ciclo e sai (ideal p/ cron) + lock de instância única (não sobrepõe)
+python -m padme monitor --once --lock /tmp/padme.lock
+
 # Ver o histórico de eventos gravados
 python -m padme events --limit 50
 
@@ -238,9 +243,16 @@ Teste todos de uma vez com `python -m padme test-notify`.
   automático embutido. Ver a seção [Docker](#docker-sentinela-247).
 - **systemd** (em servidor sem Docker): crie um service que roda
   `padme monitor` com `Restart=always`.
-- **cron + `scan --notify`**: se preferir não deixar processo vivo, agende
-  `padme scan --notify` de hora em hora.
+- **cron + `monitor --once --lock`**: se preferir não deixar processo vivo,
+  agende `padme monitor --once --lock /tmp/padme.lock` — um ciclo por vez, sem
+  sobrepor execuções (o `--lock` sai na hora se o ciclo anterior ainda roda).
 - **tmux/screen**: pro rápido e sujo.
+
+**Heartbeat / dead-man's switch.** Um processo morto não avisa que morreu — por
+isso o sinal de vida vai pra fora. Configure `heartbeat.url` (healthchecks.io,
+Uptime Kuma, cronitor…) e a Padmé faz um ping a cada N ciclos; se o ping some, o
+watchdog **externo** te alerta. Um ciclo com falha vira ping em `url/fail`.
+Opcionalmente `heartbeat.file` grava o timestamp da última vida localmente.
 
 ---
 
@@ -257,7 +269,7 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] CI (GitHub Actions) rodando os testes
 - [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
 - [x] Dedupe do GET entre HTTP e takeover
-- [~] Execução resiliente (heartbeat / restart) — restart via Docker já; falta heartbeat
+- [x] Execução resiliente — restart (Docker) + **heartbeat/dead-man's switch** + `--once`/`--lock`
 - [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
 - [ ] Visão de tendência no painel
 - [x] Empacotamento (Docker / pipx)
@@ -285,7 +297,9 @@ padme/
 │   ├── storage.py        # SQLite: estado + histórico
 │   ├── differ.py         # engine de diff (puro, testável)
 │   ├── engine.py         # orquestra collectors + diff
-│   ├── scheduler.py      # loop do modo sentinela (monitor)
+│   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat
+│   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
+│   ├── singleton.py      # lock de instância única (flock) p/ cron
 │   ├── webpanel.py       # painel web read-only (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
 │   └── notify/           # telegram, discord, webhook (JSON), email
@@ -297,5 +311,6 @@ padme/
 ├── requirements.txt
 ├── pyproject.toml
 └── tests/                # differ, takeover, levels, notify, certexpiry, export,
-                          # bruteforce, webpanel, email, signal, wildcard, cli
+                          # bruteforce, webpanel, email, signal, wildcard, cli,
+                          # heartbeat, singleton
 ```

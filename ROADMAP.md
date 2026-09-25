@@ -8,24 +8,29 @@ Legenda de status: ✅ feito · 🔜 planejado · 🏗️ em andamento
 
 ---
 
-## 1. Execução resiliente (o sentinela não pode morrer calado) — 🔜
+## 1. Execução resiliente (o sentinela não pode morrer calado) — ✅
 
 **Problema.** A Padmé roda como 1 processo em 1 máquina. No escopo pessoal, o
 "1 máquina" quase não importa — o risco real é **morte silenciosa**: a máquina
 dorme, reinicia ou o loop cai, e você **para de receber alertas sem perceber**.
 Num recon contínuo, achar que está coberto e não estar é o pior estado.
 
-**Solução.** Nada distribuído. Proporcional ao risco:
-- rodar sob supervisor que reinicia sozinho (systemd `Restart=always` ou a
-  restart policy do Docker — ver item 4);
-- **heartbeat / dead-man's switch**: a Padmé emite sinal de vida a cada N
-  ciclos; silêncio = algo quebrou. Opcional: `--once` + cron com lock (flock)
-  pra não sobrepor execuções.
+**Solução (implementada).** Nada distribuído. Proporcional ao risco:
+- rodar sob supervisor que reinicia sozinho — `restart: unless-stopped` no
+  Docker (item 4) ou systemd `Restart=always`;
+- **heartbeat / dead-man's switch** (`heartbeat.*` no config): a cada N ciclos a
+  Padmé faz um ping num watchdog externo (healthchecks.io etc.) — um processo
+  morto não avisa que morreu, então quem alerta no silêncio é o serviço de
+  fora; um ciclo com falha vira ping em `url/fail`. Grava também um arquivo
+  local com o timestamp da última vida;
+- `monitor --once` (um ciclo e sai) + `--lock PATH` (flock) pra rodar via cron
+  sem sobrepor execuções.
 
 **Valor.** Confiabilidade do alerta (critério **d**: não perder evento). No
 RED, é não perder o instante em que surge superfície nova no alvo.
 
-**Esforço.** Baixo-médio. Boa parte vem de graça com o item 4 (Docker/systemd).
+**Esforço.** Baixo-médio. Boa parte veio de graça com o item 4 (Docker/systemd).
+**Concluído.**
 
 ---
 
@@ -101,4 +106,5 @@ Falta apenas (opcional) publicar a imagem no GHCR pra `docker pull`.
 - ✅ Aviso de expiração de certificado (buckets 14/7/1d)
 - ✅ Qualidade de sinal: liveness (live/quiet) + **wildcard DNS** (supressão de falso-positivo)
 - ✅ Empacotamento: Dockerfile + docker-compose (restart 24/7) · `pipx install`
+- ✅ Execução resiliente: heartbeat/dead-man's switch + `monitor --once`/`--lock` (cron)
 - ✅ Export JSON/CSV · painel web read-only · CI (GitHub Actions)

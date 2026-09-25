@@ -29,3 +29,13 @@ def test_sem_subcomando_exige_um(capsys):
     parser = build_parser()
     with pytest.raises(SystemExit):
         parser.parse_args([])
+
+
+def test_monitor_once_e_lock():
+    parser = build_parser()
+    args = parser.parse_args(["monitor", "--once", "--lock", "/tmp/x.lock"])
+    assert args.once is True
+    assert args.lock == "/tmp/x.lock"
+    # padrão: sem --once/--lock
+    d = parser.parse_args(["monitor"])
+    assert d.once is False and d.lock is None

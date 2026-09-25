@@ -69,6 +69,22 @@ class EmailConfig:
 
 
 @dataclass
+class HeartbeatConfig:
+    enabled: bool = False
+    url: str = ""            # ping de watchdog (healthchecks.io etc.); vazio = só arquivo
+    every_cycles: int = 1    # emite o sinal a cada N ciclos
+    file: str = ""           # arquivo local com o timestamp da última vida
+
+    def resolved(self) -> "HeartbeatConfig":
+        return HeartbeatConfig(
+            enabled=self.enabled,
+            url=_expand(self.url),
+            every_cycles=self.every_cycles,
+            file=self.file,
+        )
+
+
+@dataclass
 class CollectorsConfig:
     subdomains: bool = True   # passivo (crt.sh / CT logs)
     bruteforce: bool = False  # ativo — resolve candidatos de uma wordlist
@@ -99,6 +115,7 @@ class Config:
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
 
     @staticmethod
     def load(path: str | Path) -> "Config":
@@ -119,6 +136,7 @@ class Config:
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
         em = raw.get("email") or {}
+        hb = raw.get("heartbeat") or {}
         em_to = em.get("to") or []
         if isinstance(em_to, str):
             em_to = [em_to]
@@ -167,6 +185,12 @@ class Config:
                 from_addr=str(em.get("from", "")),
                 to=[str(t) for t in em_to],
                 use_tls=bool(em.get("use_tls", True)),
+            ).resolved(),
+            heartbeat=HeartbeatConfig(
+                enabled=bool(hb.get("enabled", False)),
+                url=str(hb.get("url", "")),
+                every_cycles=int(hb.get("every_cycles", 1)),
+                file=str(hb.get("file", "")),
             ).resolved(),
         )
 
