@@ -1,7 +1,7 @@
 """Teste do formatador de e-mail (texto puro)."""
 
-from padme.notify import format_events_plain
 from padme.models import Event, EventType, Kind
+from padme.notify import format_events_plain
 
 
 def test_plain():

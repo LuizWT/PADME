@@ -20,11 +20,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import time
 
 import httpx
 
 from . import netpolicy
-from .collectors import bruteforce, dns, http, ports, subdomains, takeover, tls, wildcard
+from .collectors import (
+    bruteforce,
+    dns,
+    http,
+    ports,
+    subdomains,
+    takeover,
+    tls,
+    wildcard,
+)
 from .config import Config
 from .levels import Level, parse_level
 from .models import CollectionResult, Event, Kind, Record, ScanResult
@@ -53,6 +63,8 @@ class Engine:
 
     async def scan_target(self, target: str) -> ScanResult:
         result = ScanResult(target=target)
+        t0 = time.monotonic()
+        log.debug("[%s] scan iniciado", target)
         limits = httpx.Limits(max_connections=self.cfg.concurrency)
         headers = {"User-Agent": _USER_AGENT}
 
@@ -113,6 +125,9 @@ class Engine:
 
         # 3. qualidade de sinal: marca subdomínio como live (tem serviço) ou quiet
         result.records = annotate_liveness(result.records)
+        log.info("[%s] scan concluído: %d host(s), %d record(s), %d erro(s), %dms",
+                 target, len(hosts), len(result.records), len(result.errors),
+                 int((time.monotonic() - t0) * 1000))
         return result
 
     async def _scan_host(

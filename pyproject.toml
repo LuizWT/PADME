@@ -27,3 +27,10 @@ include = ["padme*"]
 # com ModuleNotFoundError: No module named 'padme'.
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# Conjunto enxuto e de alto valor: pyflakes (bugs reais: nomes indefinidos,
+# imports não usados), ordenação de imports e avisos do pycodestyle. Evita
+# regras estilísticas ruidosas (linhas longas intencionais, blind-except
+# defensivo) que não indicam defeito neste projeto pequeno.
+select = ["F", "I", "W"]

@@ -1,8 +1,8 @@
 """Testes dos notificadores extras (Discord/webhook)."""
 
+from padme.models import Event, EventType, Kind
 from padme.notify import format_events_md
 from padme.notify.webhook import event_to_dict
-from padme.models import Event, EventType, Kind
 
 
 def _sample():

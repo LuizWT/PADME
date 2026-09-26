@@ -14,8 +14,15 @@ te chama quando a paisagem muda.
 
 - Monitoramento contínuo com **diff** entre varreduras (estado em SQLite).
 - Alerta no **Telegram** com formatação estilo `git diff` e blocos recolhíveis.
-- Canais: **Telegram**, **Discord**, **webhook JSON** e **e-mail** (SMTP).
-- **Níveis de notificação** por severidade (`debug` → `critical`).
+- Canais: **Telegram**, **Discord**, **webhook JSON** e **e-mail** (SMTP), cada um
+  com o **seu próprio nível** de severidade (política por canal).
+- **Confiabilidade primeiro:** erro de coleta (timeout, fonte fora do ar) **não**
+  vira "recurso removido" — o estado é preservado; o 1º scan é **baseline** (não
+  polui o histórico); notificações têm **retry** e um canal não derruba os outros.
+- **Segurança operacional:** segredos nunca aparecem nos logs; sem seguir
+  redirects e sem sondar IP privado/reservado por padrão (anti-SSRF/rede interna).
+- **`padme doctor`** (integridade do banco + saúde dos scans) e **retenção** de
+  histórico configurável.
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
 - **Aviso de expiração de certificado TLS** (antes de virar incidente).
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
@@ -46,18 +53,26 @@ te chama quando a paisagem muda.
 ## Como funciona?
 
 ```
-subdomains (CT logs)  ─┐
-dns  A/AAAA/CNAME/MX   ─┤
-http status/server     ─┤
-tls  emissor/validade  ─┼─►  Records ─► diff vs. estado ─► eventos ─► nível ─► Telegram
-takeover (CNAME+fp)    ─┤    (SQLite)
+subdomains (CT logs)  ─┐                                          ┌─► Telegram (nível próprio)
+dns  A/AAAA/CNAME/MX   ─┤                                          ├─► Discord  (nível próprio)
+http status/server     ─┼─► Records + escopos observados ─► diff ─┤
+tls  emissor/validade  ─┤        vs. estado (SQLite)     ─► eventos├─► Webhook  (nível próprio)
+takeover (CNAME+fp)    ─┤                                          └─► E-mail   (nível próprio)
 ports  connect-scan    ─┘
 ```
 
 Cada fato observável vira um `Record (kind, key, value)`. O diff é uma
 operação de conjuntos: `key` nova = **added**, `key` sumiu = **removed**,
 mesmo `key` com `value` diferente = **changed**. Cada evento recebe uma
-**severidade**, e o **nível** configurado decide o que chega no Telegram.
+**severidade**, e **cada canal** aplica o seu próprio limiar de nível.
+
+> [!IMPORTANT]
+> **Ausência só vira `removed` quando o escopo foi observado com sucesso.** Cada
+> collector devolve `ok=True/False`; se a coleta de um host/categoria falhou
+> (timeout, fonte indisponível), aquele escopo **não** gera `removed` — o estado
+> anterior é preservado. Uma falha transitória de rede nunca apaga sua superfície.
+> E o **primeiro scan** de um alvo é gravado como **baseline** (estado, zero
+> eventos), então o histórico e a tendência não começam com "tudo é novo".
 
 Fontes de subdomínio (passivas, Certificate Transparency):
 `crt.name` e `crt.sh`. O parser é defensivo — extrai hostnames válidos sob o
@@ -85,6 +100,22 @@ expirar (`collectors.cert_expiry_days`, padrão 14), emite um evento
 `CERT_EXPIRY` (severidade `high`). O valor gravado é estável (a data), então
 você recebe **um** aviso ao entrar na janela — não um por dia. Se expirar de
 vez, o evento vira `EXPIRADO`.
+
+### Segurança operacional
+
+- **Segredos fora dos logs.** `httpx`/`httpcore` são silenciados (a request line
+  com o token do bot / secret do webhook não é logada) e um filtro mascara
+  qualquer segredo conhecido que apareça em log — mesmo com `-v`.
+- **Anti-SSRF (`network.follow_redirects`, padrão `false`).** Um `Location:
+  http://127.0.0.1/` não é seguido; o destino é apenas registrado.
+- **IP privado/reservado (`network.allow_private_ips`, padrão `false`).** Hosts
+  que resolvem para faixas internas (10/8, 192.168/16, 127/8, link-local, ULA
+  IPv6…) **não** são sondados ativamente (HTTP/TLS/portas). O DNS passivo segue.
+  Ligue conscientemente só se for monitorar rede interna.
+- **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
+  lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
+- **Painel só em localhost por padrão.** Servir em `--host 0.0.0.0` imprime um
+  aviso e mostra um banner: o painel não tem autenticação.
 
 ---
 
@@ -192,15 +223,18 @@ python -m padme web            # http://127.0.0.1:8787
 
 # Testar todos os canais de notificação configurados
 python -m padme test-notify
+
+# Diagnóstico: integridade do banco, saúde dos scans por alvo e avisos de config
+python -m padme doctor
 ```
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
 
-## Níveis de notificação
+## Níveis de notificação (por canal)
 
-O **terminal sempre mostra tudo**. O nível é o limiar mínimo de severidade que
-é **enviado ao Telegram**:
+O **terminal sempre mostra tudo**. Cada **canal** tem o seu próprio limiar
+mínimo de severidade — não existe mais um "nível global do Telegram":
 
 | Nível | Envia |
 |---|---|
@@ -210,13 +244,22 @@ O **terminal sempre mostra tudo**. O nível é o limiar mínimo de severidade qu
 | `low` | acima + remoções e mudanças menores |
 | `debug` | **tudo**, inclusive registros DNS |
 
-Defina em `config.yaml` (`telegram.level: high`) ou na hora
-(`--level critical`). O `monitor` loga o nível ativo e, a cada ciclo, quantas
-mudanças passaram no filtro.
+```yaml
+telegram: { level: medium }   # padrão
+discord:  { level: low }
+webhook:  { level: debug }    # sink de automação recebe o fluxo completo
+email:    { level: high }     # e-mail só o que importa
+```
+
+Padrões: `telegram`/`discord`/`email` = `medium`; `webhook` = `debug`. `--level`
+na CLI sobrescreve o do **Telegram**. Cada canal filtra de forma independente, e
+o envio é **concorrente** (um canal lento/quebrado não segura os outros).
 
 ## Canais de notificação
 
-Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados:
+Os alertas vão para **todos** os canais habilitados, cada um filtrando pelo seu
+nível, com **retry** (timeout/429/5xx, com backoff e respeito a `Retry-After`;
+nunca em 4xx):
 
 - **Telegram** — formatação HTML estilo diff, com blocos recolhíveis.
 - **Discord** — cole a URL de um *Webhook* de canal em `discord.webhook_url`
@@ -224,17 +267,23 @@ Os alertas (já filtrados pelo nível) vão para **todos** os canais habilitados
 - **E-mail** — SMTP com STARTTLS (`email.*`). Para Gmail, use uma *App
   Password*. Corpo em texto puro.
 - **Webhook genérico** — `webhook.url` recebe um **JSON estruturado** a cada
-  mudança, ideal para **n8n** e automações:
+  mudança, ideal para **n8n** e automações. Aceita `headers` opcionais (ex.: um
+  token de auth) e cada evento traz `event_id`/`scan_id`/`detected_at` (UTC) para
+  deduplicação e troubleshooting:
 
   ```json
   {
+    "schema_version": 1,
     "source": "padme",
     "type": "changes",
     "target": "alvo.com",
-    "time": "2026-09-24T00:46:00",
+    "scan_id": "9f2c…",
+    "time": "2026-09-26T00:46:00+00:00",
     "count": 2,
     "events": [
-      {"severity": "critical", "kind": "takeover", "type": "added",
+      {"event_id": "a1b2…", "scan_id": "9f2c…",
+       "detected_at": "2026-09-26T00:46:00+00:00",
+       "severity": "critical", "kind": "takeover", "type": "added",
        "key": "blog.alvo.com", "old": null, "new": "GitHub Pages | ..."}
     ],
     "text": "**PADMÉ** · `alvo.com` ..."
@@ -282,16 +331,36 @@ Teste todos de uma vez com `python -m padme test-notify`.
 - [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
 - [x] Visão de tendência no painel (gráfico de eventos/dia, 30d)
 - [x] Empacotamento (Docker / pipx)
+- [x] **Confiabilidade** — erro de coleta ≠ removido (escopos observados), baseline sem eventos
+- [x] **Severidade por canal** + retry + envio concorrente
+- [x] **Segurança operacional** — redação de segredos no log, anti-SSRF, política de IP privado
+- [x] **Saúde da coleta** no painel + `padme doctor` + retenção + lock multiplataforma
 
 > Detalhamento (problema · solução · valor · esforço) em [`ROADMAP.md`](ROADMAP.md).
 
 ---
 
+## Retenção do histórico
+
+O `state` (foto atual) nunca é apagado. O histórico de **eventos** pode crescer
+sem limite em 24/7 — defina `storage.event_retention_days` (0 = mantém tudo) e o
+monitor poda os eventos antigos a cada ciclo.
+
+## Release limpo
+
+Nunca zipe a pasta na mão (arrastaria `.env`, `config.yaml`, `padme.db`). Use
+`git archive`, que só empacota o que está versionado:
+
+```bash
+sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
+```
+
 ## Testes
 
 ```bash
-pip install pytest
-pytest -q
+pip install pytest ruff
+ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
+pytest -q                        # 130 testes
 ```
 
 ## Estrutura
@@ -299,27 +368,29 @@ pytest -q
 ```
 padme/
 ├── padme/
-│   ├── cli.py            # comandos scan / monitor / events / test-telegram
-│   ├── config.py         # carrega e valida o YAML
-│   ├── models.py         # Record / Event / Kind
+│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor
+│   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
+│   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── levels.py         # severidade dos eventos + filtro por nível
-│   ├── storage.py        # SQLite: estado + histórico
+│   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
+│   ├── logredact.py      # redação de segredos nos logs
+│   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
 │   ├── differ.py         # engine de diff (puro, testável)
-│   ├── engine.py         # orquestra collectors + diff
-│   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat
+│   ├── engine.py         # orquestra collectors + escopos observados + diff
+│   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat + retenção
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
-│   ├── singleton.py      # lock de instância única (flock) p/ cron
-│   ├── webpanel.py       # painel web read-only + gráfico de tendência (stdlib)
+│   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
+│   ├── webpanel.py       # painel read-only + saúde da coleta + tendência (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
-│   └── notify/           # telegram, discord, webhook (JSON), email
-├── .github/workflows/    # CI: pytest a cada push
+│   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
+├── .github/workflows/    # CI: ruff + compileall + pytest (matriz 3.10/3.11/3.12)
+├── scripts/release.sh    # release limpo via git archive
 ├── Dockerfile            # imagem do sentinela (roda `padme`)
 ├── docker-compose.yml    # sobe o monitor 24/7 com restart automático
 ├── .dockerignore
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # differ, takeover, levels, notify, certexpiry, export,
-                          # bruteforce, webpanel, email, signal, wildcard, cli,
-                          # heartbeat, singleton
+└── tests/                # 130 testes: unitários + reliability + netpolicy +
+                          # logredact + dispatch/retry + collectors_ok + integração
 ```
