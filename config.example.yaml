@@ -7,10 +7,15 @@
 # Confirmação de escopo — precisa ser true para o Padmé rodar.
 scope_confirmed: false
 
-# Domínios apex a monitorar.
+# Domínios apex a monitorar. Aceita formas tolerantes (https://x.com/path,
+# X.COM:443, *.x.com) — são normalizadas para o apex canônico e deduplicadas.
 targets:
   - exemplo.com
   # - outrodominio.com.br
+
+# Ponto de observação (multi-vantage). Vazio = hostname da máquina. Aparece nos
+# exports e no `padme merge`, pra comparar a superfície vista de lugares diferentes.
+source: ""
 
 # Intervalo entre ciclos no modo monitor (segundos). 3600 = 1h.
 interval_seconds: 3600

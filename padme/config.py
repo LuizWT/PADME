@@ -3,10 +3,74 @@
 from __future__ import annotations
 
 import os
+import re
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+_TRUE = {"true", "1", "yes", "y", "on", "sim"}
+_FALSE = {"false", "0", "no", "n", "off", "nao", "não", ""}
+_VALID_LEVELS = {"debug", "low", "medium", "high", "critical", "all", "verbose", "info",
+                 "0", "1", "2", "3", "4"}
+_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _as_bool(v: object, default: bool) -> bool:
+    """Booleano robusto: aceita bool nativo ou string ('true'/'false'/'sim'…).
+    Evita a armadilha do `bool('false') == True`."""
+    if isinstance(v, bool):
+        return v
+    if v is None:
+        return default
+    s = str(v).strip().lower()
+    if s in _TRUE:
+        return True
+    if s in _FALSE:
+        return False
+    raise ValueError(f"valor booleano inválido: {v!r} (use true/false)")
+
+
+def _as_int(v: object, name: str, default: int) -> int:
+    if v is None:
+        return default
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}: inteiro inválido: {v!r}") from None
+
+
+def _as_float(v: object, name: str, default: float) -> float:
+    if v is None:
+        return default
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name}: número inválido: {v!r}") from None
+
+
+def _normalize_target(raw: str) -> str:
+    """Normaliza um alvo para APEX canônico. Aceita entradas tolerantes
+    (https://x.com/path, X.COM:443, *.x.com, x.com.) e devolve 'x.com'.
+    Levanta ValueError se não der pra extrair um domínio válido."""
+    t = str(raw).strip().lower()
+    if "://" in t:
+        t = t.split("://", 1)[1]
+    t = t.split("/", 1)[0].split("?", 1)[0]
+    if "@" in t:
+        t = t.rsplit("@", 1)[1]
+    if t.count(":") == 1:  # remove :porta (não mexe em IPv6, que tem vários ':')
+        t = t.rsplit(":", 1)[0]
+    t = t.lstrip("*.").rstrip(".")
+    try:  # IDN/punycode: café.com -> xn--caf-dma.com
+        t = t.encode("idna").decode("ascii")
+    except Exception:  # noqa: BLE001 — validação de label decide abaixo
+        pass
+    labels = t.split(".")
+    if not t or len(labels) < 2 or not all(_LABEL_RE.match(lb) for lb in labels):
+        raise ValueError(f"alvo inválido: {raw!r} (esperado um domínio apex, ex.: exemplo.com)")
+    return t
 
 
 @dataclass
@@ -137,6 +201,7 @@ class Config:
     concurrency: int = 50
     timeout: float = 8.0
     db_path: str = "padme.db"
+    source: str = ""          # ponto de observação (multi-vantage); vazio = hostname
     collectors: CollectorsConfig = field(default_factory=CollectorsConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
@@ -161,12 +226,17 @@ class Config:
         if db_path and not Path(db_path).is_absolute():
             db_path = str((path.parent / db_path).resolve())
 
-        targets = raw.get("targets") or []
-        if isinstance(targets, str):
-            targets = [targets]
-        targets = [t.strip() for t in targets if t and t.strip()]
-        if not targets:
+        raw_targets = raw.get("targets") or []
+        if isinstance(raw_targets, str):
+            raw_targets = [raw_targets]
+        raw_targets = [t for t in raw_targets if t and str(t).strip()]
+        if not raw_targets:
             raise ValueError("Config precisa de pelo menos um item em 'targets'.")
+        targets: list[str] = []
+        for t in raw_targets:  # normaliza e deduplica preservando ordem
+            nt = _normalize_target(t)
+            if nt not in targets:
+                targets.append(nt)
 
         col = raw.get("collectors") or {}
         net = raw.get("network") or {}
@@ -183,70 +253,105 @@ class Config:
         if not isinstance(wh_headers, dict):
             wh_headers = {}
 
-        return Config(
+        cfg = Config(
             targets=targets,
-            scope_confirmed=bool(raw.get("scope_confirmed", False)),
-            interval_seconds=int(raw.get("interval_seconds", 3600)),
-            concurrency=int(raw.get("concurrency", 50)),
-            timeout=float(raw.get("timeout", 8.0)),
+            scope_confirmed=_as_bool(raw.get("scope_confirmed"), False),
+            interval_seconds=_as_int(raw.get("interval_seconds"), "interval_seconds", 3600),
+            concurrency=_as_int(raw.get("concurrency"), "concurrency", 50),
+            timeout=_as_float(raw.get("timeout"), "timeout", 8.0),
             db_path=db_path,
+            source=str(raw.get("source", "")).strip() or socket.gethostname(),
             collectors=CollectorsConfig(
-                subdomains=bool(col.get("subdomains", True)),
-                bruteforce=bool(col.get("bruteforce", False)),
+                subdomains=_as_bool(col.get("subdomains"), True),
+                bruteforce=_as_bool(col.get("bruteforce"), False),
                 wordlist=str(col.get("wordlist", "")),
-                wildcard=bool(col.get("wildcard", True)),
-                wildcard_probes=int(col.get("wildcard_probes", 3)),
-                dns=bool(col.get("dns", True)),
-                http=bool(col.get("http", True)),
-                tls=bool(col.get("tls", True)),
-                cert_expiry_days=int(col.get("cert_expiry_days", 14)),
-                max_response_bytes=int(col.get("max_response_bytes", 262144)),
-                takeover=bool(col.get("takeover", True)),
-                ports=bool(col.get("ports", False)),
-                ports_list=list(col.get("ports_list", CollectorsConfig().ports_list)),
+                wildcard=_as_bool(col.get("wildcard"), True),
+                wildcard_probes=_as_int(col.get("wildcard_probes"), "collectors.wildcard_probes", 3),
+                dns=_as_bool(col.get("dns"), True),
+                http=_as_bool(col.get("http"), True),
+                tls=_as_bool(col.get("tls"), True),
+                cert_expiry_days=_as_int(col.get("cert_expiry_days"), "collectors.cert_expiry_days", 14),
+                max_response_bytes=_as_int(col.get("max_response_bytes"), "collectors.max_response_bytes", 262144),
+                takeover=_as_bool(col.get("takeover"), True),
+                ports=_as_bool(col.get("ports"), False),
+                ports_list=[_as_int(p, "collectors.ports_list", 0)
+                            for p in col.get("ports_list", CollectorsConfig().ports_list)],
             ),
             network=NetworkConfig(
-                allow_private_ips=bool(net.get("allow_private_ips", False)),
-                follow_redirects=bool(net.get("follow_redirects", False)),
+                allow_private_ips=_as_bool(net.get("allow_private_ips"), False),
+                follow_redirects=_as_bool(net.get("follow_redirects"), False),
             ),
             storage=StorageConfig(
-                event_retention_days=int(stg.get("event_retention_days", 0)),
+                event_retention_days=_as_int(stg.get("event_retention_days"), "storage.event_retention_days", 0),
             ),
             telegram=TelegramConfig(
-                enabled=bool(tg.get("enabled", False)),
+                enabled=_as_bool(tg.get("enabled"), False),
                 bot_token=str(tg.get("bot_token", "")),
                 chat_id=str(tg.get("chat_id", "")),
                 level=str(tg.get("level", "medium")),
             ).resolved(),
             discord=DiscordConfig(
-                enabled=bool(dc.get("enabled", False)),
+                enabled=_as_bool(dc.get("enabled"), False),
                 webhook_url=str(dc.get("webhook_url", "")),
                 level=str(dc.get("level", "medium")),
             ).resolved(),
             webhook=WebhookConfig(
-                enabled=bool(wh.get("enabled", False)),
+                enabled=_as_bool(wh.get("enabled"), False),
                 url=str(wh.get("url", "")),
                 level=str(wh.get("level", "debug")),
                 headers={str(k): str(v) for k, v in wh_headers.items()},
             ).resolved(),
             email=EmailConfig(
-                enabled=bool(em.get("enabled", False)),
+                enabled=_as_bool(em.get("enabled"), False),
                 smtp_host=str(em.get("smtp_host", "")),
-                smtp_port=int(em.get("smtp_port", 587)),
+                smtp_port=_as_int(em.get("smtp_port"), "email.smtp_port", 587),
                 username=str(em.get("username", "")),
                 password=str(em.get("password", "")),
                 from_addr=str(em.get("from", "")),
                 to=[str(t) for t in em_to],
-                use_tls=bool(em.get("use_tls", True)),
+                use_tls=_as_bool(em.get("use_tls"), True),
                 level=str(em.get("level", "medium")),
             ).resolved(),
             heartbeat=HeartbeatConfig(
-                enabled=bool(hb.get("enabled", False)),
+                enabled=_as_bool(hb.get("enabled"), False),
                 url=str(hb.get("url", "")),
-                every_cycles=int(hb.get("every_cycles", 1)),
+                every_cycles=_as_int(hb.get("every_cycles"), "heartbeat.every_cycles", 1),
                 file=str(hb.get("file", "")),
             ).resolved(),
         )
+        _validate(cfg)
+        return cfg
+
+
+def _validate(cfg: "Config") -> None:
+    """Falha cedo, com mensagem clara, em config incoerente (§33)."""
+    errs: list[str] = []
+    if cfg.interval_seconds <= 0:
+        errs.append("interval_seconds deve ser > 0")
+    if cfg.concurrency <= 0:
+        errs.append("concurrency deve ser > 0")
+    if cfg.timeout <= 0:
+        errs.append("timeout deve ser > 0")
+    c = cfg.collectors
+    if c.wildcard_probes < 2:
+        errs.append("collectors.wildcard_probes deve ser >= 2")
+    if c.cert_expiry_days < 0:
+        errs.append("collectors.cert_expiry_days deve ser >= 0")
+    if c.max_response_bytes <= 0:
+        errs.append("collectors.max_response_bytes deve ser > 0")
+    for p in c.ports_list:
+        if not (1 <= p <= 65535):
+            errs.append(f"collectors.ports_list: porta fora de 1..65535: {p}")
+    if cfg.storage.event_retention_days < 0:
+        errs.append("storage.event_retention_days deve ser >= 0")
+    if not (1 <= cfg.email.smtp_port <= 65535):
+        errs.append(f"email.smtp_port fora de 1..65535: {cfg.email.smtp_port}")
+    for name, lvl in (("telegram", cfg.telegram.level), ("discord", cfg.discord.level),
+                      ("webhook", cfg.webhook.level), ("email", cfg.email.level)):
+        if str(lvl).strip().lower() not in _VALID_LEVELS:
+            errs.append(f"{name}.level inválido: {lvl!r} (use debug/low/medium/high/critical)")
+    if errs:
+        raise ValueError("Config inválida:\n  - " + "\n  - ".join(errs))
 
 
 def _expand(value: str) -> str:
