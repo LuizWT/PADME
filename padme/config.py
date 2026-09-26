@@ -148,10 +148,18 @@ class Config:
 
     @staticmethod
     def load(path: str | Path) -> "Config":
-        path = Path(path)
+        path = Path(path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"Config não encontrada: {path}")
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+        # db_path relativo é resolvido em relação ao ARQUIVO DE CONFIG, não ao
+        # diretório atual — assim `monitor` e `web` (ambos com -c) sempre abrem o
+        # MESMO banco, mesmo rodando de pastas diferentes. Era a causa do painel
+        # aparecer vazio: `padme web` de outra pasta abria um padme.db novo.
+        db_path = str(raw.get("db_path", "padme.db"))
+        if db_path and not Path(db_path).is_absolute():
+            db_path = str((path.parent / db_path).resolve())
 
         targets = raw.get("targets") or []
         if isinstance(targets, str):
@@ -181,7 +189,7 @@ class Config:
             interval_seconds=int(raw.get("interval_seconds", 3600)),
             concurrency=int(raw.get("concurrency", 50)),
             timeout=float(raw.get("timeout", 8.0)),
-            db_path=raw.get("db_path", "padme.db"),
+            db_path=db_path,
             collectors=CollectorsConfig(
                 subdomains=bool(col.get("subdomains", True)),
                 bruteforce=bool(col.get("bruteforce", False)),

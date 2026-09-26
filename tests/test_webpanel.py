@@ -24,9 +24,11 @@ def test_render():
     assert "alvo.com" in out
     assert "PORT" in out and "alvo.com:443" in out
     assert "<html" in out.lower()
-    # a seção de tendência aparece; com 1 scan (2 added) há eventos no período
-    assert "ATIVIDADE DE MUDANÇAS" in out
-    assert "variação líquida" in out       # atividade != crescimento (§51)
+    # visão geral + problemas + tendência (atividade != crescimento, §51)
+    assert "visão geral" in out
+    assert "problemas abertos" in out
+    assert "tendência" in out
+    assert "líquido" in out
     assert "<svg" in out
     # stat tiles da superfície atual
     assert "class=tiles" in out
