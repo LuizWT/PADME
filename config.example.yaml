@@ -36,6 +36,17 @@ collectors:
   ports: false        # ativo — connect-scan (ligue com consciência)
   ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
 
+# Política de rede (padrão SEGURO — anti-SSRF / rede interna).
+network:
+  # NÃO segue redirects por padrão: um "Location: http://127.0.0.1/" não deve
+  # transformar o monitor em proxy pra rede interna. Quando não segue, registra
+  # o destino do redirect.
+  follow_redirects: false
+  # NÃO sonda ativamente (HTTP/TLS/portas) hosts que resolvem para IP
+  # privado/reservado (10/8, 192.168/16, 127/8, link-local, ULA IPv6...).
+  # DNS passivo continua. Ligue só se realmente monitora rede interna.
+  allow_private_ips: false
+
 telegram:
   enabled: true
   # limiar mínimo de severidade enviado ao Telegram (o terminal sempre mostra tudo):
@@ -51,16 +62,22 @@ telegram:
   bot_token: "SEU_BOT_TOKEN_AQUI"
   chat_id: "SEU_CHAT_ID_AQUI"
 
+# Cada canal tem seu PRÓPRIO limiar de severidade (política por canal): o
+# terminal mostra tudo; cada canal decide o que recebe pelo seu `level`.
+
 # Discord — cole a URL de um Webhook de canal (Configurações do canal → Integrações).
 discord:
   enabled: false
   webhook_url: ${PADME_DISCORD_WEBHOOK}
+  level: medium
 
 # Webhook genérico — recebe um JSON estruturado a cada mudança (ideal p/ n8n).
-# Payload: { source, type, target, time, count, events[], text }
+# Payload: { schema_version, source, type, target, time, count, events[], text }
 webhook:
   enabled: false
   url: ${PADME_WEBHOOK_URL}
+  level: debug          # sink de automação: por padrão recebe o fluxo completo
+  headers: {}           # opcional — auth do seu endpoint, ex.: {X-Padme-Token: "${PADME_WEBHOOK_TOKEN}"}
 
 # Heartbeat / dead-man's switch — a Padmé avisa que está viva a cada N ciclos.
 # Um processo morto não avisa que morreu, então o sinal vai pra um watchdog
@@ -83,3 +100,4 @@ email:
   to:
     - voce@dominio.com
   use_tls: true
+  level: high           # e-mail costuma querer só o que importa

@@ -15,14 +15,14 @@ def test_match_service():
 
 def _run(host, cname, resolves, body, monkeypatch):
     async def fake_cname(h, t):
-        return cname, resolves
+        return cname, resolves, True
 
-    async def fake_body(client, h, cache=None):
-        return body
+    async def fake_body(client, h, cache=None, follow_redirects=False):
+        return body, True
 
     monkeypatch.setattr(takeover, "_cname_target", fake_cname)
     monkeypatch.setattr(takeover, "_body", fake_body)
-    return asyncio.run(takeover.collect_host(host, client=None, timeout=5))
+    return asyncio.run(takeover.collect_host(host, client=None, timeout=5)).records
 
 
 def test_fingerprint_vulneravel(monkeypatch):
@@ -56,9 +56,9 @@ def test_sem_cname(monkeypatch):
 def test_usa_cache_sem_refetch(monkeypatch):
     # com cache preenchido, não deve tocar a rede (client=None provaria erro)
     async def fake_cname(h, t):
-        return "alvo.github.io", True
+        return "alvo.github.io", True, True
 
     monkeypatch.setattr(takeover, "_cname_target", fake_cname)
     cache = {"https://blog.alvo.com": "There isn't a GitHub Pages site here."}
-    recs = asyncio.run(takeover.collect_host("blog.alvo.com", client=None, timeout=5, cache=cache))
+    recs = asyncio.run(takeover.collect_host("blog.alvo.com", client=None, timeout=5, cache=cache)).records
     assert len(recs) == 1 and recs[0].kind == Kind.TAKEOVER

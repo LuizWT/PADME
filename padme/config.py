@@ -30,18 +30,24 @@ class TelegramConfig:
 class DiscordConfig:
     enabled: bool = False
     webhook_url: str = ""
+    level: str = "medium"     # limiar próprio (severidade por canal)
 
     def resolved(self) -> "DiscordConfig":
-        return DiscordConfig(enabled=self.enabled, webhook_url=_expand(self.webhook_url))
+        return DiscordConfig(enabled=self.enabled, webhook_url=_expand(self.webhook_url),
+                             level=self.level)
 
 
 @dataclass
 class WebhookConfig:
     enabled: bool = False
     url: str = ""
+    # webhook é sink de automação (n8n): por padrão recebe o fluxo completo.
+    level: str = "debug"
+    headers: dict[str, str] = field(default_factory=dict)  # ex.: token de auth
 
     def resolved(self) -> "WebhookConfig":
-        return WebhookConfig(enabled=self.enabled, url=_expand(self.url))
+        return WebhookConfig(enabled=self.enabled, url=_expand(self.url), level=self.level,
+                             headers={k: _expand(str(v)) for k, v in self.headers.items()})
 
 
 @dataclass
@@ -54,6 +60,7 @@ class EmailConfig:
     from_addr: str = ""
     to: list[str] = field(default_factory=list)
     use_tls: bool = True
+    level: str = "medium"     # limiar próprio (severidade por canal)
 
     def resolved(self) -> "EmailConfig":
         return EmailConfig(
@@ -65,7 +72,19 @@ class EmailConfig:
             from_addr=_expand(self.from_addr),
             to=[_expand(t) for t in self.to],
             use_tls=self.use_tls,
+            level=self.level,
         )
+
+
+@dataclass
+class NetworkConfig:
+    """Política de rede (anti-SSRF / rede interna).
+
+    Padrão SEGURO: não segue redirects e não sonda ativamente IPs
+    privados/reservados. Ligue conscientemente para monitorar rede interna.
+    """
+    allow_private_ips: bool = False
+    follow_redirects: bool = False
 
 
 @dataclass
@@ -111,6 +130,7 @@ class Config:
     timeout: float = 8.0
     db_path: str = "padme.db"
     collectors: CollectorsConfig = field(default_factory=CollectorsConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
@@ -132,6 +152,7 @@ class Config:
             raise ValueError("Config precisa de pelo menos um item em 'targets'.")
 
         col = raw.get("collectors") or {}
+        net = raw.get("network") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
@@ -140,6 +161,9 @@ class Config:
         em_to = em.get("to") or []
         if isinstance(em_to, str):
             em_to = [em_to]
+        wh_headers = wh.get("headers") or {}
+        if not isinstance(wh_headers, dict):
+            wh_headers = {}
 
         return Config(
             targets=targets,
@@ -162,6 +186,10 @@ class Config:
                 ports=bool(col.get("ports", False)),
                 ports_list=list(col.get("ports_list", CollectorsConfig().ports_list)),
             ),
+            network=NetworkConfig(
+                allow_private_ips=bool(net.get("allow_private_ips", False)),
+                follow_redirects=bool(net.get("follow_redirects", False)),
+            ),
             telegram=TelegramConfig(
                 enabled=bool(tg.get("enabled", False)),
                 bot_token=str(tg.get("bot_token", "")),
@@ -171,10 +199,13 @@ class Config:
             discord=DiscordConfig(
                 enabled=bool(dc.get("enabled", False)),
                 webhook_url=str(dc.get("webhook_url", "")),
+                level=str(dc.get("level", "medium")),
             ).resolved(),
             webhook=WebhookConfig(
                 enabled=bool(wh.get("enabled", False)),
                 url=str(wh.get("url", "")),
+                level=str(wh.get("level", "debug")),
+                headers={str(k): str(v) for k, v in wh_headers.items()},
             ).resolved(),
             email=EmailConfig(
                 enabled=bool(em.get("enabled", False)),
@@ -185,6 +216,7 @@ class Config:
                 from_addr=str(em.get("from", "")),
                 to=[str(t) for t in em_to],
                 use_tls=bool(em.get("use_tls", True)),
+                level=str(em.get("level", "medium")),
             ).resolved(),
             heartbeat=HeartbeatConfig(
                 enabled=bool(hb.get("enabled", False)),

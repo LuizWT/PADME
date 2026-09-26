@@ -9,13 +9,17 @@ Reaproveita os mesmos rótulos e descrições do Telegram (fonte única).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
-from ..levels import severity
+from ..levels import Level, severity
 from ..models import Event, EventType, Kind
+from .base import NotificationResult, chunk_text, post_with_retry
 from .telegram import _DESC, _KIND_LABEL, _KIND_ORDER, _MARK
+
+# Versão do contrato JSON do webhook genérico (consumidores tipo n8n).
+WEBHOOK_SCHEMA_VERSION = 1
 
 
 # ── formatação Markdown (Discord) ──────────────────────────────────────────
@@ -80,89 +84,89 @@ def event_to_dict(e: Event) -> dict:
     }
 
 
-def _split(text: str, limit: int) -> list[str]:
-    if len(text) <= limit:
-        return [text]
-    chunks, buf = [], ""
-    for line in text.split("\n"):
-        if len(buf) + len(line) + 1 > limit:
-            chunks.append(buf)
-            buf = line
-        else:
-            buf = f"{buf}\n{line}" if buf else line
-    if buf:
-        chunks.append(buf)
-    return chunks
-
-
 # ── notificadores ──────────────────────────────────────────────────────────
 class DiscordNotifier:
-    def __init__(self, webhook_url: str, timeout: float = 15.0):
+    name = "discord"
+
+    def __init__(self, webhook_url: str, timeout: float = 15.0, level: Level = Level.MEDIUM):
         self.webhook_url = webhook_url
         self.timeout = timeout
+        self.level = level
 
     @property
     def configured(self) -> bool:
         return bool(self.webhook_url)
 
-    async def _post_chunks(self, text: str) -> bool:
-        if not self.configured or not text:
-            return False
-        ok = True
+    async def _post_chunks(self, text: str) -> NotificationResult:
+        if not self.configured:
+            return NotificationResult(self.name, ok=False, error="não configurado")
+        if not text:
+            return NotificationResult(self.name, ok=True, attempts=0)
+        attempts = 0
+        last: NotificationResult | None = None
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for chunk in _split(text, 1900):  # Discord: limite 2000
-                try:
-                    r = await client.post(self.webhook_url, json={"content": chunk})
-                    r.raise_for_status()
-                except Exception:
-                    ok = False
-        return ok
+            for chunk in chunk_text(text, 1900):  # Discord: limite 2000
+                r = await post_with_retry(client, self.webhook_url, self.name,
+                                          json={"content": chunk})
+                attempts += r.attempts
+                last = r
+                if not r.ok:
+                    return NotificationResult(self.name, ok=False, attempts=attempts,
+                                              status=r.status, error=r.error)
+        return NotificationResult(self.name, ok=True, attempts=attempts,
+                                  status=last.status if last else None)
 
-    async def notify_events(self, target: str, events: list[Event]) -> bool:
+    async def notify_events(self, target: str, events: list[Event]) -> NotificationResult:
         return await self._post_chunks(format_events_md(target, events))
 
-    async def announce(self, msg: str) -> bool:
+    async def announce(self, msg: str) -> NotificationResult:
         return await self._post_chunks(f"**Padmé** — {msg}")
 
 
 class WebhookNotifier:
-    """POST de JSON estruturado (n8n, Zapier, endpoint próprio...)."""
+    """POST de JSON estruturado (n8n, Zapier, endpoint próprio...).
 
-    def __init__(self, url: str, timeout: float = 15.0):
+    Suporta headers opcionais (ex.: um token de auth) para endpoints próprios.
+    """
+
+    name = "webhook"
+
+    def __init__(self, url: str, timeout: float = 15.0, level: Level = Level.DEBUG,
+                 headers: dict[str, str] | None = None):
         self.url = url
         self.timeout = timeout
+        self.level = level
+        self.headers = headers or {}
 
     @property
     def configured(self) -> bool:
         return bool(self.url)
 
-    async def _post(self, payload: dict) -> bool:
+    async def _post(self, payload: dict) -> NotificationResult:
         if not self.configured:
-            return False
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                r = await client.post(self.url, json=payload)
-                r.raise_for_status()
-            return True
-        except Exception:
-            return False
+            return NotificationResult(self.name, ok=False, error="não configurado")
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            return await post_with_retry(client, self.url, self.name, json=payload,
+                                         headers=self.headers or None)
 
-    async def notify_events(self, target: str, events: list[Event]) -> bool:
+    async def notify_events(self, target: str, events: list[Event]) -> NotificationResult:
         payload = {
+            "schema_version": WEBHOOK_SCHEMA_VERSION,
             "source": "padme",
             "type": "changes",
             "target": target,
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "count": len(events),
             "events": [event_to_dict(e) for e in events],
             "text": format_events_md(target, events),
         }
         return await self._post(payload)
 
-    async def announce(self, msg: str) -> bool:
+    async def announce(self, msg: str) -> NotificationResult:
         return await self._post({
+            "schema_version": WEBHOOK_SCHEMA_VERSION,
             "source": "padme",
             "type": "announce",
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "text": msg,
         })

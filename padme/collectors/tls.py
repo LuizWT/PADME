@@ -17,7 +17,7 @@ import socket
 import ssl
 from datetime import datetime, timezone
 
-from ..models import Kind, Record
+from ..models import CollectionResult, Kind, Record
 
 try:
     from cryptography import x509
@@ -65,17 +65,25 @@ def _blocking_cert(host: str, port: int, timeout: float) -> dict | None:
 
 async def collect_host(
     host: str, timeout: float, port: int = 443, cert_expiry_days: int = 14
-) -> list[Record]:
+) -> CollectionResult:
     loop = asyncio.get_running_loop()
     try:
         data = await asyncio.wait_for(
             loop.run_in_executor(None, _blocking_cert, host, port, timeout),
             timeout=timeout + 2,
         )
+    except ConnectionRefusedError:
+        # nada escutando em 443 -> observação definitiva de ausência (ok, vazio)
+        return CollectionResult(records=[], ok=True)
+    except (asyncio.TimeoutError, TimeoutError):
+        return CollectionResult(records=[], ok=False)  # transitório: preserva
+    except ssl.SSLError:
+        return CollectionResult(records=[], ok=False)  # handshake falhou: preserva
     except Exception:
-        return []
+        return CollectionResult(records=[], ok=False)  # rede/erro: preserva
     if not data:
-        return []
+        # conectou mas sem cert legível -> não removemos por isso (preserva)
+        return CollectionResult(records=[], ok=False)
 
     issuer = data["issuer"]
     not_after = data["not_after"]
@@ -98,4 +106,4 @@ async def collect_host(
             bucket = next(b for b in buckets if days_left <= b)
             records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"expira em <={bucket}d ({date_str})"))
 
-    return records
+    return CollectionResult(records=records, ok=True)

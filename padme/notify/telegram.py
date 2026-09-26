@@ -15,7 +15,9 @@ from datetime import datetime
 
 import httpx
 
+from ..levels import Level
 from ..models import Event, EventType, Kind
+from .base import NotificationResult, chunk_text, post_with_retry
 
 _MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
 
@@ -122,57 +124,48 @@ def format_events(target: str, events: list[Event], when: datetime | None = None
 
 
 class TelegramNotifier:
-    def __init__(self, bot_token: str, chat_id: str, timeout: float = 15.0):
+    name = "telegram"
+
+    def __init__(self, bot_token: str, chat_id: str, timeout: float = 15.0,
+                 level: Level = Level.MEDIUM):
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.timeout = timeout
+        self.level = level
 
     @property
     def configured(self) -> bool:
         return bool(self.bot_token and self.chat_id)
 
-    async def send(self, text: str) -> bool:
-        if not self.configured or not text:
-            return False
+    async def send(self, text: str) -> NotificationResult:
+        if not self.configured:
+            return NotificationResult(self.name, ok=False, error="não configurado")
+        if not text:
+            return NotificationResult(self.name, ok=True, attempts=0)
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-        # Telegram corta em 4096 chars — quebra em pedaços seguros.
-        chunks = _split(text, 3900)
-        ok = True
+        attempts = 0
+        last: NotificationResult | None = None
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for chunk in chunks:
-                try:
-                    r = await client.post(
-                        url,
-                        json={
-                            "chat_id": self.chat_id,
-                            "text": chunk,
-                            "parse_mode": "HTML",
-                            "disable_web_page_preview": True,
-                        },
-                    )
-                    r.raise_for_status()
-                except Exception:
-                    ok = False
-        return ok
+            for chunk in chunk_text(text, 3900):  # Telegram corta em 4096
+                r = await post_with_retry(
+                    client, url, self.name,
+                    json={
+                        "chat_id": self.chat_id,
+                        "text": chunk,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": True,
+                    },
+                )
+                attempts += r.attempts
+                last = r
+                if not r.ok:
+                    return NotificationResult(self.name, ok=False, attempts=attempts,
+                                              status=r.status, error=r.error)
+        return NotificationResult(self.name, ok=True, attempts=attempts,
+                                  status=last.status if last else None)
 
-    async def notify_events(self, target: str, events: list[Event]) -> bool:
-        msg = format_events(target, events)
-        return await self.send(msg)
+    async def notify_events(self, target: str, events: list[Event]) -> NotificationResult:
+        return await self.send(format_events(target, events))
 
-    async def announce(self, msg: str) -> bool:
+    async def announce(self, msg: str) -> NotificationResult:
         return await self.send(f"🛰️ <b>Padmé</b> — {_esc(msg)}")
-
-
-def _split(text: str, limit: int) -> list[str]:
-    if len(text) <= limit:
-        return [text]
-    chunks, buf = [], ""
-    for line in text.split("\n"):
-        if len(buf) + len(line) + 1 > limit:
-            chunks.append(buf)
-            buf = line
-        else:
-            buf = f"{buf}\n{line}" if buf else line
-    if buf:
-        chunks.append(buf)
-    return chunks

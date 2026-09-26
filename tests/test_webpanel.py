@@ -12,7 +12,8 @@ from padme.webpanel import _render, _trend_svg
 def test_render():
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
-    s.apply_scan("alvo.com", [
+    s.apply_scan("alvo.com", [])   # baseline (não gera evento)
+    s.apply_scan("alvo.com", [     # 2º scan: 2 ADDED reais
         Record(Kind.PORT, "alvo.com:443", "open"),
         Record(Kind.SUBDOMAIN, "api.alvo.com", ""),
     ])
@@ -50,6 +51,7 @@ def test_stat_tiles_destaca_criticos():
 def test_events_per_day_serie_densa():
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
+    s.apply_scan("alvo.com", [])   # baseline (não gera evento)
     # 2 records novos -> 2 eventos ADDED hoje
     s.apply_scan("alvo.com", [
         Record(Kind.SUBDOMAIN, "api.alvo.com", ""),

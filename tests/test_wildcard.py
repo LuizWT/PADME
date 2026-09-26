@@ -83,13 +83,13 @@ def test_bruteforce_suprime_catchall(monkeypatch):
 
     monkeypatch.setattr(bruteforce, "_resolve_ips", fake_resolve)
     wc = Wildcard(active=True, ips=frozenset({"1.2.3.4"}))
-    recs, hosts = asyncio.run(
+    cr = asyncio.run(
         bruteforce.collect("alvo.com", ["www", "api", "dev"], timeout=5,
                            concurrency=10, wildcard=wc)
     )
-    assert hosts == {"api.alvo.com"}
-    assert [r.kind for r in recs] == [Kind.SUBDOMAIN]
-    assert recs[0].key == "api.alvo.com"
+    assert cr.hosts == {"api.alvo.com"}
+    assert [r.kind for r in cr.records] == [Kind.SUBDOMAIN]
+    assert cr.records[0].key == "api.alvo.com"
 
 
 def test_bruteforce_sem_curinga_mantem_todos_que_resolvem(monkeypatch):
@@ -99,7 +99,7 @@ def test_bruteforce_sem_curinga_mantem_todos_que_resolvem(monkeypatch):
         return set(resolve_map.get(host, set()))
 
     monkeypatch.setattr(bruteforce, "_resolve_ips", fake_resolve)
-    recs, hosts = asyncio.run(
+    cr = asyncio.run(
         bruteforce.collect("alvo.com", ["www", "api"], timeout=5, wildcard=None)
     )
-    assert hosts == {"www.alvo.com", "api.alvo.com"}
+    assert cr.hosts == {"www.alvo.com", "api.alvo.com"}

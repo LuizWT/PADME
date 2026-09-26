@@ -14,7 +14,7 @@ def _run(days_to_expiry, monkeypatch, threshold=14):
         return {"fp": "abc123", "issuer": "Let's Encrypt", "not_after": na}
 
     monkeypatch.setattr(tls, "_blocking_cert", fake)
-    return asyncio.run(tls.collect_host("x.com", 5, cert_expiry_days=threshold))
+    return asyncio.run(tls.collect_host("x.com", 5, cert_expiry_days=threshold)).records
 
 
 def _cert_events(recs):

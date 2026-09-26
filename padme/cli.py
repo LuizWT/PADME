@@ -31,9 +31,10 @@ except ImportError:
 
 from .config import Config
 from .engine import Engine, build_notifiers
-from .levels import Level, filter_events, parse_level
+from .levels import Level
+from .logredact import install_secret_redaction
 from .models import Event
-from .notify import TelegramNotifier
+from .notify import TelegramNotifier, send_all
 from .scheduler import run_monitor
 from .storage import Storage
 
@@ -59,7 +60,6 @@ def _print_events(target: str, events: list[Event], baseline: bool) -> None:
 async def _cmd_scan(cfg: Config, args) -> int:
     if args.level:
         cfg.telegram.level = args.level
-    level = parse_level(cfg.telegram.level)
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
     notifiers = build_notifiers(cfg) if args.notify else []
@@ -71,25 +71,9 @@ async def _cmd_scan(cfg: Config, args) -> int:
             _print_events(target, events, baseline=first)
             for err in result.errors:
                 log.debug("erro: %s", err)
+            # cada canal filtra pelo próprio nível; envio concorrente
             if notifiers and not first and events:
-                telegram_events = filter_events(events, level)
-                for n in notifiers:
-                    if isinstance(n, TelegramNotifier):
-                        enviar = telegram_events
-                    else:
-                        enviar = events
-
-                    if enviar:
-                        await n.notify_events(target, enviar)
-
-                if not telegram_events:
-                    log.info(
-                        "[%s] %d mudança(s) abaixo do nível Telegram '%s' — "
-                        "não enviadas ao Telegram.",
-                        target,
-                        len(events),
-                        level.name.lower(),
-                    )
+                await send_all(notifiers, target, events)
     finally:
         storage.close()
     return 0
@@ -178,9 +162,9 @@ async def _cmd_test_telegram(cfg: Config, args) -> int:
     if not notifier.configured:
         print("Telegram não configurado (bot_token/chat_id ausentes).")
         return 1
-    ok = await notifier.send("🛰️ <b>Padmé</b> online. Teste de conexão OK.")
-    print("Mensagem enviada." if ok else "Falha ao enviar — confira token/chat_id.")
-    return 0 if ok else 1
+    res = await notifier.send("🛰️ <b>Padmé</b> online. Teste de conexão OK.")
+    print("Mensagem enviada." if res.ok else "Falha ao enviar — confira token/chat_id.")
+    return 0 if res.ok else 1
 
 
 async def _cmd_web(cfg: Config, args) -> int:
@@ -196,9 +180,10 @@ async def _cmd_test_notify(cfg: Config, args) -> int:
         return 1
     all_ok = True
     for n in notifiers:
-        ok = await n.announce("teste de conexão OK.")
-        all_ok = all_ok and ok
-        print(f"  {type(n).__name__}: {'enviado' if ok else 'FALHOU'}")
+        res = await n.announce("teste de conexão OK.")
+        all_ok = all_ok and res.ok
+        detail = "" if res.ok else f" ({res.error or res.status})"
+        print(f"  {getattr(n, 'name', type(n).__name__)}: {'enviado' if res.ok else 'FALHOU'}{detail}")
     return 0 if all_ok else 1
 
 
@@ -261,6 +246,9 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    # nunca vaza token/secret no log (mesmo com -v): sobe httpx p/ WARNING e
+    # mascara segredos conhecidos em qualquer mensagem.
+    install_secret_redaction()
     try:
         cfg = Config.load(args.config)
     except (FileNotFoundError, ValueError) as exc:

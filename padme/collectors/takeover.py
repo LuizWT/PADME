@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import httpx
 
-from ..models import Kind, Record
+from ..models import CollectionResult, Kind, Record
 
 try:
     import dns.asyncresolver
@@ -59,60 +59,83 @@ def match_service(cname: str) -> dict | None:
     return None
 
 
-async def _cname_target(host: str, timeout: float) -> tuple[str | None, bool]:
-    """Retorna (alvo do CNAME | None, alvo_resolve)."""
+async def _cname_target(host: str, timeout: float) -> tuple[str | None, bool, bool]:
+    """Retorna (alvo do CNAME | None, alvo_resolve, observado_ok).
+
+    observado_ok=False sinaliza que a resolução foi INCONCLUSIVA (timeout /
+    SERVFAIL / sem dnspython): nesse caso preservamos qualquer achado anterior
+    em vez de removê-lo. resolver que falha nunca vira 'dangling'/takeover.
+    """
     if not _HAS_DNS:
-        return None, True
+        return None, True, False  # não dá pra observar
     resolver = dns.asyncresolver.Resolver()
     resolver.lifetime = timeout
     try:
         ans = await resolver.resolve(host, "CNAME")
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return None, True, True  # definitivamente sem CNAME -> não é candidato
     except Exception:
-        return None, True  # sem CNAME -> não é candidato
+        return None, True, False  # timeout/SERVFAIL -> inconclusivo
     target = str(ans[0].target).rstrip(".")
     try:
         await resolver.resolve(target, "A")
-        return target, True
+        return target, True, True
     except dns.resolver.NXDOMAIN:
-        return target, False
+        return target, False, True  # dangling confirmado
+    except dns.resolver.NoAnswer:
+        return target, True, True  # existe sem A (NOERROR) -> não é dangling
     except Exception:
-        return target, True  # inconclusivo -> não crava dangling
+        return target, True, False  # inconclusivo -> não crava dangling
 
 
-async def _body(client: httpx.AsyncClient, host: str, cache: dict[str, str] | None = None) -> str:
+async def _body(
+    client: httpx.AsyncClient, host: str, cache: dict[str, str] | None = None,
+    follow_redirects: bool = False,
+) -> tuple[str, bool]:
+    """Retorna (corpo, buscado_ok). buscado_ok=False se nenhum esquema respondeu
+    (a checagem de fingerprint fica inconclusiva)."""
     for scheme in ("https", "http"):
         url = f"{scheme}://{host}"
         if cache is not None and url in cache:  # reaproveita o GET do collector HTTP
-            return cache[url]
+            return cache[url], True
         try:
-            r = await client.get(url, follow_redirects=True)
-            return r.text or ""
+            r = await client.get(url, follow_redirects=follow_redirects)
+            return r.text or "", True
         except Exception:
             continue
-    return ""
+    return "", False
 
 
 async def collect_host(
-    host: str, client: httpx.AsyncClient, timeout: float, cache: dict[str, str] | None = None
-) -> list[Record]:
-    target, resolves = await _cname_target(host, timeout)
-    if not target:
-        return []
+    host: str, client: httpx.AsyncClient, timeout: float,
+    cache: dict[str, str] | None = None, follow_redirects: bool = False,
+) -> CollectionResult:
+    target, resolves, cname_ok = await _cname_target(host, timeout)
+    if target is None:
+        # sem CNAME (definitivo=ok) ou inconclusivo (ok=False, preserva achado)
+        return CollectionResult(records=[], ok=cname_ok)
     fp = match_service(target)
     if not fp:
-        return []
+        # aponta pra um CNAME, mas não é serviço takeover-able conhecido:
+        # observação definitiva de "não vulnerável".
+        return CollectionResult(records=[], ok=True)
 
     reason = ""
+    ok = True
     if fp["nxdomain"]:
-        if not resolves:
+        if not cname_ok:
+            ok = False  # resolução do alvo foi inconclusiva -> preserva
+        elif not resolves:
             reason = "CNAME dangling (NXDOMAIN)"
     elif fp["fingerprint"]:
-        body = await _body(client, host, cache)
-        if fp["fingerprint"].lower() in body.lower():
+        body, fetched = await _body(client, host, cache, follow_redirects)
+        if not fetched:
+            ok = False  # não conseguimos o corpo -> inconclusivo, preserva
+        elif fp["fingerprint"].lower() in body.lower():
             reason = "fingerprint de recurso não reivindicado"
 
-    if not reason:
-        return []
-
-    value = f"{fp['service']} | {target} | {reason}"
-    return [Record(kind=Kind.TAKEOVER, key=host, value=value)]
+    records = []
+    if reason:
+        records.append(Record(kind=Kind.TAKEOVER, key=host,
+                              value=f"{fp['service']} | {target} | {reason}"))
+    return CollectionResult(records=records, ok=ok)

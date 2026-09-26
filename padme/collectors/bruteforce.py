@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ..models import Kind, Record
+from ..models import CollectionResult, Kind, Record
 from .wildcard import Wildcard
 
 try:
@@ -55,9 +55,9 @@ async def _resolve_ips(resolver, host: str) -> set[str]:
 
 async def collect(target: str, words: list[str], timeout: float,
                   concurrency: int = 50,
-                  wildcard: Wildcard | None = None) -> tuple[list[Record], set[str]]:
+                  wildcard: Wildcard | None = None) -> CollectionResult:
     if not _HAS_DNS:
-        return [], set()
+        return CollectionResult(records=[], ok=False)
     resolver = dns.asyncresolver.Resolver()
     resolver.lifetime = timeout
     sem = asyncio.Semaphore(concurrency)
@@ -77,4 +77,8 @@ async def collect(target: str, words: list[str], timeout: float,
             found.add(host)
 
     await asyncio.gather(*(check(h) for h in candidates))
-    return [Record(Kind.SUBDOMAIN, h) for h in sorted(found)], found
+    records = [Record(Kind.SUBDOMAIN, h) for h in sorted(found)]
+    # bruteforce é SUPLEMENTAR: enriquece a descoberta, mas não é autoritativo
+    # sobre o escopo de subdomínio (só cobre a wordlist). Quem decide se o
+    # escopo foi observado é a descoberta por CT (subdomains.collect).
+    return CollectionResult(records=records, ok=True, hosts=found)

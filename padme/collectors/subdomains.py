@@ -12,12 +12,15 @@ apex. Assim funciona independente do formato exato da resposta.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Iterable
 
 import httpx
 
-from ..models import Kind, Record
+from ..models import CollectionResult, Kind, Record
+
+log = logging.getLogger("padme")
 
 # hostname válido (labels alfanuméricos + hífen, com wildcard opcional no início)
 _HOST_RE = re.compile(
@@ -49,17 +52,26 @@ def _extract_hosts(payload: Any, apex: str) -> set[str]:
     return found
 
 
-async def _fetch_json(client: httpx.AsyncClient, url: str) -> Any | None:
+async def _fetch_json(client: httpx.AsyncClient, url: str) -> tuple[Any | None, bool]:
+    """Retorna (payload, respondeu_ok). respondeu_ok=False em erro/timeout/HTTP
+    != 2xx — usado para distinguir 'fonte vazia' de 'fonte indisponível'."""
     try:
         r = await client.get(url)
         r.raise_for_status()
-        return r.json()
-    except Exception:
-        return None
+        return r.json(), True
+    except Exception as exc:  # noqa: BLE001
+        log.debug("subdomains: fonte falhou %s (%s)", url, type(exc).__name__)
+        return None, False
 
 
-async def collect(target: str, client: httpx.AsyncClient) -> tuple[list[Record], set[str]]:
-    """Retorna (records de subdomínio, conjunto de hosts para os host-collectors)."""
+async def collect(target: str, client: httpx.AsyncClient) -> CollectionResult:
+    """Descobre subdomínios via CT logs.
+
+    `ok=True` só quando ALGUMA fonte respondeu — se todas as fontes caírem, o
+    escopo de subdomínio fica não-observado e o estado anterior é preservado
+    (não apagamos todos os subdomínios por causa de uma indisponibilidade do
+    crt.sh/crt.name).
+    """
     apex = target.lower().lstrip(".")
     hosts: set[str] = {apex}
 
@@ -67,10 +79,12 @@ async def collect(target: str, client: httpx.AsyncClient) -> tuple[list[Record],
         f"https://crt.name/v1/search?apex={apex}",
         f"https://crt.sh/?q=%25.{apex}&output=json",
     ]
+    any_source_ok = False
     for url in sources:
-        payload = await _fetch_json(client, url)
+        payload, source_ok = await _fetch_json(client, url)
+        any_source_ok = any_source_ok or source_ok
         if payload is not None:
             hosts |= _extract_hosts(payload, apex)
 
     records = [Record(kind=Kind.SUBDOMAIN, key=h) for h in sorted(hosts)]
-    return records, hosts
+    return CollectionResult(records=records, ok=any_source_ok, hosts=hosts)

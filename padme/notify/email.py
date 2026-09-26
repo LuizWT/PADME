@@ -11,7 +11,9 @@ import smtplib
 from datetime import datetime
 from email.message import EmailMessage
 
+from ..levels import Level
 from ..models import Event, EventType, Kind
+from .base import NotificationResult
 from .telegram import _DESC, _KIND_LABEL, _KIND_ORDER, _MARK
 
 
@@ -56,8 +58,12 @@ def format_events_plain(target: str, events: list[Event], when: datetime | None 
 
 
 class EmailNotifier:
+    name = "email"
+
     def __init__(self, host: str, port: int, username: str, password: str,
-                 from_addr: str, to: list[str], use_tls: bool = True, timeout: float = 20.0):
+                 from_addr: str, to: list[str], use_tls: bool = True,
+                 timeout: float = 20.0, level: Level = Level.MEDIUM,
+                 max_attempts: int = 2):
         self.host = host
         self.port = port
         self.username = username
@@ -66,6 +72,8 @@ class EmailNotifier:
         self.to = to
         self.use_tls = use_tls
         self.timeout = timeout
+        self.level = level
+        self.max_attempts = max_attempts
 
     @property
     def configured(self) -> bool:
@@ -84,19 +92,30 @@ class EmailNotifier:
                 s.login(self.username, self.password)
             s.send_message(msg)
 
-    async def _send(self, subject: str, body: str) -> bool:
-        if not self.configured or not body:
-            return False
+    async def _send(self, subject: str, body: str) -> NotificationResult:
+        if not self.configured:
+            return NotificationResult(self.name, ok=False, error="não configurado")
+        if not body:
+            return NotificationResult(self.name, ok=True, attempts=0)
         loop = asyncio.get_running_loop()
-        try:
-            await loop.run_in_executor(None, self._send_sync, subject, body)
-            return True
-        except Exception:
-            return False
+        last_err: str | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                await loop.run_in_executor(None, self._send_sync, subject, body)
+                return NotificationResult(self.name, ok=True, attempts=attempt)
+            except smtplib.SMTPAuthenticationError as exc:
+                # credencial inválida é permanente -> não insiste
+                return NotificationResult(self.name, ok=False, attempts=attempt,
+                                          error=type(exc).__name__)
+            except Exception as exc:  # noqa: BLE001 — transitório: tenta de novo
+                last_err = type(exc).__name__
+                if attempt < self.max_attempts:
+                    await asyncio.sleep(0.5 * attempt)
+        return NotificationResult(self.name, ok=False, attempts=self.max_attempts, error=last_err)
 
-    async def notify_events(self, target: str, events: list[Event]) -> bool:
+    async def notify_events(self, target: str, events: list[Event]) -> NotificationResult:
         subject = f"[Padmé] {target} — {len(events)} mudança(s)"
         return await self._send(subject, format_events_plain(target, events))
 
-    async def announce(self, msg: str) -> bool:
+    async def announce(self, msg: str) -> NotificationResult:
         return await self._send("[Padmé] status", f"Padmé — {msg}")

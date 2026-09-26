@@ -24,6 +24,7 @@ def test_collect(monkeypatch):
         return {"1.2.3.4"} if host.split(".")[0] in ("www", "api") else set()
 
     monkeypatch.setattr(bruteforce, "_resolve_ips", fake_resolve_ips)
-    recs, hosts = asyncio.run(bruteforce.collect("alvo.com", ["www", "api", "zzz"], 5))
-    assert hosts == {"www.alvo.com", "api.alvo.com"}
-    assert {r.key for r in recs} == {"www.alvo.com", "api.alvo.com"}
+    cr = asyncio.run(bruteforce.collect("alvo.com", ["www", "api", "zzz"], 5))
+    assert cr.hosts == {"www.alvo.com", "api.alvo.com"}
+    assert {r.key for r in cr.records} == {"www.alvo.com", "api.alvo.com"}
+    assert cr.ok is True
