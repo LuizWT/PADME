@@ -71,14 +71,25 @@ async def _cmd_scan(cfg: Config, args) -> int:
             _print_events(target, events, baseline=first)
             for err in result.errors:
                 log.debug("erro: %s", err)
-            if notifiers and not first:
-                enviar = filter_events(events, level)
-                if enviar:
-                    for n in notifiers:
+            if notifiers and not first and events:
+                telegram_events = filter_events(events, level)
+                for n in notifiers:
+                    if isinstance(n, TelegramNotifier):
+                        enviar = telegram_events
+                    else:
+                        enviar = events
+
+                    if enviar:
                         await n.notify_events(target, enviar)
-                elif events:
-                    log.info("[%s] %d mudança(s) abaixo do nível '%s' — não notificado.",
-                             target, len(events), level.name.lower())
+
+                if not telegram_events:
+                    log.info(
+                        "[%s] %d mudança(s) abaixo do nível Telegram '%s' — "
+                        "não enviadas ao Telegram.",
+                        target,
+                        len(events),
+                        level.name.lower(),
+                    )
     finally:
         storage.close()
     return 0
@@ -203,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     sp = sub.add_parser("scan", help="scan único (grava/atualiza baseline)")
-    sp.add_argument("--notify", action="store_true", help="também notifica no Telegram")
+    sp.add_argument("--notify", action="store_true", help="também envia mudanças aos canais de notificação configurados")
     sp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
                     help="limiar de severidade enviado ao Telegram (sobrescreve o config)")
     sp.set_defaults(func=_cmd_scan)

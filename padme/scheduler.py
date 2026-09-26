@@ -16,6 +16,7 @@ from .engine import Engine, build_notifiers
 from .heartbeat import from_config as heartbeat_from_config
 from .levels import filter_events, parse_level
 from .storage import Storage
+from .notify import TelegramNotifier
 
 log = logging.getLogger("padme")
 
@@ -43,11 +44,24 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
         if first:
             log.info("[%s] baseline gravado (%d itens).", target, len(events))
         elif events:
-            enviar = filter_events(events, level) if notifiers else []
-            log.info("[%s] %d mudança(s); %d no nível '%s'.",
-                     target, len(events), len(enviar), level.name.lower())
+            telegram_events = filter_events(events, level) if notifiers else []
+
+            log.info(
+                "[%s] %d mudança(s); %d no nível Telegram '%s'.",
+                target,
+                len(events),
+                len(telegram_events),
+                level.name.lower(),
+            )
+
             for n in notifiers:
-                await n.notify_events(target, enviar)
+                if isinstance(n, TelegramNotifier):
+                    enviar = telegram_events
+                else:
+                    enviar = events
+
+                if enviar:
+                    await n.notify_events(target, enviar)
         else:
             log.info("[%s] sem mudanças.", target)
     return cycle_ok
