@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from datetime import datetime, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import Event, EventType, Kind, Record, scope_of
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS targets (
 );
 """
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 
 class Storage:
@@ -77,18 +78,28 @@ class Storage:
         self._migrate()
         self._conn.commit()
 
+    def _has_column(self, table: str, col: str) -> bool:
+        rows = self._conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return any(r["name"] == col for r in rows)
+
     def _migrate(self) -> None:
-        """Migração idempotente baseada em PRAGMA user_version."""
+        """Migração idempotente e incremental baseada em PRAGMA user_version."""
         ver = self._conn.execute("PRAGMA user_version").fetchone()[0]
         if ver < 1:
-            # Bancos pré-`targets`: os alvos que já têm estado são baselines
-            # concluídos — marca como inicializados para não re-baselinar.
+            # v0 -> v1: bancos pré-`targets`. Os alvos que já têm estado são
+            # baselines concluídos — marca como inicializados p/ não re-baselinar.
             self._conn.execute(
                 "INSERT OR IGNORE INTO targets "
                 "(target, first_scan_at, last_scan_at, last_success_at, baseline_initialized) "
                 "SELECT target, MIN(first_seen), MAX(last_seen), MAX(last_seen), 1 "
                 "FROM state GROUP BY target"
             )
+        if ver < 2:
+            # v1 -> v2: rastreio de eventos (dedup no n8n, troubleshooting).
+            for col in ("event_id", "scan_id"):
+                if not self._has_column("events", col):
+                    self._conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
+        if ver != _SCHEMA_VERSION:
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -162,6 +173,7 @@ class Storage:
         )
         out = []
         for r in cur.fetchall():
+            keys = r.keys()
             out.append(
                 Event(
                     target=r["target"],
@@ -170,6 +182,10 @@ class Storage:
                     key=r["key"],
                     old_value=r["old_value"],
                     new_value=r["new_value"],
+                    event_id=r["event_id"] if "event_id" in keys else None,
+                    scan_id=r["scan_id"] if "scan_id" in keys else None,
+                    detected_at=datetime.fromtimestamp(
+                        r["ts"], tz=timezone.utc).isoformat(timespec="seconds"),
                 )
             )
         return out
@@ -217,11 +233,17 @@ class Storage:
                 removable_keys.add((e.kind.value, e.key))
             kept.append(e)
 
+        scan_id = uuid.uuid4().hex
+        detected_at = datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds")
         for e in kept:
+            e.event_id = uuid.uuid4().hex
+            e.scan_id = scan_id
+            e.detected_at = detected_at
             cur.execute(
-                "INSERT INTO events (target, ts, event_type, kind, key, old_value, new_value)"
-                " VALUES (?,?,?,?,?,?,?)",
-                (target, now, e.event_type.value, e.kind.value, e.key, e.old_value, e.new_value),
+                "INSERT INTO events (target, ts, event_type, kind, key, old_value, new_value, event_id, scan_id)"
+                " VALUES (?,?,?,?,?,?,?,?,?)",
+                (target, now, e.event_type.value, e.kind.value, e.key, e.old_value, e.new_value,
+                 e.event_id, e.scan_id),
             )
 
         self._write_state(cur, target, records, now, prior=old, removable=removable_keys)

@@ -15,22 +15,14 @@ from datetime import datetime, timedelta
 from .config import Config
 from .engine import Engine, build_notifiers
 from .heartbeat import from_config as heartbeat_from_config
-from .notify import send_all
+from .notify import NotificationManager
 from .storage import Storage
 
 log = logging.getLogger("padme")
 
 
-async def _announce(notifiers: list, msg: str) -> None:
-    for n in notifiers:
-        try:
-            await n.announce(msg)
-        except Exception as exc:  # noqa: BLE001 — anúncio nunca derruba o loop
-            log.debug("announce falhou (%s): %s", getattr(n, "name", "?"), exc)
-
-
 async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
-                     notifiers: list, cycle: int) -> bool:
+                     notifier: NotificationManager, cycle: int) -> bool:
     """Roda um ciclo (todos os alvos). Devolve True se todos varreram sem erro
     — é o `ok` do heartbeat: um ciclo com falha vira ping de falha."""
     cycle_ok = True
@@ -48,8 +40,8 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
             log.info("[%s] baseline gravado (%d itens no estado).", target, len(result.records))
         elif events:
             log.info("[%s] %d mudança(s).", target, len(events))
-            if notifiers:
-                await send_all(notifiers, target, events)
+            if notifier:
+                await notifier.dispatch(target, events)
         else:
             log.info("[%s] sem mudanças.", target)
     return cycle_ok
@@ -58,15 +50,14 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
 async def run_monitor(cfg: Config, once: bool = False) -> None:
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
-    notifiers = build_notifiers(cfg)
+    notifier = NotificationManager(build_notifiers(cfg))
     heartbeat = heartbeat_from_config(cfg)
     interval = cfg.interval_seconds
 
     if once:
         log.info("Ciclo único (--once): %d alvo(s).", len(cfg.targets))
     else:
-        await _announce(
-            notifiers,
+        await notifier.announce(
             f"modo sentinela — {len(cfg.targets)} alvo(s), varredura a cada {interval}s.",
         )
         log.info(
@@ -81,7 +72,7 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
     try:
         while True:
             cycle += 1
-            cycle_ok = await _run_cycle(cfg, engine, storage, notifiers, cycle)
+            cycle_ok = await _run_cycle(cfg, engine, storage, notifier, cycle)
             if heartbeat:
                 await heartbeat.beat(cycle, ok=cycle_ok)
 
@@ -96,6 +87,6 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
             await asyncio.sleep(interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
         log.info("Encerrando sentinela.")
-        await _announce(notifiers, "monitoramento encerrado.")
+        await notifier.announce("monitoramento encerrado.")
     finally:
         storage.close()

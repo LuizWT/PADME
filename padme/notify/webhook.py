@@ -16,7 +16,10 @@ import httpx
 from ..levels import Level, severity
 from ..models import Event, EventType, Kind
 from .base import NotificationResult, chunk_text, post_with_retry
-from .telegram import _DESC, _KIND_LABEL, _KIND_ORDER, _MARK
+from .formatting import DESC as _DESC
+from .formatting import KIND_LABEL as _KIND_LABEL
+from .formatting import KIND_ORDER as _KIND_ORDER
+from .formatting import MARK as _MARK
 
 # Versão do contrato JSON do webhook genérico (consumidores tipo n8n).
 WEBHOOK_SCHEMA_VERSION = 1
@@ -75,8 +78,11 @@ def format_events_md(target: str, events: list[Event], when: datetime | None = N
 
 def event_to_dict(e: Event) -> dict:
     return {
+        "event_id": e.event_id,
+        "scan_id": e.scan_id,
+        "detected_at": e.detected_at,
         "severity": severity(e).name.lower(),
-        "kind": e.kind.value,
+        "kind": e.kind.value,          # collector de origem
         "type": e.event_type.value,
         "key": e.key,
         "old": e.old_value,
@@ -150,11 +156,13 @@ class WebhookNotifier:
                                          headers=self.headers or None)
 
     async def notify_events(self, target: str, events: list[Event]) -> NotificationResult:
+        scan_id = next((e.scan_id for e in events if e.scan_id), None)
         payload = {
             "schema_version": WEBHOOK_SCHEMA_VERSION,
             "source": "padme",
             "type": "changes",
             "target": target,
+            "scan_id": scan_id,
             "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "count": len(events),
             "events": [event_to_dict(e) for e in events],

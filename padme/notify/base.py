@@ -15,6 +15,7 @@ import asyncio
 import logging
 import random
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 import httpx
 
@@ -74,6 +75,25 @@ class NotificationResult:
 
     def __bool__(self) -> bool:  # compat: `if await n.notify_events(...)`
         return self.ok
+
+
+@runtime_checkable
+class Notifier(Protocol):
+    """Contrato dos canais (formaliza o que já era implícito).
+
+    Todo notifier tem `name`, `level` (limiar próprio) e sabe se está
+    `configured`; envia eventos ou um anúncio devolvendo um NotificationResult.
+    """
+
+    name: str
+    level: Level
+
+    @property
+    def configured(self) -> bool: ...
+
+    async def notify_events(self, target: str, events: list[Event]) -> "NotificationResult": ...
+
+    async def announce(self, msg: str) -> "NotificationResult": ...
 
 
 def _backoff(attempt: int, retry_after: float | None) -> float:
@@ -161,3 +181,32 @@ def _log_result(r: NotificationResult) -> None:
         log.error("notification.%s falhou status=%s tentativas=%d erro=%s",
                   r.channel, r.status if r.status is not None else "-", r.attempts,
                   redact(r.error or ""))
+
+
+class NotificationManager:
+    """Agrupa os canais e centraliza o despacho (dispatch/announce), cada um com
+    a sua política de nível. Um canal lento/quebrado não afeta os outros."""
+
+    def __init__(self, notifiers: list[Notifier]):
+        self.notifiers = notifiers
+
+    def __bool__(self) -> bool:
+        return bool(self.notifiers)
+
+    async def dispatch(self, target: str, events: list[Event]) -> list[NotificationResult]:
+        return await send_all(self.notifiers, target, events)
+
+    async def announce(self, msg: str) -> list[NotificationResult]:
+        async def one(n: Notifier) -> NotificationResult:
+            return await n.announce(msg)
+
+        raw = await asyncio.gather(*(one(n) for n in self.notifiers), return_exceptions=True)
+        out: list[NotificationResult] = []
+        for n, r in zip(self.notifiers, raw):
+            name = getattr(n, "name", type(n).__name__)
+            if isinstance(r, Exception):
+                log.debug("announce.%s falhou: %s", name, redact(str(r)))
+                out.append(NotificationResult(name, ok=False, error=type(r).__name__))
+            else:
+                out.append(r)
+        return out

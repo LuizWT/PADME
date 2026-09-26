@@ -29,11 +29,19 @@ def test_md_vazio():
 def test_event_to_dict():
     e = Event("alvo.com", EventType.ADDED, Kind.TAKEOVER, "blog.alvo.com", None, "x")
     d = event_to_dict(e)
-    assert d == {
-        "severity": "critical",
-        "kind": "takeover",
-        "type": "added",
-        "key": "blog.alvo.com",
-        "old": None,
-        "new": "x",
-    }
+    # campos de conteúdo
+    assert d["severity"] == "critical"
+    assert d["kind"] == "takeover"
+    assert d["type"] == "added"
+    assert d["key"] == "blog.alvo.com"
+    assert d["old"] is None and d["new"] == "x"
+    # campos de rastreio presentes no contrato (None quando o evento não passou pelo storage)
+    assert set(d) >= {"event_id", "scan_id", "detected_at"}
+
+
+def test_event_to_dict_com_rastreio():
+    e = Event("alvo.com", EventType.ADDED, Kind.PORT, "alvo.com:443", None, "open",
+              event_id="abc", scan_id="scan1", detected_at="2026-09-26T00:00:00+00:00")
+    d = event_to_dict(e)
+    assert d["event_id"] == "abc" and d["scan_id"] == "scan1"
+    assert d["detected_at"].endswith("+00:00")

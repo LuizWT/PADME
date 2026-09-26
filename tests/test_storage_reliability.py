@@ -101,7 +101,7 @@ def test_migracao_backfill_nao_rebaselina():
 
     s = Storage(db)  # deve migrar: cria targets + backfill baseline_initialized=1
     assert s.is_known_target("x.com") is True         # não re-baseliniza
-    assert s._conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert s._conn.execute("PRAGMA user_version").fetchone()[0] == 2
     # como já é conhecido, um sumiço observado gera REMOVED (não vira baseline)
     evs = s.apply_scan("x.com", [], observed_scopes={("subdomain", "x.com")})
     assert [e.event_type.value for e in evs] == ["removed"]

@@ -5,7 +5,14 @@ Cada notifier tem `name`, `level` (limiar próprio de severidade) e devolve um
 cada um aplicando o seu nível.
 """
 
-from .base import NotificationResult, chunk_text, post_with_retry, send_all
+from .base import (
+    NotificationManager,
+    NotificationResult,
+    Notifier,
+    chunk_text,
+    post_with_retry,
+    send_all,
+)
 from .email import EmailNotifier, format_events_plain
 from .telegram import TelegramNotifier, format_events
 from .webhook import DiscordNotifier, WebhookNotifier, format_events_md
@@ -15,6 +22,8 @@ __all__ = [
     "DiscordNotifier",
     "WebhookNotifier",
     "EmailNotifier",
+    "Notifier",
+    "NotificationManager",
     "NotificationResult",
     "send_all",
     "chunk_text",

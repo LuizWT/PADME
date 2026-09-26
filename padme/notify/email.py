@@ -14,7 +14,10 @@ from email.message import EmailMessage
 from ..levels import Level
 from ..models import Event, EventType, Kind
 from .base import NotificationResult
-from .telegram import _DESC, _KIND_LABEL, _KIND_ORDER, _MARK
+from .formatting import DESC as _DESC
+from .formatting import KIND_LABEL as _KIND_LABEL
+from .formatting import KIND_ORDER as _KIND_ORDER
+from .formatting import MARK as _MARK
 
 
 def _plain_line(e: Event) -> str:

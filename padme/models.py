@@ -93,6 +93,11 @@ class Event:
     key: str
     old_value: str | None = None
     new_value: str | None = None
+    # metadados de rastreio (preenchidos ao persistir): úteis p/ dedup no n8n,
+    # troubleshooting e o painel. `detected_at` é ISO-8601 em UTC.
+    event_id: str | None = None
+    scan_id: str | None = None
+    detected_at: str | None = None
 
     @property
     def is_noteworthy(self) -> bool:
