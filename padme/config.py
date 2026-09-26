@@ -114,6 +114,7 @@ class CollectorsConfig:
     http: bool = True         # ativo leve (GET nos hosts)
     tls: bool = True          # ativo leve (handshake)
     cert_expiry_days: int = 14  # avisa quando o cert está a <= N dias de expirar
+    max_response_bytes: int = 262144  # teto de corpo HTTP lido por host (256 KiB)
     takeover: bool = True     # CNAME dangling + fingerprint de serviços
     ports: bool = False       # ativo — desligado por padrão
     ports_list: list[int] = field(
@@ -182,6 +183,7 @@ class Config:
                 http=bool(col.get("http", True)),
                 tls=bool(col.get("tls", True)),
                 cert_expiry_days=int(col.get("cert_expiry_days", 14)),
+                max_response_bytes=int(col.get("max_response_bytes", 262144)),
                 takeover=bool(col.get("takeover", True)),
                 ports=bool(col.get("ports", False)),
                 ports_list=list(col.get("ports_list", CollectorsConfig().ports_list)),

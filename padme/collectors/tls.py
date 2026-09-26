@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import socket
 import ssl
 from datetime import datetime, timezone
 
 from ..models import CollectionResult, Kind, Record
+
+log = logging.getLogger("padme")
 
 try:
     from cryptography import x509
@@ -33,7 +36,8 @@ def _issuer_and_expiry(cert_bin: bytes) -> tuple[str, datetime | None]:
         return "", None
     try:
         cert = x509.load_der_x509_certificate(cert_bin)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 — observável, mas não derruba o scan
+        log.debug("TLS: falha ao parsear certificado (%s)", type(exc).__name__)
         return "", None
     issuer = ""
     for oid in (NameOID.ORGANIZATION_NAME, NameOID.COMMON_NAME):
@@ -89,6 +93,11 @@ async def collect_host(
     not_after = data["not_after"]
     fp = data["fp"]
     date_str = not_after.strftime("%Y-%m-%d") if not_after else "?"
+    if not issuer or not_after is None:
+        # conectou e leu o cert, mas o parser não extraiu tudo: registra pra
+        # diagnóstico (sem vazar dado sensível) em vez de engolir em silêncio.
+        log.debug("[%s:%d] TLS: cert parcial (issuer=%s expira=%s)",
+                  host, port, bool(issuer), "?" if not_after is None else "ok")
 
     records = [
         Record(kind=Kind.TLS, key=f"{host}:{port}",

@@ -32,6 +32,7 @@ collectors:
   http: true          # ativo leve — 1 GET por host
   tls: true           # ativo leve — handshake p/ ler o certificado
   cert_expiry_days: 14  # avisa quando o cert está a <= N dias de expirar
+  max_response_bytes: 262144  # teto do corpo HTTP lido por host (256 KiB)
   takeover: true      # subdomain takeover (CNAME dangling + fingerprint)
   ports: false        # ativo — connect-scan (ligue com consciência)
   ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]

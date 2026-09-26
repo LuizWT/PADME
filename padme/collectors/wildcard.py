@@ -32,10 +32,16 @@ except Exception:  # pragma: no cover
 
 @dataclass(frozen=True)
 class Wildcard:
-    """Resultado da sondagem de curinga de um apex."""
+    """Resultado da sondagem de curinga de um apex.
+
+    `confidence` é a fração de sondas que resolveram (observabilidade p/ logs e
+    painel). NÃO afeta a supressão: `matches` continua conservador — só suprime
+    um host cujos IPs caem INTEIRAMENTE no catch-all. Na dúvida, não suprime.
+    """
 
     active: bool = False
     ips: frozenset[str] = frozenset()
+    confidence: float = 0.0
 
     def matches(self, ips: set[str] | frozenset[str]) -> bool:
         """True se `ips` (não vazio) cai inteiramente dentro do catch-all — ou
@@ -57,15 +63,17 @@ def classify_probe_ips(probe_ip_sets: list[set[str]]) -> Wildcard:
     conjuntos de IPs é não vazia (um catch-all estável). Os IPs do curinga são
     essa interseção — só suprimimos o que bate com o catch-all comum a todas.
     """
+    total = len(probe_ip_sets) or 1
     resolved = [s for s in probe_ip_sets if s]
+    confidence = round(len(resolved) / total, 2)
     if len(resolved) < 2:
-        return Wildcard(active=False)
+        return Wildcard(active=False, confidence=confidence)
     common: set[str] = set(resolved[0])
     for s in resolved[1:]:
         common &= s
     if not common:
-        return Wildcard(active=False)
-    return Wildcard(active=True, ips=frozenset(common))
+        return Wildcard(active=False, confidence=confidence)
+    return Wildcard(active=True, ips=frozenset(common), confidence=confidence)
 
 
 async def _resolve_ips(resolver, host: str) -> set[str]:

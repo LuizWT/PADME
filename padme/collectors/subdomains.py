@@ -86,5 +86,7 @@ async def collect(target: str, client: httpx.AsyncClient) -> CollectionResult:
         if payload is not None:
             hosts |= _extract_hosts(payload, apex)
 
-    records = [Record(kind=Kind.SUBDOMAIN, key=h) for h in sorted(hosts)]
+    # O apex é host de INSPEÇÃO, mas não é um "subdomínio": não vira Record
+    # SUBDOMAIN (senão o próprio alvo apareceria como subdomínio de si mesmo).
+    records = [Record(kind=Kind.SUBDOMAIN, key=h) for h in sorted(hosts) if h != apex]
     return CollectionResult(records=records, ok=any_source_ok, hosts=hosts)

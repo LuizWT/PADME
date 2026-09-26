@@ -8,10 +8,14 @@ apareceram em certificados. Desligado por padrão.
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 from ..models import CollectionResult, Kind, Record
 from .wildcard import Wildcard
+
+# label DNS válido: 1–63 chars, alfanumérico + hífen (sem começar/terminar em -)
+_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 try:
     import dns.asyncresolver
@@ -33,13 +37,40 @@ DEFAULT_WORDS = [
 ]
 
 
+def _valid_word(raw: str) -> str | None:
+    """Normaliza e valida um item da wordlist. Retorna None se inválido/comentário."""
+    w = raw.strip().lower().rstrip(".")
+    if not w or w.startswith("#") or "*" in w:
+        return None
+    # aceita labels compostos (ex.: 'dev.api'); valida cada label
+    if all(_LABEL_RE.match(lb) for lb in w.split(".")):
+        return w
+    return None
+
+
+def _normalize(lines: list[str]) -> list[str]:
+    """Limpa (espaços, vazias, comentários, inválidos) e deduplica preservando ordem."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in lines:
+        w = _valid_word(line)
+        if w and w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out
+
+
 def load_words(path: str = "") -> list[str]:
-    if path:
-        p = Path(path)
-        if p.exists():
-            lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
-            return [w.strip() for w in lines if w.strip() and not w.startswith("#")]
-    return DEFAULT_WORDS
+    """Carrega a wordlist. Sem caminho -> lista embutida. Caminho CONFIGURADO mas
+    inexistente -> erro claro (não cai silenciosamente pro default, o que
+    mascararia um erro de configuração)."""
+    if not path:
+        return _normalize(DEFAULT_WORDS)
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"wordlist configurada não encontrada: {path}")
+    lines = p.read_text(encoding="utf-8", errors="ignore").splitlines()
+    return _normalize(lines)
 
 
 async def _resolve_ips(resolver, host: str) -> set[str]:

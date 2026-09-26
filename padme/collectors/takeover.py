@@ -20,6 +20,7 @@ from __future__ import annotations
 import httpx
 
 from ..models import CollectionResult, Kind, Record
+from .http import DEFAULT_MAX_BYTES, _fetch_limited
 
 try:
     import dns.asyncresolver
@@ -51,11 +52,18 @@ FINGERPRINTS = [
 
 
 def match_service(cname: str) -> dict | None:
-    """Casa o alvo de um CNAME contra a base de serviços."""
+    """Casa o alvo de um CNAME contra a base de serviços, respeitando FRONTEIRA
+    DE DOMÍNIO (não substring solta): `c == pat` ou `c` termina em `.pat`.
+
+    Assim `foo.github.io` e `github.io` casam, mas `evilgithub.io` e
+    `github.io.attacker.com` NÃO — evitando falso positivo por substring.
+    """
     c = cname.lower().rstrip(".")
     for fp in FINGERPRINTS:
-        if any(pat in c for pat in fp["cnames"]):
-            return fp
+        for pat in fp["cnames"]:
+            pat = pat.lower().rstrip(".")
+            if c == pat or c.endswith("." + pat):
+                return fp
     return None
 
 
@@ -77,30 +85,50 @@ async def _cname_target(host: str, timeout: float) -> tuple[str | None, bool, bo
     except Exception:
         return None, True, False  # timeout/SERVFAIL -> inconclusivo
     target = str(ans[0].target).rstrip(".")
-    try:
-        await resolver.resolve(target, "A")
-        return target, True, True
-    except dns.resolver.NXDOMAIN:
-        return target, False, True  # dangling confirmado
-    except dns.resolver.NoAnswer:
-        return target, True, True  # existe sem A (NOERROR) -> não é dangling
-    except Exception:
-        return target, True, False  # inconclusivo -> não crava dangling
+    state = await _resolves(resolver, target)
+    if state == "nxdomain":
+        return target, False, True   # dangling confirmado (nome não existe)
+    if state == "resolves":
+        return target, True, True    # tem A/AAAA (ou existe sem endereço) -> não é dangling
+    return target, True, False       # inconclusivo (timeout/SERVFAIL) -> não crava dangling
+
+
+async def _resolves(resolver, target: str) -> str:
+    """Estado de resolução do alvo do CNAME: 'resolves' | 'nxdomain' | 'unknown'.
+
+    Checa A E AAAA — um alvo só-IPv6 não pode ser dado como indisponível por
+    ausência de A. NXDOMAIN é definitivo (nome inexistente = dangling). NoAnswer
+    (nome existe, sem endereço daquele tipo) não é dangling. Timeout/SERVFAIL =
+    'unknown' (nunca vira takeover).
+    """
+    saw_noanswer = False
+    for rtype in ("A", "AAAA"):
+        try:
+            await resolver.resolve(target, rtype)
+            return "resolves"
+        except dns.resolver.NXDOMAIN:
+            return "nxdomain"
+        except dns.resolver.NoAnswer:
+            saw_noanswer = True
+        except Exception:
+            return "unknown"  # timeout/SERVFAIL: não classifica como dangling
+    # nome existe (NOERROR) mas sem A nem AAAA -> não é dangling de takeover
+    return "resolves" if saw_noanswer else "unknown"
 
 
 async def _body(
     client: httpx.AsyncClient, host: str, cache: dict[str, str] | None = None,
-    follow_redirects: bool = False,
+    follow_redirects: bool = False, max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> tuple[str, bool]:
     """Retorna (corpo, buscado_ok). buscado_ok=False se nenhum esquema respondeu
-    (a checagem de fingerprint fica inconclusiva)."""
+    (a checagem de fingerprint fica inconclusiva). Corpo limitado a max_bytes."""
     for scheme in ("https", "http"):
         url = f"{scheme}://{host}"
         if cache is not None and url in cache:  # reaproveita o GET do collector HTTP
             return cache[url], True
         try:
-            r = await client.get(url, follow_redirects=follow_redirects)
-            return r.text or "", True
+            _, body = await _fetch_limited(client, url, follow_redirects, max_bytes)
+            return body, True
         except Exception:
             continue
     return "", False
@@ -109,6 +137,7 @@ async def _body(
 async def collect_host(
     host: str, client: httpx.AsyncClient, timeout: float,
     cache: dict[str, str] | None = None, follow_redirects: bool = False,
+    max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> CollectionResult:
     target, resolves, cname_ok = await _cname_target(host, timeout)
     if target is None:
@@ -128,7 +157,7 @@ async def collect_host(
         elif not resolves:
             reason = "CNAME dangling (NXDOMAIN)"
     elif fp["fingerprint"]:
-        body, fetched = await _body(client, host, cache, follow_redirects)
+        body, fetched = await _body(client, host, cache, follow_redirects, max_bytes)
         if not fetched:
             ok = False  # não conseguimos o corpo -> inconclusivo, preserva
         elif fp["fingerprint"].lower() in body.lower():

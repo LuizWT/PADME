@@ -72,7 +72,8 @@ class Engine:
                     # detecção concluiu -> escopo observado (mesmo se não houver curinga)
                     result.observed_scopes.add((Kind.WILDCARD.value, target))
                     if wc.active:
-                        log.info("[%s] wildcard DNS ativo -> %s", target, ", ".join(sorted(wc.ips)))
+                        log.info("[%s] wildcard DNS ativo (confiança %.0f%%) -> %s",
+                                 target, wc.confidence * 100, ", ".join(sorted(wc.ips)))
                         result.records.append(
                             Record(Kind.WILDCARD, target, ", ".join(sorted(wc.ips)))
                         )
@@ -98,6 +99,10 @@ class Engine:
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
                     # bruteforce é suplementar: NÃO marca o escopo de subdomínio
+                except FileNotFoundError as exc:
+                    # wordlist configurada e ausente: sinal claro, não silêncio
+                    log.warning("[%s] bruteforce pulado: %s", target, exc)
+                    result.errors.append(f"bruteforce: {exc}")
                 except Exception as exc:  # noqa: BLE001
                     result.errors.append(f"bruteforce: {exc}")
             log.info("[%s] %d host(s) para inspecionar", target, len(hosts))
@@ -137,7 +142,8 @@ class Engine:
 
             if col.http:
                 cr = await _safe(
-                    http.collect_host(host, client, body_cache, net.follow_redirects),
+                    http.collect_host(host, client, body_cache, net.follow_redirects,
+                                      col.max_response_bytes),
                     host, "http", result)
                 _absorb(cr, result, "http", host)
             if col.tls:
@@ -147,7 +153,8 @@ class Engine:
                 _absorb(cr, result, "tls", host)
             if col.takeover:
                 cr = await _safe(
-                    takeover.collect_host(host, client, self.cfg.timeout, body_cache, net.follow_redirects),
+                    takeover.collect_host(host, client, self.cfg.timeout, body_cache,
+                                          net.follow_redirects, col.max_response_bytes),
                     host, "takeover", result)
                 _absorb(cr, result, "takeover", host)
             if col.ports:
