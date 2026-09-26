@@ -48,6 +48,10 @@ network:
   # DNS passivo continua. Ligue só se realmente monitora rede interna.
   allow_private_ips: false
 
+# Armazenamento / retenção do histórico (o `state` nunca é apagado).
+storage:
+  event_retention_days: 0   # 0 = mantém tudo; > 0 apaga eventos mais antigos
+
 telegram:
   enabled: true
   # limiar mínimo de severidade enviado ao Telegram (o terminal sempre mostra tudo):

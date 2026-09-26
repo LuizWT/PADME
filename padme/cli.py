@@ -19,6 +19,7 @@ import io
 import json
 import logging
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -66,9 +67,16 @@ async def _cmd_scan(cfg: Config, args) -> int:
     try:
         for target in cfg.targets:
             first = not storage.is_known_target(target)
+            t0 = time.monotonic()
             result = await engine.scan_target(target)
             events = engine.apply(result)
+            errs = len(result.errors)
+            storage.update_health(target, error_count=errs, partial=errs > 0,
+                                  duration_ms=int((time.monotonic() - t0) * 1000))
             _print_events(target, events, baseline=first)
+            if errs:
+                print(f"[{target}] coleta parcial: {errs} erro(s) de collector "
+                      f"(estado preservado; veja -v).")
             for err in result.errors:
                 log.debug("erro: %s", err)
             # cada canal filtra pelo próprio nível; envio concorrente
@@ -167,10 +175,72 @@ async def _cmd_test_telegram(cfg: Config, args) -> int:
     return 0 if res.ok else 1
 
 
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+
+
 async def _cmd_web(cfg: Config, args) -> int:
     from .webpanel import serve
-    serve(cfg, args.host, args.port)
+    if args.host not in _LOOPBACK:
+        print(
+            f"⚠️  Servindo o painel em {args.host} (fora de localhost). O painel NÃO tem\n"
+            "    autenticação e expõe sua superfície de ataque. Só faça isso em rede\n"
+            "    confiável / atrás de um proxy autenticado.",
+            file=sys.stderr,
+        )
+    serve(cfg, args.host, args.port, exposed=args.host not in _LOOPBACK)
     return 0
+
+
+def _config_warnings(cfg: Config) -> list[str]:
+    """Sanidade de configuração (não bloqueia; só diagnostica em `doctor`)."""
+    w: list[str] = []
+    _PLACEHOLDERS = {"SEU_BOT_TOKEN_AQUI", "SEU_CHAT_ID_AQUI", ""}
+    if cfg.interval_seconds <= 0:
+        w.append("interval_seconds deve ser > 0")
+    if cfg.concurrency <= 0:
+        w.append("concurrency deve ser > 0")
+    if cfg.timeout <= 0:
+        w.append("timeout deve ser > 0")
+    if cfg.telegram.enabled and (cfg.telegram.bot_token in _PLACEHOLDERS
+                                 or cfg.telegram.chat_id in _PLACEHOLDERS):
+        w.append("telegram habilitado mas bot_token/chat_id ausentes ou de exemplo")
+    if cfg.discord.enabled and not cfg.discord.webhook_url:
+        w.append("discord habilitado mas webhook_url vazio (variável de ambiente definida?)")
+    if cfg.webhook.enabled and not cfg.webhook.url:
+        w.append("webhook habilitado mas url vazia (variável de ambiente definida?)")
+    if cfg.email.enabled and not (cfg.email.smtp_host and cfg.email.from_addr and cfg.email.to):
+        w.append("email habilitado mas smtp_host/from/to incompletos")
+    return w
+
+
+async def _cmd_doctor(cfg: Config, args) -> int:
+    storage = Storage(cfg.db_path)
+    try:
+        integ = storage.integrity_check()
+        cnt = storage.counts()
+        print(f"banco:        {cfg.db_path}")
+        print(f"integridade:  {integ}")
+        print(f"contagens:    targets={cnt['targets']} state={cnt['state']} events={cnt['events']}")
+        print("alvos:")
+        for t in cfg.targets:
+            m = storage.target_meta(t) or {}
+            base = "sim" if m.get("baseline_initialized") else "não"
+            ec = m.get("last_error_count")
+            dur = m.get("last_duration_ms")
+            print(f"  {t}: baseline={base}"
+                  f" · último_scan={_iso(m.get('last_scan_at')) or '—'}"
+                  f" · último_ok={_iso(m.get('last_success_at')) or '—'}"
+                  f" · erros={ec if ec is not None else '—'}"
+                  f" · parcial={'sim' if m.get('last_partial') else 'não'}"
+                  f" · dur={dur if dur is not None else '—'}ms")
+        warns = _config_warnings(cfg)
+        if warns:
+            print("avisos de configuração:")
+            for x in warns:
+                print(f"  ! {x}")
+    finally:
+        storage.close()
+    return 0 if integ == "ok" else 1
 
 
 async def _cmd_test_notify(cfg: Config, args) -> int:
@@ -234,6 +304,9 @@ def build_parser() -> argparse.ArgumentParser:
     wb.add_argument("--port", type=int, default=8787)
     wb.set_defaults(func=_cmd_web)
 
+    dp = sub.add_parser("doctor", help="diagnóstico: integridade do banco, saúde dos scans e config")
+    dp.set_defaults(func=_cmd_doctor)
+
     return p
 
 
@@ -256,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web")
+    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"

@@ -88,6 +88,13 @@ class NetworkConfig:
 
 
 @dataclass
+class StorageConfig:
+    """Política de armazenamento. `event_retention_days` = 0 mantém tudo;
+    > 0 apaga eventos mais antigos (o `state` nunca é apagado)."""
+    event_retention_days: int = 0
+
+
+@dataclass
 class HeartbeatConfig:
     enabled: bool = False
     url: str = ""            # ping de watchdog (healthchecks.io etc.); vazio = só arquivo
@@ -132,6 +139,7 @@ class Config:
     db_path: str = "padme.db"
     collectors: CollectorsConfig = field(default_factory=CollectorsConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
@@ -154,6 +162,7 @@ class Config:
 
         col = raw.get("collectors") or {}
         net = raw.get("network") or {}
+        stg = raw.get("storage") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
@@ -191,6 +200,9 @@ class Config:
             network=NetworkConfig(
                 allow_private_ips=bool(net.get("allow_private_ips", False)),
                 follow_redirects=bool(net.get("follow_redirects", False)),
+            ),
+            storage=StorageConfig(
+                event_retention_days=int(stg.get("event_retention_days", 0)),
             ),
             telegram=TelegramConfig(
                 enabled=bool(tg.get("enabled", False)),

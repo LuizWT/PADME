@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS targets (
 );
 """
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 
 class Storage:
@@ -99,6 +99,12 @@ class Storage:
             for col in ("event_id", "scan_id"):
                 if not self._has_column("events", col):
                     self._conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
+        if ver < 3:
+            # v2 -> v3: saúde da coleta por alvo (o painel precisa saber se o
+            # que mostra é o estado real ou o resultado de uma coleta parcial).
+            for col in ("last_error_count", "last_partial", "last_duration_ms"):
+                if not self._has_column("targets", col):
+                    self._conn.execute(f"ALTER TABLE targets ADD COLUMN {col} INTEGER")
         if ver != _SCHEMA_VERSION:
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
@@ -280,13 +286,59 @@ class Storage:
                     )
 
     def _mark_scan(self, cur, target: str, now: float, baseline: bool) -> None:
-        """Registra/atualiza os metadados do alvo (baseline + timestamps)."""
+        """Registra/atualiza os metadados do alvo (baseline + last_scan_at).
+
+        `last_success_at` NÃO é tocado aqui — quem decide "sucesso" é
+        `update_health` (só marca sucesso quando a coleta veio sem erros)."""
         cur.execute(
-            "INSERT INTO targets (target, first_scan_at, last_scan_at, last_success_at, baseline_initialized)"
-            " VALUES (?,?,?,?,1)"
+            "INSERT INTO targets (target, first_scan_at, last_scan_at, baseline_initialized)"
+            " VALUES (?,?,?,1)"
             " ON CONFLICT(target) DO UPDATE SET"
             "   last_scan_at=excluded.last_scan_at,"
-            "   last_success_at=excluded.last_success_at,"
             "   baseline_initialized=1",
-            (target, now, now, now),
+            (target, now, now),
         )
+
+    def update_health(self, target: str, *, error_count: int, partial: bool,
+                      duration_ms: int, when: float | None = None) -> None:
+        """Grava a saúde da última coleta do alvo. `last_success_at` só avança
+        quando a coleta veio limpa (error_count == 0) — assim o painel distingue
+        'último scan' de 'último scan confiável'."""
+        now = time.time() if when is None else when
+        if error_count == 0:
+            self._conn.execute(
+                "UPDATE targets SET last_scan_at=?, last_success_at=?, last_error_count=?,"
+                " last_partial=?, last_duration_ms=? WHERE target=?",
+                (now, now, error_count, int(partial), duration_ms, target),
+            )
+        else:
+            self._conn.execute(
+                "UPDATE targets SET last_scan_at=?, last_error_count=?,"
+                " last_partial=?, last_duration_ms=? WHERE target=?",
+                (now, error_count, int(partial), duration_ms, target),
+            )
+        self._conn.commit()
+
+    def prune_events(self, retention_days: int) -> int:
+        """Apaga eventos mais antigos que `retention_days` (0/negativo = mantém
+        tudo). NÃO toca no `state`. Devolve quantas linhas foram removidas."""
+        if retention_days <= 0:
+            return 0
+        cutoff = time.time() - retention_days * 86400
+        cur = self._conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+        self._conn.commit()
+        return cur.rowcount
+
+    def integrity_check(self) -> str:
+        """PRAGMA integrity_check — 'ok' se o banco está íntegro."""
+        row = self._conn.execute("PRAGMA integrity_check").fetchone()
+        return row[0] if row else "unknown"
+
+    def counts(self) -> dict[str, int]:
+        """Contagens rápidas para diagnóstico (padme doctor)."""
+        c = self._conn.execute
+        return {
+            "targets": c("SELECT COUNT(*) FROM targets").fetchone()[0],
+            "state": c("SELECT COUNT(*) FROM state").fetchone()[0],
+            "events": c("SELECT COUNT(*) FROM events").fetchone()[0],
+        }

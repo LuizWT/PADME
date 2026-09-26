@@ -59,7 +59,7 @@ def test_migracao_v1_para_v2():
     s = Storage(db)
     assert s._has_column("events", "event_id")
     assert s._has_column("events", "scan_id")
-    assert s._conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert s._conn.execute("PRAGMA user_version").fetchone()[0] == 3
     s.close(); os.remove(db)
 
 

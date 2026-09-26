@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta
 
 from .config import Config
@@ -23,28 +24,43 @@ log = logging.getLogger("padme")
 
 async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
                      notifier: NotificationManager, cycle: int) -> bool:
-    """Roda um ciclo (todos os alvos). Devolve True se todos varreram sem erro
-    — é o `ok` do heartbeat: um ciclo com falha vira ping de falha."""
-    cycle_ok = True
+    """Roda um ciclo (todos os alvos). Devolve `scan_ok`: o dead-man's switch
+    monitora ALIVENESS (o loop rodou e varreu), então só uma exceção FATAL de
+    scan derruba o heartbeat. Coleta parcial e falha de notificação são
+    registradas e logadas separadamente (saúde de coleta ≠ saúde de notificação
+    ≠ heartbeat), mas NÃO viram ping de falha."""
+    scan_ok = True
     for target in cfg.targets:
         first = not storage.is_known_target(target)
+        t0 = time.monotonic()
         try:
             result = await engine.scan_target(target)
             events = engine.apply(result)
         except Exception as exc:  # noqa: BLE001
             log.error("[%s] scan falhou: %s", target, exc)
-            cycle_ok = False
+            scan_ok = False
             continue
+
+        errs = len(result.errors)
+        storage.update_health(target, error_count=errs, partial=errs > 0,
+                              duration_ms=int((time.monotonic() - t0) * 1000))
+        if errs:
+            log.warning("[%s] coleta PARCIAL: %d erro(s) de collector (estado preservado).",
+                        target, errs)
 
         if first:
             log.info("[%s] baseline gravado (%d itens no estado).", target, len(result.records))
         elif events:
             log.info("[%s] %d mudança(s).", target, len(events))
             if notifier:
-                await notifier.dispatch(target, events)
+                results = await notifier.dispatch(target, events)
+                failed = [r for r in results if not r.ok]
+                if failed:
+                    log.warning("[%s] notificação falhou em %d canal(is): %s", target,
+                                len(failed), ", ".join(r.channel for r in failed))
         else:
             log.info("[%s] sem mudanças.", target)
-    return cycle_ok
+    return scan_ok
 
 
 async def run_monitor(cfg: Config, once: bool = False) -> None:
@@ -75,6 +91,11 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
             cycle_ok = await _run_cycle(cfg, engine, storage, notifier, cycle)
             if heartbeat:
                 await heartbeat.beat(cycle, ok=cycle_ok)
+
+            pruned = storage.prune_events(cfg.storage.event_retention_days)
+            if pruned:
+                log.info("Retenção: %d evento(s) antigos removidos (> %dd).",
+                         pruned, cfg.storage.event_retention_days)
 
             if once:
                 log.info("Ciclo único concluído (%s).", "ok" if cycle_ok else "com falhas")

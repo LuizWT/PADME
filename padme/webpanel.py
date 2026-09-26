@@ -13,6 +13,7 @@ import socketserver
 from datetime import datetime
 
 from .config import Config
+from .levels import severity
 from .storage import Storage
 
 _KIND_ORDER = ["takeover", "cert_expiry", "wildcard", "subdomain", "port", "http", "tls", "dns"]
@@ -50,6 +51,11 @@ h1{font-size:20px;margin:0 0 4px}
 .trend svg{width:100%;height:auto;display:block;margin-top:6px}
 .legend{color:#8b949e;font-size:11px;margin-top:4px}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 4px 0 10px;vertical-align:middle}
+.health{padding:8px 16px;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e}
+.health .ok{color:#3fb950}.health .warn{color:#d29922}
+.health .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.banner{background:#4b1d1d;border:1px solid #f85149;color:#ffb0aa;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px}
+.evsev{color:#8b949e;font-size:10px}
 footer{color:#8b949e;font-size:11px;margin-top:24px;text-align:center}
 """
 
@@ -158,13 +164,44 @@ def _esc(s) -> str:
     return html.escape(str(s or ""))
 
 
-def _render(cfg: Config) -> str:
+def _ts_human(ts) -> str:
+    try:
+        return datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return "—"
+
+
+def _health_html(meta: dict | None) -> str:
+    """Faixa de saúde da coleta: o usuário precisa saber se o que vê é o estado
+    real ou o resultado de uma coleta parcial."""
+    if not meta:
+        return "<div class=health>sem scan registrado ainda.</div>"
+    errs = meta.get("last_error_count")
+    partial = bool(meta.get("last_partial"))
+    dur = meta.get("last_duration_ms")
+    ok = not partial and (errs == 0 or errs is None)
+    dot = "ok" if ok else "warn"
+    status = "dados completos" if ok else "DADOS POSSIVELMENTE PARCIAIS"
+    bits = [
+        f"<span class='dot {dot}'></span><span class={dot}>{status}</span>",
+        f"último scan: {_ts_human(meta.get('last_scan_at'))}",
+        f"último scan OK: {_ts_human(meta.get('last_success_at'))}",
+    ]
+    if errs is not None:
+        bits.append(f"collectors com erro: {errs}")
+    if dur is not None:
+        bits.append(f"duração: {dur} ms")
+    return "<div class=health>" + " · ".join(bits) + "</div>"
+
+
+def _render(cfg: Config, exposed: bool = False) -> str:
     trend_days = 30
     storage = Storage(cfg.db_path)
     try:
         rows = storage.all_state(cfg.targets)
         events = {t: storage.recent_events(t, 25) for t in cfg.targets}
         trend = {t: storage.events_per_day(t, trend_days) for t in cfg.targets}
+        meta = {t: storage.target_meta(t) for t in cfg.targets}
     finally:
         storage.close()
 
@@ -180,11 +217,17 @@ def _render(cfg: Config) -> str:
         "<h1>🛰️ Padmé — superfície de ataque</h1>",
         f"<div class=sub>{len(rows)} itens · atualizado {datetime.now():%Y-%m-%d %H:%M:%S} · atualiza sozinho a cada 30s</div>",
     ]
+    if exposed:
+        parts.append(
+            "<div class=banner>⚠️ Painel exposto fora de localhost e SEM autenticação. "
+            "Qualquer um com acesso à rede vê sua superfície de ataque.</div>"
+        )
 
     for target in cfg.targets:
         kinds = by_target.get(target, {})
         total = sum(len(v) for v in kinds.values())
         parts.append(f"<div class=tgt><h2>{_esc(target)}<span class=badge>{total} itens</span></h2>")
+        parts.append(_health_html(meta.get(target)))
         if not kinds:
             parts.append("<div class=empty>sem baseline ainda — rode um scan.</div>")
         else:
@@ -201,7 +244,12 @@ def _render(cfg: Config) -> str:
 
         serie = trend.get(target, [])
         total_periodo = sum(d["total"] for d in serie)
-        parts.append(f"<div class=trend><b>TENDÊNCIA · {trend_days}d</b>")
+        # atividade != crescimento: +20/-20 é muita atividade, crescimento zero.
+        added_sum = sum(d["added"] for d in serie)
+        removed_sum = sum(d["removed"] for d in serie)
+        net = added_sum - removed_sum
+        net_str = f"+{net}" if net > 0 else str(net)
+        parts.append(f"<div class=trend><b>ATIVIDADE DE MUDANÇAS · {trend_days}d</b>")
         if total_periodo:
             parts.append(_trend_svg(serie, trend_days))
             parts.append(
@@ -209,7 +257,8 @@ def _render(cfg: Config) -> str:
                 f"<i style='background:{_TREND_ADD}'></i>added"
                 f"<i style='background:{_TREND_CHG}'></i>changed"
                 f"<i style='background:{_TREND_REM}'></i>removed"
-                f" · {total_periodo} evento(s) no período</div>"
+                f" · {total_periodo} evento(s) · variação líquida da superfície: "
+                f"<b>{net_str}</b> (+{added_sum}/-{removed_sum})</div>"
             )
         else:
             parts.append(f"<div class=empty>sem eventos nos últimos {trend_days} dias.</div>")
@@ -221,8 +270,10 @@ def _render(cfg: Config) -> str:
             for e in evs:
                 cls = {"added": "add", "removed": "rem", "changed": "chg"}[e.event_type.value]
                 val = e.new_value if e.event_type.value != "removed" else e.old_value
+                when = (e.detected_at or "")[5:16].replace("T", " ")
+                meta_tag = f"<span class=evsev>{_esc(when)} {severity(e).name.lower()}</span> " if when else ""
                 parts.append(
-                    f"<div class='line {cls}'>{_ARROW[e.event_type.value]} "
+                    f"<div class='line {cls}'>{meta_tag}{_ARROW[e.event_type.value]} "
                     f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}</div>"
                 )
             parts.append("</div>")
@@ -232,12 +283,13 @@ def _render(cfg: Config) -> str:
     return "".join(parts)
 
 
-def serve(cfg: Config, host: str = "127.0.0.1", port: int = 8787) -> None:
+def serve(cfg: Config, host: str = "127.0.0.1", port: int = 8787,
+          exposed: bool = False) -> None:
     page_cfg = cfg
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            body = _render(page_cfg).encode("utf-8")
+            body = _render(page_cfg, exposed=exposed).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
