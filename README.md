@@ -314,32 +314,6 @@ Teste todos de uma vez com `python -m padme test-notify`.
 
 ---
 
-## Roadmap (ideias)
-
-- [x] Detecção de subdomain takeover (CNAME dangling + fingerprint)
-- [x] Níveis de notificação por severidade
-- [x] Notificadores extras: Discord + webhook genérico (JSON)
-- [x] Aviso de expiração de certificado TLS
-- [x] Export do estado para JSON/CSV
-- [x] Notificador de e-mail (SMTP)
-- [x] Wordlist de subdomínios (bruteforce DNS opcional)
-- [x] Painel web read-only do histórico
-- [x] CI (GitHub Actions) rodando os testes
-- [x] Aviso de expiração de cert por buckets (14d / 7d / 1d)
-- [x] Dedupe do GET entre HTTP e takeover
-- [x] Execução resiliente — restart (Docker) + **heartbeat/dead-man's switch** + `--once`/`--lock`
-- [x] Qualidade de sinal — subdomínio `live`/`quiet` + **wildcard DNS**
-- [x] Visão de tendência no painel (gráfico de eventos/dia, 30d)
-- [x] Empacotamento (Docker / pipx)
-- [x] **Confiabilidade** — erro de coleta ≠ removido (escopos observados), baseline sem eventos
-- [x] **Severidade por canal** + retry + envio concorrente
-- [x] **Segurança operacional** — redação de segredos no log, anti-SSRF, política de IP privado
-- [x] **Saúde da coleta** no painel + `padme doctor` + retenção + lock multiplataforma
-
-> Detalhamento (problema · solução · valor · esforço) em [`ROADMAP.md`](ROADMAP.md).
-
----
-
 ## Retenção do histórico
 
 O `state` (foto atual) nunca é apagado. O histórico de **eventos** pode crescer
