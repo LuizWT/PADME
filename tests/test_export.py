@@ -44,6 +44,7 @@ def test_export_csv():
     rows = s.all_state()
     s.close()
     os.remove(db)
-    csv_text = _render_export(rows, "csv")
-    assert csv_text.splitlines()[0] == "target,kind,key,value,first_seen,last_seen"
+    csv_text = _render_export(rows, "csv", source="casa")
+    assert csv_text.splitlines()[0] == "source,target,kind,key,value,first_seen,last_seen,metadata"
     assert "alvo.com:443" in csv_text
+    assert "casa" in csv_text

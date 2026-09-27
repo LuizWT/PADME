@@ -127,24 +127,27 @@ def _iso(ts) -> str:
         return ""
 
 
-def _render_export(rows: list[dict], fmt: str) -> str:
+def _render_export(rows: list[dict], fmt: str, source: str = "") -> str:
     out = [
         {
+            "source": source,        # ponto de observação (multi-vantage)
             "target": r["target"],
             "kind": r["kind"],
             "key": r["key"],
             "value": r["value"],
             "first_seen": _iso(r["first_seen"]),
             "last_seen": _iso(r["last_seen"]),
+            "metadata": r.get("metadata") or {},
         }
         for r in rows
     ]
     if fmt == "csv":
         buf = io.StringIO()
-        cols = ["target", "kind", "key", "value", "first_seen", "last_seen"]
+        cols = ["source", "target", "kind", "key", "value", "first_seen", "last_seen", "metadata"]
         w = csv.DictWriter(buf, fieldnames=cols)
         w.writeheader()
-        w.writerows(out)
+        for row in out:  # metadata como JSON string na coluna (CSV é plano)
+            w.writerow({**row, "metadata": json.dumps(row["metadata"], ensure_ascii=False)})
         return buf.getvalue()
     return json.dumps(out, indent=2, ensure_ascii=False)
 
@@ -155,12 +158,40 @@ async def _cmd_export(cfg: Config, args) -> int:
         rows = storage.all_state(cfg.targets)
     finally:
         storage.close()
-    text = _render_export(rows, args.format)
+    text = _render_export(rows, args.format, cfg.source)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
-        print(f"{len(rows)} registro(s) exportado(s) -> {args.out}")
+        print(f"{len(rows)} registro(s) exportado(s) [source={cfg.source}] -> {args.out}")
     else:
         print(text)
+    return 0
+
+
+async def _cmd_merge(cfg: Config, args) -> int:
+    """Consolida exports de várias fontes (multi-vantage) e mostra divergências."""
+    from .merge import merge_exports
+    exports: list[list[dict]] = []
+    for path in args.files:
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"Erro lendo {path}: {exc}", file=sys.stderr)
+            return 2
+        exports.append(data if isinstance(data, list) else data.get("rows", []))
+    result = merge_exports(exports)
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(f"consolidação -> {args.out} "
+              f"({result['asset_count']} ativos, {len(result['divergences'])} divergência(s))")
+        return 0
+    print(f"fontes: {', '.join(result['sources']) or '(nenhuma)'}")
+    print(f"ativos: {result['asset_count']} · divergências: {len(result['divergences'])}")
+    for a in result["divergences"]:
+        if a["divergence"] == "presence":
+            print(f"  [presença] [{a['kind']}] {a['key']} — visto de "
+                  f"{','.join(a['sources_seen'])}; ausente em {','.join(a['sources_missing'])}")
+        else:
+            print(f"  [valor]    [{a['kind']}] {a['key']} — valor difere entre fontes")
     return 0
 
 
@@ -307,6 +338,11 @@ def build_parser() -> argparse.ArgumentParser:
     dp = sub.add_parser("doctor", help="diagnóstico: integridade do banco, saúde dos scans e config")
     dp.set_defaults(func=_cmd_doctor)
 
+    mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
+    mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
+    mg.add_argument("--out", default=None, help="grava a consolidação em JSON (padrão: resumo no stdout)")
+    mg.set_defaults(func=_cmd_merge)
+
     return p
 
 
@@ -329,7 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor")
+    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor", "merge")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"
