@@ -24,6 +24,16 @@ te chama quando a paisagem muda.
 - **`padme doctor`** (integridade do banco + saúde dos scans) e **retenção** de
   histórico configurável.
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
+- **Sinais RED**: mudança de **NS** (delegação / hijack de zona), **SPF/DMARC**
+  (remoção = domínio spoofável) e **banner-grab** nas portas (mudança de banner
+  = versão de serviço mudou).
+- **Multi-vantage**: cada instância é um `source`; `padme merge` consolida os
+  exports e mostra **divergências** entre pontos de observação (geo-block,
+  split-horizon, host que só aparece de um lugar).
+- **Metadata estruturada** por evento (issuer/expira/fingerprint, status/server,
+  service/reason…) no webhook — n8n consome campos, não parseia string.
+- **Amortecimento de flapping**: chave que oscila para de spammar (segue no
+  histórico). **Validação forte de config** (falha cedo com mensagem clara).
 - **Aviso de expiração de certificado TLS** (antes de virar incidente).
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
@@ -226,7 +236,13 @@ python -m padme test-notify
 
 # Diagnóstico: integridade do banco, saúde dos scans por alvo e avisos de config
 python -m padme doctor
+
+# Multi-vantage: consolidar exports de várias máquinas/IPs e ver divergências
+python -m padme merge casa.json vps-eu.json --out consolidado.json
 ```
+
+> O painel aceita **filtro por domínio**: `http://127.0.0.1:8787/?target=alvo.com`
+> (ou clique nos chips no topo).
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
@@ -334,7 +350,7 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 ```bash
 pip install pytest ruff
 ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
-pytest -q                        # 130 testes
+pytest -q                        # 168 testes
 ```
 
 ## Estrutura
@@ -349,13 +365,16 @@ padme/
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
 │   ├── logredact.py      # redação de segredos nos logs
 │   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
+│   ├── merge.py          # consolidação multi-vantage (padme merge)
+│   ├── alerts.py         # amortecimento de flapping
 │   ├── differ.py         # engine de diff (puro, testável)
 │   ├── engine.py         # orquestra collectors + escopos observados + diff
 │   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat + retenção
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
 │   ├── webpanel.py       # painel read-only + saúde da coleta + tendência (stdlib)
-│   ├── collectors/       # subdomains, bruteforce, wildcard, dns, http, tls, takeover, ports
+│   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
+│   │                     #   http, tls, takeover, ports (com banner-grab)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── .github/workflows/    # CI: ruff + compileall + pytest (matriz 3.10/3.11/3.12)
 ├── scripts/release.sh    # release limpo via git archive
@@ -365,6 +384,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 130 testes: unitários + reliability + netpolicy +
+└── tests/                # 168 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
