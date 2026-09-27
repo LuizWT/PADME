@@ -80,6 +80,10 @@ class Record:
     kind: Kind
     key: str
     value: str = ""
+    # metadados estruturados (issuer/expires/fp, status/server, service/reason…).
+    # `value` continua sendo o resumo humano; metadata é pra automação (webhook/n8n),
+    # painel e filtros. compare=False: não entra no ==/hash (o diff é por value).
+    metadata: dict = field(default_factory=dict, compare=False)
 
     def ident(self) -> tuple[str, str]:
         return (self.kind.value, self.key)
@@ -98,6 +102,7 @@ class Event:
     event_id: str | None = None
     scan_id: str | None = None
     detected_at: str | None = None
+    metadata: dict = field(default_factory=dict)  # snapshot do metadata do Record
 
     @property
     def is_noteworthy(self) -> bool:

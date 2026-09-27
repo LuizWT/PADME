@@ -71,11 +71,17 @@ async def collect_host(
         if cache is not None:  # reaproveitado pelo collector de takeover
             cache[url] = body
         server = r.headers.get("server", "")
+        location = r.headers.get("location", "") if 300 <= r.status_code < 400 else ""
+        title = ""
         detail = ""
-        if 300 <= r.status_code < 400 and "location" in r.headers:
-            detail = f"→ {r.headers['location']}"  # não seguimos: registramos o destino
+        if location:
+            detail = f"→ {location}"  # não seguimos: registramos o destino
         elif "text/html" in r.headers.get("content-type", ""):
-            detail = _title(body)
+            title = _title(body)
+            detail = title
         value = f"{r.status_code} | {server} | {detail}".strip()
-        records.append(Record(kind=Kind.HTTP, key=url, value=value))
+        records.append(Record(kind=Kind.HTTP, key=url, value=value, metadata={
+            "status": r.status_code, "server": server, "title": title,
+            "location": location or None, "scheme": scheme,
+        }))
     return CollectionResult(records=records, ok=observed_any)

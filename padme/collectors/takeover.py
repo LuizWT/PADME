@@ -166,5 +166,6 @@ async def collect_host(
     records = []
     if reason:
         records.append(Record(kind=Kind.TAKEOVER, key=host,
-                              value=f"{fp['service']} | {target} | {reason}"))
+                              value=f"{fp['service']} | {target} | {reason}",
+                              metadata={"service": fp["service"], "cname": target, "reason": reason}))
     return CollectionResult(records=records, ok=ok)

@@ -99,9 +99,11 @@ async def collect_host(
         log.debug("[%s:%d] TLS: cert parcial (issuer=%s expira=%s)",
                   host, port, bool(issuer), "?" if not_after is None else "ok")
 
+    expires_iso = not_after.isoformat() if not_after else None
     records = [
         Record(kind=Kind.TLS, key=f"{host}:{port}",
-               value=f"issuer={issuer} | expira={date_str} | fp={fp}".strip())
+               value=f"issuer={issuer} | expira={date_str} | fp={fp}".strip(),
+               metadata={"issuer": issuer, "expires_at": expires_iso, "fingerprint": fp})
     ]
 
     # aviso de expiração — valor por BUCKET: estável dentro da faixa (1 aviso),
@@ -109,10 +111,14 @@ async def collect_host(
     if not_after is not None:
         days_left = (not_after - datetime.now(timezone.utc)).days
         if days_left < 0:
-            records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"EXPIRADO em {date_str}"))
+            records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"EXPIRADO em {date_str}",
+                                  metadata={"expires_at": expires_iso, "expired": True,
+                                            "days_left": days_left}))
         elif days_left <= cert_expiry_days:
             buckets = sorted({b for b in (1, 7, cert_expiry_days) if b <= cert_expiry_days})
             bucket = next(b for b in buckets if days_left <= b)
-            records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"expira em <={bucket}d ({date_str})"))
+            records.append(Record(Kind.CERT_EXPIRY, f"{host}:{port}", f"expira em <={bucket}d ({date_str})",
+                                  metadata={"expires_at": expires_iso, "expired": False,
+                                            "bucket_days": bucket, "days_left": days_left}))
 
     return CollectionResult(records=records, ok=True)

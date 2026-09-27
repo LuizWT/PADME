@@ -87,6 +87,7 @@ def event_to_dict(e: Event) -> dict:
         "key": e.key,
         "old": e.old_value,
         "new": e.new_value,
+        "metadata": e.metadata or {},
     }
 
 

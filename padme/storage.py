@@ -24,6 +24,7 @@ re-baseline).
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 import uuid
@@ -31,6 +32,20 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import Event, EventType, Kind, Record, scope_of
+
+
+def _jdump(meta: dict | None) -> str | None:
+    return json.dumps(meta, ensure_ascii=False, sort_keys=True) if meta else None
+
+
+def _jload(raw) -> dict:
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS state (
@@ -62,7 +77,7 @@ CREATE TABLE IF NOT EXISTS targets (
 );
 """
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 
 class Storage:
@@ -105,6 +120,11 @@ class Storage:
             for col in ("last_error_count", "last_partial", "last_duration_ms"):
                 if not self._has_column("targets", col):
                     self._conn.execute(f"ALTER TABLE targets ADD COLUMN {col} INTEGER")
+        if ver < 4:
+            # v3 -> v4: metadata estruturada (JSON) por record e por evento.
+            for tbl in ("state", "events"):
+                if not self._has_column(tbl, "metadata"):
+                    self._conn.execute(f"ALTER TABLE {tbl} ADD COLUMN metadata TEXT")
         if ver != _SCHEMA_VERSION:
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
@@ -132,14 +152,20 @@ class Storage:
         return dict(row) if row else None
 
     def all_state(self, targets: list[str] | None = None) -> list[dict]:
-        """Estado atual completo (para export), opcionalmente filtrado por alvo."""
-        q = "SELECT target, kind, key, value, first_seen, last_seen FROM state"
+        """Estado atual completo (para export), opcionalmente filtrado por alvo.
+        `metadata` volta como dict (JSON decodificado)."""
+        q = "SELECT target, kind, key, value, first_seen, last_seen, metadata FROM state"
         params: tuple = ()
         if targets:
             q += f" WHERE target IN ({','.join('?' * len(targets))})"
             params = tuple(targets)
         q += " ORDER BY target, kind, key"
-        return [dict(r) for r in self._conn.execute(q, params).fetchall()]
+        out = []
+        for r in self._conn.execute(q, params).fetchall():
+            d = dict(r)
+            d["metadata"] = _jload(d.get("metadata"))
+            out.append(d)
+        return out
 
     def events_per_day(self, target: str, days: int = 30) -> list[dict]:
         """Série densa dos últimos `days` dias: contagem de eventos por tipo por
@@ -192,6 +218,7 @@ class Storage:
                     scan_id=r["scan_id"] if "scan_id" in keys else None,
                     detected_at=datetime.fromtimestamp(
                         r["ts"], tz=timezone.utc).isoformat(timespec="seconds"),
+                    metadata=_jload(r["metadata"]) if "metadata" in keys else {},
                 )
             )
         return out
@@ -239,17 +266,20 @@ class Storage:
                 removable_keys.add((e.kind.value, e.key))
             kept.append(e)
 
+        meta_by_ident = {r.ident(): r.metadata for r in records}
         scan_id = uuid.uuid4().hex
         detected_at = datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds")
         for e in kept:
             e.event_id = uuid.uuid4().hex
             e.scan_id = scan_id
             e.detected_at = detected_at
+            # eventos added/changed carregam o metadata do record observado
+            e.metadata = meta_by_ident.get((e.kind.value, e.key), {}) or {}
             cur.execute(
-                "INSERT INTO events (target, ts, event_type, kind, key, old_value, new_value, event_id, scan_id)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO events (target, ts, event_type, kind, key, old_value, new_value, event_id, scan_id, metadata)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (target, now, e.event_type.value, e.kind.value, e.key, e.old_value, e.new_value,
-                 e.event_id, e.scan_id),
+                 e.event_id, e.scan_id, _jdump(e.metadata)),
             )
 
         self._write_state(cur, target, records, now, prior=old, removable=removable_keys)
@@ -266,16 +296,17 @@ class Storage:
         for r in records:
             k = r.ident()
             seen_keys.add(k)
+            meta = _jdump(r.metadata)
             if k in prior:
                 cur.execute(
-                    "UPDATE state SET value=?, last_seen=? WHERE target=? AND kind=? AND key=?",
-                    (r.value, now, target, r.kind.value, r.key),
+                    "UPDATE state SET value=?, last_seen=?, metadata=? WHERE target=? AND kind=? AND key=?",
+                    (r.value, now, meta, target, r.kind.value, r.key),
                 )
             else:
                 cur.execute(
-                    "INSERT OR REPLACE INTO state (target, kind, key, value, first_seen, last_seen)"
-                    " VALUES (?,?,?,?,?,?)",
-                    (target, r.kind.value, r.key, r.value, now, now),
+                    "INSERT OR REPLACE INTO state (target, kind, key, value, first_seen, last_seen, metadata)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    (target, r.kind.value, r.key, r.value, now, now, meta),
                 )
         if removable:
             for (kind, key) in removable:
