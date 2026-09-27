@@ -34,12 +34,14 @@ collectors:
   wildcard: true      # detecta curinga de DNS e filtra falso-positivo do bruteforce
   wildcard_probes: 3  # nomes aleatórios sondados p/ achar o curinga (>= 2)
   dns: true           # passivo — A/AAAA/CNAME/MX
+  dns_records: true   # passivo — NS + SPF/DMARC do apex (delegação / spoofing)
   http: true          # ativo leve — 1 GET por host
   tls: true           # ativo leve — handshake p/ ler o certificado
   cert_expiry_days: 14  # avisa quando o cert está a <= N dias de expirar
   max_response_bytes: 262144  # teto do corpo HTTP lido por host (256 KiB)
   takeover: true      # subdomain takeover (CNAME dangling + fingerprint)
   ports: false        # ativo — connect-scan (ligue com consciência)
+  ports_banner: true  # banner-grab leve nas portas abertas (SSH/SMTP/FTP…)
   ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
 
 # Política de rede (padrão SEGURO — anti-SSRF / rede interna).

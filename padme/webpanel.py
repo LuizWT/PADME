@@ -22,10 +22,12 @@ from datetime import datetime
 from .levels import Level, severity
 from .storage import Storage
 
-_KIND_ORDER = ["takeover", "cert_expiry", "wildcard", "subdomain", "port", "http", "tls", "dns"]
+_KIND_ORDER = ["takeover", "cert_expiry", "ns", "mailsec", "wildcard",
+               "subdomain", "port", "http", "tls", "dns"]
 _KIND_LABEL = {
-    "takeover": "TAKEOVER", "cert_expiry": "CERT", "wildcard": "WILDCARD",
-    "subdomain": "SUBDOMAIN", "port": "PORT", "http": "HTTP", "tls": "TLS", "dns": "DNS",
+    "takeover": "TAKEOVER", "cert_expiry": "CERT", "ns": "NS", "mailsec": "E-MAIL",
+    "wildcard": "WILDCARD", "subdomain": "SUBDOMAIN", "port": "PORT",
+    "http": "HTTP", "tls": "TLS", "dns": "DNS",
 }
 _ARROW = {"added": "+", "removed": "−", "changed": "~"}
 

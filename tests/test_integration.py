@@ -23,7 +23,7 @@ def _cfg(db):
     return Config(targets=["alvo.com"], db_path=db, scope_confirmed=True,
                   collectors=CollectorsConfig(
                       subdomains=True, bruteforce=False, wildcard=True, dns=True,
-                      http=False, tls=False, takeover=False, ports=False))
+                      dns_records=False, http=False, tls=False, takeover=False, ports=False))
 
 
 def _patch(monkeypatch, dns_seq):

@@ -28,6 +28,7 @@ from . import netpolicy
 from .collectors import (
     bruteforce,
     dns,
+    dnsrecon,
     http,
     ports,
     subdomains,
@@ -91,6 +92,17 @@ class Engine:
                         )
                 except Exception as exc:  # noqa: BLE001
                     result.errors.append(f"wildcard: {exc}")
+
+            # 0b. sinais RED no apex: NS (delegação/hijack) + SPF/DMARC (spoofing)
+            if self.cfg.collectors.dns_records:
+                try:
+                    cr = await dnsrecon.collect(target, self.cfg.timeout)
+                    result.records.extend(cr.records)
+                    if cr.ok:  # observação autoritativa -> escopos podem gerar REMOVED
+                        result.observed_scopes.add((Kind.NS.value, target))
+                        result.observed_scopes.add((Kind.MAILSEC.value, target))
+                except Exception as exc:  # noqa: BLE001
+                    result.errors.append(f"dnsrecon: {exc}")
 
             # 1. subdomínios
             hosts: set[str] = {target}
@@ -174,7 +186,7 @@ class Engine:
                 _absorb(cr, result, "takeover", host)
             if col.ports:
                 cr = await _safe(
-                    ports.collect_host(host, col.ports_list, self.cfg.timeout),
+                    ports.collect_host(host, col.ports_list, self.cfg.timeout, col.ports_banner),
                     host, "ports", result)
                 _absorb(cr, result, "ports", host)
 

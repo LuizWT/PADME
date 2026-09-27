@@ -22,6 +22,8 @@ from enum import Enum
 class Kind(str, Enum):
     SUBDOMAIN = "subdomain"
     DNS = "dns"
+    NS = "ns"              # nameservers do apex (mudança = delegação / hijack de zona)
+    MAILSEC = "mailsec"    # postura de e-mail no apex (SPF / DMARC)
     PORT = "port"
     HTTP = "http"
     TLS = "tls"
@@ -42,7 +44,7 @@ _SCOPE_KIND = {
 }
 
 # Kinds cujo escopo é o alvo inteiro (não um host individual).
-_TARGET_SCOPED = {Kind.SUBDOMAIN, Kind.WILDCARD}
+_TARGET_SCOPED = {Kind.SUBDOMAIN, Kind.WILDCARD, Kind.NS, Kind.MAILSEC}
 
 
 def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:

@@ -15,6 +15,8 @@ MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
 KIND_LABEL = {
     Kind.TAKEOVER: "TAKEOVER",
     Kind.CERT_EXPIRY: "CERT",
+    Kind.NS: "NS",
+    Kind.MAILSEC: "E-MAIL",
     Kind.WILDCARD: "WILDCARD",
     Kind.SUBDOMAIN: "SUBDOMAIN",
     Kind.PORT: "PORT",
@@ -25,8 +27,8 @@ KIND_LABEL = {
 
 # ordem de exibição: o mais crítico primeiro
 KIND_ORDER = [
-    Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.WILDCARD, Kind.SUBDOMAIN,
-    Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS,
+    Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.NS, Kind.MAILSEC, Kind.WILDCARD,
+    Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS,
 ]
 
 # descrição técnica curta por (categoria, tipo de evento)
@@ -36,6 +38,8 @@ DESC = {
     Kind.HTTP: {"added": "serviço HTTP novo", "removed": "HTTP parou de responder", "changed": "resposta HTTP mudou"},
     Kind.TLS: {"added": "certificado novo", "removed": "TLS parou de responder", "changed": "certificado alterado"},
     Kind.DNS: {"added": "registro novo", "removed": "registro removido", "changed": "registro alterado"},
+    Kind.NS: {"added": "nameserver novo", "removed": "nameserver removido", "changed": "nameserver alterado (delegação / possível hijack)"},
+    Kind.MAILSEC: {"added": "proteção de e-mail adicionada", "removed": "proteção de e-mail REMOVIDA (domínio spoofável)", "changed": "política de e-mail (SPF/DMARC) alterada"},
     Kind.TAKEOVER: {"added": "possível subdomain takeover", "removed": "takeover resolvido", "changed": "takeover alterado"},
     Kind.CERT_EXPIRY: {"added": "certificado expira em breve", "removed": "certificado renovado", "changed": "situação do certificado mudou"},
     Kind.WILDCARD: {"added": "wildcard DNS ativo (enumeração ativa não confiável)", "removed": "wildcard DNS não responde mais", "changed": "IPs do wildcard mudaram"},

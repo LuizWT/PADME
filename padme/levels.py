@@ -60,6 +60,10 @@ def severity(e: Event) -> Level:
         return Level.CRITICAL
     if k in (Kind.CERT_EXPIRY, Kind.WILDCARD):
         return Level.HIGH
+    if k == Kind.NS:  # mudança de nameserver do apex = delegação / possível hijack
+        return Level.HIGH
+    if k == Kind.MAILSEC:  # SPF/DMARC removido = domínio spoofável -> HIGH
+        return Level.HIGH if t == EventType.REMOVED else Level.MEDIUM
     if t == EventType.ADDED and k in (Kind.PORT, Kind.SUBDOMAIN):
         return Level.HIGH
     if k in (Kind.HTTP, Kind.TLS):

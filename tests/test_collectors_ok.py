@@ -35,8 +35,8 @@ def test_http_ambos_esquemes_falham_preserva():
 
 # ── PORTS: só-timeout preserva; recusada é definitiva ───────────────────────
 def test_ports_todos_timeout_preserva(monkeypatch):
-    async def fake(host, port, timeout):
-        return "unknown"
+    async def fake(host, port, timeout, grab):
+        return "unknown", ""
 
     monkeypatch.setattr(ports, "_check_port", fake)
     cr = asyncio.run(ports.collect_host("x.com", [22, 80], 5))
@@ -44,13 +44,24 @@ def test_ports_todos_timeout_preserva(monkeypatch):
 
 
 def test_ports_recusada_e_aberta_sao_definitivas(monkeypatch):
-    async def fake(host, port, timeout):
-        return "open" if port == 80 else "closed"
+    async def fake(host, port, timeout, grab):
+        return ("open", "") if port == 80 else ("closed", "")
 
     monkeypatch.setattr(ports, "_check_port", fake)
     cr = asyncio.run(ports.collect_host("x.com", [22, 80], 5))
     assert cr.ok is True
     assert [r.key for r in cr.records] == ["x.com:80"]
+
+
+def test_ports_banner_entra_no_valor(monkeypatch):
+    async def fake(host, port, timeout, grab):
+        return ("open", "SSH-2.0-OpenSSH_8.9") if port == 22 else ("closed", "")
+
+    monkeypatch.setattr(ports, "_check_port", fake)
+    cr = asyncio.run(ports.collect_host("x.com", [22, 443], 5))
+    r = cr.records[0]
+    assert r.key == "x.com:22"
+    assert "SSH-2.0-OpenSSH_8.9" in r.value and r.metadata["banner"] == "SSH-2.0-OpenSSH_8.9"
 
 
 # ── TLS: timeout preserva; recusada é definitiva vazia ──────────────────────

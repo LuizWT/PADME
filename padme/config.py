@@ -182,12 +182,14 @@ class CollectorsConfig:
     wildcard: bool = True     # detecta curinga de DNS e filtra falso-positivo
     wildcard_probes: int = 3  # nomes aleatórios sondados para achar o curinga
     dns: bool = True          # passivo
+    dns_records: bool = True  # passivo — NS + SPF/DMARC do apex (sinais RED)
     http: bool = True         # ativo leve (GET nos hosts)
     tls: bool = True          # ativo leve (handshake)
     cert_expiry_days: int = 14  # avisa quando o cert está a <= N dias de expirar
     max_response_bytes: int = 262144  # teto de corpo HTTP lido por host (256 KiB)
     takeover: bool = True     # CNAME dangling + fingerprint de serviços
     ports: bool = False       # ativo — desligado por padrão
+    ports_banner: bool = True # banner-grab leve nas portas abertas
     ports_list: list[int] = field(
         default_factory=lambda: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
     )
@@ -268,12 +270,14 @@ class Config:
                 wildcard=_as_bool(col.get("wildcard"), True),
                 wildcard_probes=_as_int(col.get("wildcard_probes"), "collectors.wildcard_probes", 3),
                 dns=_as_bool(col.get("dns"), True),
+                dns_records=_as_bool(col.get("dns_records"), True),
                 http=_as_bool(col.get("http"), True),
                 tls=_as_bool(col.get("tls"), True),
                 cert_expiry_days=_as_int(col.get("cert_expiry_days"), "collectors.cert_expiry_days", 14),
                 max_response_bytes=_as_int(col.get("max_response_bytes"), "collectors.max_response_bytes", 262144),
                 takeover=_as_bool(col.get("takeover"), True),
                 ports=_as_bool(col.get("ports"), False),
+                ports_banner=_as_bool(col.get("ports_banner"), True),
                 ports_list=[_as_int(p, "collectors.ports_list", 0)
                             for p in col.get("ports_list", CollectorsConfig().ports_list)],
             ),
