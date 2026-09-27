@@ -69,6 +69,22 @@ def test_events_per_day_serie_densa():
     assert sum(d["total"] for d in serie[:-1]) == 0  # dias anteriores zerados
 
 
+def test_render_filtro_por_dominio():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("a.com", [Record(Kind.PORT, "a.com:443", "open")])
+    s.apply_scan("b.com", [Record(Kind.SUBDOMAIN, "x.b.com", "live")])
+    s.close()
+    cfg = Config(targets=["a.com", "b.com"], db_path=db)
+    full = _render(cfg)
+    only_a = _render(cfg, only="a.com")
+    os.remove(db)
+    assert "a.com" in full and "b.com" in full
+    assert "class=filterbar" in full            # barra de filtro (2+ alvos)
+    assert "a.com:443" in only_a
+    assert "x.b.com" not in only_a              # b.com filtrado fora
+
+
 def test_trend_svg_vazio_nao_quebra():
     serie = [{"day": "2026-09-20", "added": 0, "removed": 0, "changed": 0, "total": 0}]
     out = _trend_svg(serie, days=1)

@@ -17,6 +17,7 @@ from __future__ import annotations
 import html
 import http.server
 import socketserver
+import urllib.parse
 from datetime import datetime
 
 from .levels import Level, severity
@@ -150,6 +151,11 @@ details.kinds[open]>summary::before{content:"▾ "}
 .events .mk{font-weight:700}
 
 .empty{color:var(--muted);padding:16px}
+.filterbar{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 0}
+.fchip{font-size:12px;color:var(--ink2);border:1px solid var(--border);border-radius:999px;
+  padding:4px 12px;text-decoration:none;font-family:var(--mono)}
+.fchip:hover{border-color:var(--muted)}
+.fchip.on{background:var(--info);border-color:var(--info);color:#fff;font-weight:600}
 .banner{background:#2a1414;border:1px solid var(--crit);color:#f2a3a3;border-radius:10px;
   padding:11px 14px;margin:16px 0 0;font-size:12.5px}
 footer{color:var(--muted);font-size:11px;margin-top:30px;text-align:center;padding-top:16px;
@@ -428,22 +434,36 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
     return "".join(parts)
 
 
-def _render(cfg, exposed: bool = False) -> str:
+def _filter_bar(all_targets: list[str], only: str | None) -> str:
+    chips = [f'<a class="fchip{"" if only else " on"}" href="/">todos</a>']
+    for t in all_targets:
+        active = " on" if only == t else ""
+        chips.append(f'<a class="fchip{active}" href="/?target={urllib.parse.quote(t)}">{_esc(t)}</a>')
+    return "<div class=filterbar>" + "".join(chips) + "</div>"
+
+
+def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
     trend_days = 30
     storage = Storage(cfg.db_path)
     try:
         rows = storage.all_state()  # TODOS os alvos do banco (não esconde dados)
         db_targets = sorted({r["target"] for r in rows})
-        targets = sorted(set(cfg.targets) | set(db_targets))
-        events = {t: storage.recent_events(t, 20) for t in targets}
-        trend = {t: storage.events_per_day(t, trend_days) for t in targets}
-        meta = {t: storage.target_meta(t) for t in targets}
+        all_targets = sorted(set(cfg.targets) | set(db_targets))
+        # filtro por domínio (?target=): exato, com fallback p/ substring
+        if only:
+            shown = [t for t in all_targets if t == only] or [t for t in all_targets if only in t]
+        else:
+            shown = all_targets
+        events = {t: storage.recent_events(t, 20) for t in shown}
+        trend = {t: storage.events_per_day(t, trend_days) for t in shown}
+        meta = {t: storage.target_meta(t) for t in shown}
     finally:
         storage.close()
 
-    by_target: dict[str, dict[str, list]] = {t: {} for t in db_targets}
+    by_target: dict[str, dict[str, list]] = {t: {} for t in shown}
     for r in rows:
-        by_target[r["target"]].setdefault(r["kind"], []).append(r)
+        if r["target"] in by_target:
+            by_target[r["target"]].setdefault(r["kind"], []).append(r)
 
     problems = _collect_problems(by_target, meta)
 
@@ -455,7 +475,7 @@ def _render(cfg, exposed: bool = False) -> str:
         "<header><div class=top>",
         "<div class=brand>🛰️ PADMÉ<small>attack surface monitor</small></div>",
         "<div class=spacer></div>",
-        f"<span class=pill>alvos <b>{len(targets)}</b></span>",
+        f"<span class=pill>alvos <b>{len(all_targets)}</b></span>",
         f"<span class=pill>atualizado <b>{datetime.now():%d/%m %H:%M:%S}</b></span>",
         "<span class=pill>auto <b>30s</b></span>",
         "</div></header><div class=wrap>",
@@ -463,18 +483,23 @@ def _render(cfg, exposed: bool = False) -> str:
     if exposed:
         parts.append("<div class=banner>⚠️ Painel exposto fora de localhost e SEM autenticação. "
                      "Qualquer um com acesso à rede vê sua superfície de ataque.</div>")
+    if len(all_targets) > 1:
+        parts.append(_filter_bar(all_targets, only))
 
-    parts.append("<div class=eyebrow>visão geral</div>")
-    parts.append(_global_kpis(by_target, meta, problems, len(targets)))
+    scope = f" · {only}" if only else ""
+    parts.append(f"<div class=eyebrow>visão geral{scope}</div>")
+    parts.append(_global_kpis(by_target, meta, problems, len(shown)))
 
     parts.append(f"<div class=eyebrow>problemas abertos · {len(problems)}</div>")
     parts.append(_problems_panel(problems))
 
     parts.append("<div class=eyebrow>alvos</div>")
-    if not targets:
-        parts.append("<div class=panel><div class=empty>nenhum alvo ainda — rode "
-                     "<code>padme scan</code> ou <code>padme monitor</code>.</div></div>")
-    for target in targets:
+    if not shown:
+        parts.append("<div class=panel><div class=empty>nenhum alvo"
+                     + (f" casa com o filtro '{_esc(only)}'." if only
+                        else " ainda — rode <code>padme scan</code> ou <code>padme monitor</code>.")
+                     + "</div></div>")
+    for target in shown:
         parts.append(_host_card(target, by_target.get(target, {}), events.get(target, []),
                                 trend.get(target, []), meta.get(target), trend_days))
 
@@ -488,7 +513,9 @@ def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            body = _render(page_cfg, exposed=exposed).encode("utf-8")
+            qs = urllib.parse.urlparse(self.path).query
+            only = urllib.parse.parse_qs(qs).get("target", [None])[0]
+            body = _render(page_cfg, exposed=exposed, only=only).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
