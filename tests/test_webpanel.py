@@ -1,12 +1,30 @@
 """Teste do painel web read-only."""
 
+import json
 import os
 import tempfile
 
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage
-from padme.webpanel import _render, _trend_svg
+from padme.webpanel import _render, _trend_svg, render_export
+
+
+def test_render_export():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("a.com", [Record(Kind.TLS, "a.com:443", "issuer=LE", metadata={"issuer": "LE"})])
+    s.close()
+    cfg = Config(targets=["a.com"], db_path=db, source="casa")
+    jbody, jct = render_export(cfg, None, "json")
+    cbody, cct = render_export(cfg, None, "csv")
+    os.remove(db)
+    data = json.loads(jbody)
+    assert jct.startswith("application/json")
+    assert data and data[0]["source"] == "casa" and data[0]["metadata"] == {"issuer": "LE"}
+    assert cct.startswith("text/csv")
+    assert cbody.splitlines()[0] == "source,target,kind,key,value,first_seen,last_seen,metadata"
+    assert "casa" in cbody
 
 
 def test_render():
@@ -80,7 +98,9 @@ def test_render_filtro_por_dominio():
     only_a = _render(cfg, only="a.com")
     os.remove(db)
     assert "a.com" in full and "b.com" in full
-    assert "class=filterbar" in full            # barra de filtro (2+ alvos)
+    assert "class=filterform" in full           # dropdown de filtro (datalist)
+    assert "<datalist" in full and "id=targetlist" in full
+    assert "/export?fmt=json" in full and "/export?fmt=csv" in full  # exportar
     assert "a.com:443" in only_a
     assert "x.b.com" not in only_a              # b.com filtrado fora
 

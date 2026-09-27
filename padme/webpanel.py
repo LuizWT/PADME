@@ -14,8 +14,11 @@ chip = ponto + rótulo, nunca cor sozinha), tipografia de sistema, hairlines,
 
 from __future__ import annotations
 
+import csv
 import html
 import http.server
+import io
+import json
 import socketserver
 import urllib.parse
 from datetime import datetime
@@ -151,17 +154,74 @@ details.kinds[open]>summary::before{content:"▾ "}
 .events .mk{font-weight:700}
 
 .empty{color:var(--muted);padding:16px}
-.filterbar{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 0}
-.fchip{font-size:12px;color:var(--ink2);border:1px solid var(--border);border-radius:999px;
-  padding:4px 12px;text-decoration:none;font-family:var(--mono)}
-.fchip:hover{border-color:var(--muted)}
-.fchip.on{background:var(--info);border-color:var(--info);color:#fff;font-weight:600}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:16px 0 0}
+.filterform{display:flex;gap:6px;align-items:center}
+.finput{background:var(--inset);border:1px solid var(--border);border-radius:8px;color:var(--ink);
+  font:13px var(--mono);padding:6px 12px;min-width:230px}
+.finput:focus{outline:none;border-color:var(--info)}
+.fbtn{background:var(--info);border:1px solid var(--info);color:#fff;border-radius:8px;
+  font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer}
+.fclear{color:var(--muted);font-size:12px;text-decoration:none}
+.fclear:hover{color:var(--ink2)}
+.exports{margin-left:auto;font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:8px}
+.xbtn{color:var(--ink2);border:1px solid var(--border);border-radius:8px;padding:5px 10px;
+  text-decoration:none;font-family:var(--mono);font-size:11px}
+.xbtn:hover{border-color:var(--info);color:var(--info)}
+.lg{background:transparent;border:1px solid var(--border);border-radius:999px;color:var(--muted);
+  font:11px var(--sans);padding:3px 10px;margin-right:6px;cursor:pointer;display:inline-flex;
+  align-items:center;gap:0}
+.lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;opacity:.35}
+.lg.on{color:var(--ink2);border-color:var(--muted)}
+.lg.on i{opacity:1}
+.lghint{font-size:10px;color:var(--muted);margin-left:4px}
 .banner{background:#2a1414;border:1px solid var(--crit);color:#f2a3a3;border-radius:10px;
   padding:11px 14px;margin:16px 0 0;font-size:12.5px}
 footer{color:var(--muted);font-size:11px;margin-top:30px;text-align:center;padding-top:16px;
   border-top:1px solid var(--border)}
 @media(max-width:560px){.prow{grid-template-columns:1fr;gap:4px}.prow .tgt{text-align:left}}
 """
+
+
+_TREND_JS = """<script>
+(function(){
+  var COL={added:'#199e70',changed:'#c98500',removed:'#e66767'};
+  var KS=['added','changed','removed'];
+  function svg(series, active){
+    var W=720,H=132,pl=26,pr=8,pt=10,pb=20,pw=W-pl-pr,ph=H-pt-pb,base=pt+ph;
+    var tot=series.map(function(d){var s=0;KS.forEach(function(k){if(active.has(k))s+=d[k];});return s;});
+    var max=Math.max.apply(null,[0].concat(tot));
+    var p='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">';
+    p+='<line x1="'+pl+'" y1="'+base+'" x2="'+(W-pr)+'" y2="'+base+'" stroke="#383835"/>';
+    if(max>0) p+='<text x="'+(pl-4)+'" y="'+(pt+4)+'" text-anchor="end" font-size="9" fill="#898781">'+max+'</text>';
+    var n=series.length, slot=n?pw/n:pw, bw=Math.max(1,slot-2), sc=max>0?ph/max:0;
+    series.forEach(function(d,i){
+      var x=pl+i*slot+(slot-bw)/2, yb=base;
+      KS.forEach(function(k){ if(!active.has(k))return; var h=d[k]*sc; if(h>0){var dr=h>2?h-2:h;
+        p+='<rect x="'+x.toFixed(1)+'" y="'+(yb-dr).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+dr.toFixed(1)+'" fill="'+COL[k]+'" rx="1.5"><title>'+d.day+': +'+d.added+' ~'+d.changed+' -'+d.removed+'</title></rect>';
+        yb-=h;} });
+    });
+    if(n){ var idxs=[0,n>>1,n-1].filter(function(v,i,a){return a.indexOf(v)===i;});
+      idxs.forEach(function(idx){ var lab=series[idx].day.slice(5), cx=pl+idx*slot+slot/2,
+        anc=idx===0?'start':(idx===n-1?'end':'middle');
+        p+='<text x="'+cx.toFixed(1)+'" y="'+(H-6)+'" text-anchor="'+anc+'" font-size="9" fill="#898781">'+lab+'</text>'; }); }
+    return p+'</svg>';
+  }
+  document.querySelectorAll('.trend').forEach(function(el){
+    var dataEl=el.querySelector('.tdata'), chart=el.querySelector('.chart');
+    if(!dataEl||!chart) return;
+    var series; try{ series=JSON.parse(dataEl.textContent); }catch(e){ return; }
+    function redraw(){
+      var active=new Set();
+      el.querySelectorAll('.lg.on').forEach(function(b){active.add(b.dataset.t);});
+      chart.innerHTML=svg(series, active);
+    }
+    el.querySelectorAll('.lg').forEach(function(b){
+      b.addEventListener('click', function(){ b.classList.toggle('on'); redraw(); });
+    });
+    redraw();
+  });
+})();
+</script>"""
 
 
 def _esc(s) -> str:
@@ -337,17 +397,22 @@ def _trend(serie: list[dict], days: int) -> str:
     removed = sum(d["removed"] for d in serie)
     net = added - removed
     net_s = f"+{net}" if net > 0 else str(net)
-    out = ['<div class=trend><div class=hd>'
+    out = [f'<div class=trend data-days="{days}"><div class=hd>'
            f'<b>tendência · {days}d</b>']
     if total:
         out.append(f'<span class=net>líquido <b2>{net_s}</b2> · +{added}/−{removed} · {total} evento(s)</span>')
     out.append('</div>')
     if total:
-        out.append(_trend_svg(serie, days))
-        out.append('<div class=legend>'
-                   f'<i style="background:{_TREND_ADD}"></i>added'
-                   f'<i style="background:{_TREND_CHG}"></i>changed'
-                   f'<i style="background:{_TREND_REM}"></i>removed</div>')
+        # SVG estático = fallback sem-JS; o JS redesenha e as tags viram filtros.
+        out.append(f'<div class=chart>{_trend_svg(serie, days)}</div>')
+        out.append(
+            '<div class=legend>'
+            f'<button type=button class="lg on" data-t=added><i style="background:{_TREND_ADD}"></i>added</button>'
+            f'<button type=button class="lg on" data-t=changed><i style="background:{_TREND_CHG}"></i>changed</button>'
+            f'<button type=button class="lg on" data-t=removed><i style="background:{_TREND_REM}"></i>removed</button>'
+            '<span class=lghint>clique p/ filtrar</span></div>')
+        out.append('<script type="application/json" class=tdata>'
+                   + json.dumps(serie, ensure_ascii=False) + '</script>')
     else:
         out.append(f'<div class=empty>sem eventos nos últimos {days} dias.</div>')
     out.append('</div>')
@@ -434,12 +499,59 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
     return "".join(parts)
 
 
-def _filter_bar(all_targets: list[str], only: str | None) -> str:
-    chips = [f'<a class="fchip{"" if only else " on"}" href="/">todos</a>']
-    for t in all_targets:
-        active = " on" if only == t else ""
-        chips.append(f'<a class="fchip{active}" href="/?target={urllib.parse.quote(t)}">{_esc(t)}</a>')
-    return "<div class=filterbar>" + "".join(chips) + "</div>"
+def _filter_form(all_targets: list[str], only: str | None) -> str:
+    """Dropdown com digitação + autocomplete (datalist nativo). Submit via GET
+    navega para /?target=... — funciona sem JS."""
+    opts = "".join(f'<option value="{_esc(t)}">' for t in all_targets)
+    clear = '<a class=fclear href="/">limpar</a>' if only else ""
+    return (
+        '<form class=filterform method=get action="/">'
+        f'<input class=finput name=target list=targetlist autocomplete=off '
+        f'placeholder="filtrar por domínio…" value="{_esc(only or "")}">'
+        f'<datalist id=targetlist>{opts}</datalist>'
+        '<button class=fbtn type=submit>filtrar</button>'
+        f'{clear}</form>'
+    )
+
+
+def _export_actions(only: str | None) -> str:
+    q = f"&target={urllib.parse.quote(only)}" if only else ""
+    return (
+        '<span class=exports>exportar:'
+        f'<a class=xbtn href="/export?fmt=json{q}">JSON</a>'
+        f'<a class=xbtn href="/export?fmt=csv{q}">CSV</a></span>'
+    )
+
+
+def _export_rows(cfg, only: str | None) -> list[dict]:
+    storage = Storage(cfg.db_path)
+    try:
+        rows = storage.all_state()
+    finally:
+        storage.close()
+    if only:
+        exact = [r for r in rows if r["target"] == only]
+        rows = exact or [r for r in rows if only in r["target"]]
+    return [{
+        "source": cfg.source, "target": r["target"], "kind": r["kind"], "key": r["key"],
+        "value": r["value"],
+        "first_seen": _ts_human(r["first_seen"]), "last_seen": _ts_human(r["last_seen"]),
+        "metadata": r.get("metadata") or {},
+    } for r in rows]
+
+
+def render_export(cfg, only: str | None, fmt: str) -> tuple[str, str]:
+    """Devolve (corpo, content_type) do export — mesmos campos do `padme export`."""
+    recs = _export_rows(cfg, only)
+    if fmt == "csv":
+        buf = io.StringIO()
+        cols = ["source", "target", "kind", "key", "value", "first_seen", "last_seen", "metadata"]
+        w = csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        for r in recs:
+            w.writerow({**r, "metadata": json.dumps(r["metadata"], ensure_ascii=False)})
+        return buf.getvalue(), "text/csv; charset=utf-8"
+    return json.dumps(recs, indent=2, ensure_ascii=False), "application/json; charset=utf-8"
 
 
 def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
@@ -483,8 +595,11 @@ def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
     if exposed:
         parts.append("<div class=banner>⚠️ Painel exposto fora de localhost e SEM autenticação. "
                      "Qualquer um com acesso à rede vê sua superfície de ataque.</div>")
+    toolbar = "<div class=toolbar>"
     if len(all_targets) > 1:
-        parts.append(_filter_bar(all_targets, only))
+        toolbar += _filter_form(all_targets, only)
+    toolbar += _export_actions(only)
+    parts.append(toolbar + "</div>")
 
     scope = f" · {only}" if only else ""
     parts.append(f"<div class=eyebrow>visão geral{scope}</div>")
@@ -504,7 +619,9 @@ def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
                                 trend.get(target, []), meta.get(target), trend_days))
 
     parts.append("<footer>Padmé · painel read-only · lê o padme.db, não altera nada</footer>")
-    parts.append("</div></body></html>")
+    parts.append("</div>")
+    parts.append(_TREND_JS)
+    parts.append("</body></html>")
     return "".join(parts)
 
 
@@ -513,11 +630,22 @@ def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            qs = urllib.parse.urlparse(self.path).query
-            only = urllib.parse.parse_qs(qs).get("target", [None])[0]
-            body = _render(page_cfg, exposed=exposed, only=only).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            only = params.get("target", [None])[0]
+            if parsed.path.rstrip("/") == "/export":
+                fmt = (params.get("fmt", ["json"])[0] or "json").lower()
+                fmt = "csv" if fmt == "csv" else "json"
+                text, ctype = render_export(page_cfg, only, fmt)
+                body = text.encode("utf-8")
+                fname = f"padme-{only or 'todos'}.{fmt}"
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            else:
+                body = _render(page_cfg, exposed=exposed, only=only).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
