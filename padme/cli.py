@@ -30,6 +30,7 @@ try:
 except ImportError:
     load_dotenv = None
 
+from .alerts import damp_flapping
 from .config import Config
 from .engine import Engine, build_notifiers
 from .levels import Level
@@ -79,9 +80,14 @@ async def _cmd_scan(cfg: Config, args) -> int:
                       f"(estado preservado; veja -v).")
             for err in result.errors:
                 log.debug("erro: %s", err)
-            # cada canal filtra pelo próprio nível; envio concorrente
+            # amortece flapping e cada canal filtra pelo próprio nível; envio concorrente
             if notifiers and not first and events:
-                await send_all(notifiers, target, events)
+                to_notify, flapped = damp_flapping(
+                    storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
+                if flapped:
+                    print(f"[{target}] {flapped} evento(s) suprimido(s) da notificação (flapping).")
+                if to_notify:
+                    await send_all(notifiers, target, to_notify)
     finally:
         storage.close()
     return 0

@@ -13,6 +13,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 
+from .alerts import damp_flapping
 from .config import Config
 from .engine import Engine, build_notifiers
 from .heartbeat import from_config as heartbeat_from_config
@@ -51,9 +52,12 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
         if first:
             log.info("[%s] baseline gravado (%d itens no estado).", target, len(result.records))
         elif events:
-            log.info("[%s] %d mudança(s).", target, len(events))
-            if notifier:
-                results = await notifier.dispatch(target, events)
+            to_notify, flapped = damp_flapping(
+                storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
+            log.info("[%s] %d mudança(s)%s.", target, len(events),
+                     f"; {flapped} suprimida(s) por flapping" if flapped else "")
+            if notifier and to_notify:
+                results = await notifier.dispatch(target, to_notify)
                 failed = [r for r in results if not r.ok]
                 if failed:
                     log.warning("[%s] notificação falhou em %d canal(is): %s", target,

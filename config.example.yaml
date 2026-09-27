@@ -59,6 +59,12 @@ network:
 storage:
   event_retention_days: 0   # 0 = mantém tudo; > 0 apaga eventos mais antigos
 
+# Amortecimento de flapping: uma chave que oscila muito para de ser NOTIFICADA
+# (continua no histórico/painel). 0 desliga.
+alerts:
+  flap_threshold: 4         # >= N eventos da mesma chave na janela = flapping
+  flap_window_minutes: 60
+
 telegram:
   enabled: true
   # limiar mínimo de severidade enviado ao Telegram (o terminal sempre mostra tudo):

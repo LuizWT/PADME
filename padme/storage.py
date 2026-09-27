@@ -198,6 +198,16 @@ class Storage:
             })
         return out
 
+    def recent_event_counts(self, target: str, since_ts: float) -> dict[tuple[str, str], int]:
+        """Quantos eventos cada (kind, key) acumulou desde `since_ts` — base do
+        amortecimento de flapping."""
+        cur = self._conn.execute(
+            "SELECT kind, key, COUNT(*) AS n FROM events"
+            " WHERE target = ? AND ts >= ? GROUP BY kind, key",
+            (target, since_ts),
+        )
+        return {(r["kind"], r["key"]): r["n"] for r in cur.fetchall()}
+
     def recent_events(self, target: str, limit: int = 50) -> list[Event]:
         cur = self._conn.execute(
             "SELECT * FROM events WHERE target = ? ORDER BY ts DESC LIMIT ?",

@@ -159,6 +159,16 @@ class StorageConfig:
 
 
 @dataclass
+class AlertsConfig:
+    """Amortecimento de flapping: uma chave (host/porta/registro) que oscila
+    gera alerta repetido. Se ela acumular >= `flap_threshold` eventos dentro de
+    `flap_window_minutes`, os eventos DELA param de ser NOTIFICADOS (continuam no
+    histórico e no painel). 0 = desligado."""
+    flap_threshold: int = 4
+    flap_window_minutes: int = 60
+
+
+@dataclass
 class HeartbeatConfig:
     enabled: bool = False
     url: str = ""            # ping de watchdog (healthchecks.io etc.); vazio = só arquivo
@@ -207,6 +217,7 @@ class Config:
     collectors: CollectorsConfig = field(default_factory=CollectorsConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    alerts: AlertsConfig = field(default_factory=AlertsConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
@@ -243,6 +254,7 @@ class Config:
         col = raw.get("collectors") or {}
         net = raw.get("network") or {}
         stg = raw.get("storage") or {}
+        al = raw.get("alerts") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
@@ -287,6 +299,10 @@ class Config:
             ),
             storage=StorageConfig(
                 event_retention_days=_as_int(stg.get("event_retention_days"), "storage.event_retention_days", 0),
+            ),
+            alerts=AlertsConfig(
+                flap_threshold=_as_int(al.get("flap_threshold"), "alerts.flap_threshold", 4),
+                flap_window_minutes=_as_int(al.get("flap_window_minutes"), "alerts.flap_window_minutes", 60),
             ),
             telegram=TelegramConfig(
                 enabled=_as_bool(tg.get("enabled"), False),
@@ -348,6 +364,10 @@ def _validate(cfg: "Config") -> None:
             errs.append(f"collectors.ports_list: porta fora de 1..65535: {p}")
     if cfg.storage.event_retention_days < 0:
         errs.append("storage.event_retention_days deve ser >= 0")
+    if cfg.alerts.flap_threshold < 0:
+        errs.append("alerts.flap_threshold deve ser >= 0")
+    if cfg.alerts.flap_window_minutes <= 0:
+        errs.append("alerts.flap_window_minutes deve ser > 0")
     if not (1 <= cfg.email.smtp_port <= 65535):
         errs.append(f"email.smtp_port fora de 1..65535: {cfg.email.smtp_port}")
     for name, lvl in (("telegram", cfg.telegram.level), ("discord", cfg.discord.level),
