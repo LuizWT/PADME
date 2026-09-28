@@ -30,7 +30,7 @@ te chama quando a paisagem muda.
 - **Multi-vantage**: cada instância é um `source`; `padme merge` consolida os
   exports e mostra **divergências** entre pontos de observação (geo-block,
   split-horizon, host que só aparece de um lugar).
-- **Metadata estruturada** por evento (issuer/expira/fingerprint, status/server,
+- **Metadata estruturada** por evento (issuer/expira/fingerprint/SANs, status/server,
   service/reason…) no webhook — n8n consome campos, não parseia string.
 - **Amortecimento de flapping**: chave que oscila para de spammar (segue no
   histórico). **Validação forte de config** (falha cedo com mensagem clara).
@@ -135,6 +135,11 @@ expirar (`collectors.cert_expiry_days`, padrão 14), emite um evento
 você recebe **um** aviso ao entrar na janela — não um por dia. Se expirar de
 vez, o evento vira `EXPIRADO`.
 
+O TLS também captura os **SANs** do certificado (`subjectAltName`). Como o
+fingerprint entra no valor, toda reemissão dispara um `CHANGED` — e o diff por
+campo mostra **quais domínios entraram/saíram do cert** (um SAN novo costuma ser
+superfície nova servida ali). Os SANs também vão na evidência (`tls_handshake`).
+
 ### Segurança operacional
 
 - **Segredos fora dos logs.** `httpx`/`httpcore` são silenciados (a request line
@@ -148,6 +153,13 @@ vez, o evento vira `EXPIRADO`.
   Ligue conscientemente só se for monitorar rede interna.
 - **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
   lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
+- **Pacing responsável (`network.rate_limit_rps` / `per_host_interval_ms` /
+  `jitter_ms`, padrão desligado).** Teto global de requisições/segundo com jitter
+  e intervalo mínimo por host — o monitor 24/7 não martela o alvo nem dispara
+  WAF/rate-limit. Não aumenta agressividade; só torna o scan previsível e educado.
+- **Retry educado (`network.max_retries`, padrão `2`).** Requisições HTTP do scan
+  recuam com backoff exponencial + jitter em `429`/`5xx` transitório (respeitando
+  `Retry-After`) e em hiccup de conexão/timeout. `4xx` permanente nunca repete.
 - **Painel seguro por padrão.** Bind em `127.0.0.1`; um token opcional
   (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
   (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de
@@ -337,6 +349,7 @@ nunca em 4xx):
        "risk": {"rule_id": "high-risk-port-added",
                 "reasons": ["NEW_OPEN_PORT", "REMOTE_ACCESS_SERVICE", "INTERNET_EXPOSED_ASSET"]},
        "kind": "port", "type": "added", "key": "vpn.alvo.com:3389", "old": null, "new": "open",
+       "evidence": {"type": "tcp_connect", "state": "open", "port": 3389},
        "source": "vps-eu", "context": {"exposure": "internet", "criticality": "critical"}}
     ],
     "text": "**PADMÉ** · `alvo.com` ..."
@@ -345,7 +358,9 @@ nunca em 4xx):
 
   > Contrato **aditivo** (`schema_version` só muda se algum campo for removido):
   > `confidence`, `risk.rule_id`/`risk.reasons` (códigos estáveis), `source`,
-  > `context` e, em `CHANGED`, `changes` (diff por campo) foram **acrescentados**.
+  > `context`, `evidence` (a prova normalizada — `tcp_connect`/`http_response`/
+  > `tls_handshake`/`takeover_check`/`dns_record`…) e, em `CHANGED`, `changes`
+  > (diff por campo) foram **acrescentados**.
 
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 Teste todos de uma vez com `python -m padme test-notify`.
@@ -400,12 +415,14 @@ pytest -q                        # 212 testes
 ```
 padme/
 ├── padme/
-│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor
+│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor / backup / merge
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── levels.py         # severidade base + assess() (severity+confidence+reason codes)
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
+│   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
+│   ├── ratelimit.py      # pacing responsável: rps global + jitter + intervalo por host
 │   ├── logredact.py      # redação de segredos nos logs
 │   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
 │   ├── merge.py          # consolidação multi-vantage (padme merge)
@@ -421,6 +438,7 @@ padme/
 │   │                     #   takeover, ports (com banner-grab)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
+├── ROADMAP.md            # status da evolução (feito/parcial/pendente/adiado)
 ├── .github/workflows/    # CI: ruff + compileall + pytest (matriz 3.10/3.11/3.12)
 ├── scripts/release.sh    # release limpo via git archive
 ├── Dockerfile            # imagem do sentinela (roda `padme`)
@@ -429,6 +447,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 212 testes: unitários + reliability + netpolicy +
+└── tests/                # 237 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

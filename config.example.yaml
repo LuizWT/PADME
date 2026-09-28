@@ -56,6 +56,12 @@ network:
   # privado/reservado (10/8, 192.168/16, 127/8, link-local, ULA IPv6...).
   # DNS passivo continua. Ligue só se realmente monitora rede interna.
   allow_private_ips: false
+  # Comportamento responsável: pacing das requisições HTTP ativas (0 = desligado).
+  # Não aumenta agressividade — só torna o monitor previsível e educado.
+  rate_limit_rps: 0            # teto global de requisições/segundo (ex.: 10)
+  jitter_ms: 0                 # jitter (ms) somado ao espaçamento global (ex.: 200)
+  per_host_interval_ms: 0      # intervalo mínimo entre requisições ao MESMO host (ex.: 500)
+  max_retries: 2               # retries HTTP em 429/5xx transitório (backoff+jitter, respeita Retry-After; 0 = off)
 
 # Armazenamento / retenção do histórico (o `state` nunca é apagado).
 storage:

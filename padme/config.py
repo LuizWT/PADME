@@ -151,6 +151,11 @@ class NetworkConfig:
     """
     allow_private_ips: bool = False
     follow_redirects: bool = False
+    # Comportamento responsável (§12): pacing das requisições ativas. 0 = desligado.
+    rate_limit_rps: float = 0.0        # teto global de requisições/segundo
+    jitter_ms: int = 0                 # jitter somado ao espaçamento global
+    per_host_interval_ms: int = 0      # intervalo mínimo entre requisições ao mesmo host
+    max_retries: int = 2               # nº de retries HTTP em 429/5xx transitório (0 = off)
 
 
 @dataclass
@@ -325,6 +330,10 @@ class Config:
             network=NetworkConfig(
                 allow_private_ips=_as_bool(net.get("allow_private_ips"), False),
                 follow_redirects=_as_bool(net.get("follow_redirects"), False),
+                rate_limit_rps=_as_float(net.get("rate_limit_rps"), "network.rate_limit_rps", 0.0),
+                jitter_ms=_as_int(net.get("jitter_ms"), "network.jitter_ms", 0),
+                per_host_interval_ms=_as_int(net.get("per_host_interval_ms"), "network.per_host_interval_ms", 0),
+                max_retries=_as_int(net.get("max_retries"), "network.max_retries", 2),
             ),
             storage=StorageConfig(
                 event_retention_days=_as_int(stg.get("event_retention_days"), "storage.event_retention_days", 0),

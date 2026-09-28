@@ -105,6 +105,19 @@ def test_render_filtro_por_dominio():
     assert "x.b.com" not in only_a              # b.com filtrado fora
 
 
+def test_render_mostra_evidencia_em_added():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("alvo.com", [])   # baseline
+    s.apply_scan("alvo.com", [     # ADDED com metadata -> vira evidência no painel
+        Record(Kind.PORT, "alvo.com:3389", "open", metadata={"port": 3389, "banner": "xrdp"}),
+    ])
+    s.close()
+    out = _render(Config(targets=["alvo.com"], db_path=db))
+    os.remove(db)
+    assert "prova:" in out and "tcp_connect" in out
+
+
 def test_trend_svg_vazio_nao_quebra():
     serie = [{"day": "2026-09-20", "added": 0, "removed": 0, "changed": 0, "total": 0}]
     out = _trend_svg(serie, days=1)

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from ..evidence import evidence_of
 from ..levels import Level, assess
 from ..models import Event, EventType, Kind
 from .base import NotificationResult, chunk_text, post_with_retry
@@ -98,6 +99,11 @@ def event_to_dict(e: Event) -> dict:
         "new": e.new_value,
         "metadata": md,
     }
+    # evidência normalizada ("como isto foi observado") — aditivo (§6.3/§21)
+    subject_value = e.old_value if e.event_type == EventType.REMOVED else e.new_value
+    ev = evidence_of(e.kind, e.key, subject_value, md)
+    if ev:
+        d["evidence"] = ev
     # proveniência e diff semântico (quando presentes) em campos de topo p/ n8n
     if md.get("_source"):
         d["source"] = md["_source"]
