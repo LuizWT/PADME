@@ -26,6 +26,8 @@ class Kind(str, Enum):
     MAILSEC = "mailsec"    # postura de e-mail no apex (SPF / DMARC)
     PORT = "port"
     HTTP = "http"
+    HTTPSEC = "httpsec"    # postura de cabeçalhos de segurança do endpoint HTTP
+    FAVICON = "favicon"    # hash do favicon (pivot de infraestrutura, estilo Shodan)
     TLS = "tls"
     TAKEOVER = "takeover"
     CERT_EXPIRY = "cert_expiry"
@@ -39,8 +41,15 @@ class Kind(str, Enum):
 #
 # CERT_EXPIRY compartilha o escopo do TLS (mesmo collector/handshake): se o TLS
 # foi observado, o cert também foi.
+#
+# HTTPSEC compartilha o escopo do HTTP: a postura de cabeçalhos vem da MESMA
+# resposta do GET, então se o HTTP foi observado, os cabeçalhos também — e há
+# sempre exatamente um HTTPSEC por host que respondeu (nunca falso REMOVED).
+# FAVICON tem escopo PRÓPRIO (recurso /favicon.ico separado): 404 = ausência
+# autoritativa (pode virar REMOVED real); timeout preserva (ver favicon.py).
 _SCOPE_KIND = {
     Kind.CERT_EXPIRY: Kind.TLS,
+    Kind.HTTPSEC: Kind.HTTP,
 }
 
 # Kinds cujo escopo é o alvo inteiro (não um host individual).
@@ -62,7 +71,7 @@ def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:
         return (scope_kind.value, target)
     if kind == Kind.DNS:
         host = key.split("|", 1)[0]
-    elif kind == Kind.HTTP:
+    elif kind in (Kind.HTTP, Kind.HTTPSEC):  # key = URL (scheme://host)
         host = key.split("://", 1)[-1].split("/", 1)[0]
     elif kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT):
         host = key.rsplit(":", 1)[0]

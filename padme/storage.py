@@ -383,3 +383,14 @@ class Storage:
             "state": c("SELECT COUNT(*) FROM state").fetchone()[0],
             "events": c("SELECT COUNT(*) FROM events").fetchone()[0],
         }
+
+    def db_size(self) -> dict[str, int]:
+        """Tamanho em bytes do banco e do WAL (planejamento de disco/backup)."""
+        out = {"db": 0, "wal": 0}
+        for label, suffix in (("db", ""), ("wal", "-wal")):
+            try:
+                out[label] = Path(self.db_path + suffix).stat().st_size
+            except OSError:
+                pass
+        out["total"] = out["db"] + out["wal"]
+        return out

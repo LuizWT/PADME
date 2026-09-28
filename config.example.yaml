@@ -36,6 +36,8 @@ collectors:
   dns: true           # passivo — A/AAAA/CNAME/MX
   dns_records: true   # passivo — NS + SPF/DMARC do apex (delegação / spoofing)
   http: true          # ativo leve — 1 GET por host
+  http_security: true # postura de headers de segurança (HSTS/CSP/XFO…) — mesmo GET, sem custo extra
+  favicon: true       # ativo leve — 1 GET a /favicon.ico; hash p/ pivotar infra (mesma stack)
   tls: true           # ativo leve — handshake p/ ler o certificado
   cert_expiry_days: 14  # avisa quando o cert está a <= N dias de expirar
   max_response_bytes: 262144  # teto do corpo HTTP lido por host (256 KiB)
@@ -64,6 +66,18 @@ storage:
 alerts:
   flap_threshold: 4         # >= N eventos da mesma chave na janela = flapping
   flap_window_minutes: 60
+
+# Painel web (read-only). Bind SEGURO por padrão (loopback).
+web:
+  bind: 127.0.0.1           # NUNCA 0.0.0.0 sem intenção; --host sobrescreve
+  port: 8787
+  # Token opcional. Se definido, o painel exige `Authorization: Bearer <token>`
+  # em TODAS as rotas (/, /export, /vantage). Mantenha FORA do repositório:
+  # use ${PADME_WEB_TOKEN} (ou só a env var — a CLI a lê mesmo sem esta linha).
+  token: ${PADME_WEB_TOKEN}
+  # Diretório com exports .json de OUTRAS fontes (multi-vantage). O painel os
+  # consolida em /vantage reusando o `padme merge` — sem DB central. Vazio = off.
+  vantage_dir: ""
 
 telegram:
   enabled: true

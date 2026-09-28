@@ -15,6 +15,7 @@ chip = ponto + rótulo, nunca cor sozinha), tipografia de sistema, hairlines,
 from __future__ import annotations
 
 import csv
+import hmac
 import html
 import http.server
 import io
@@ -22,16 +23,18 @@ import json
 import socketserver
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
 
-from .levels import Level, severity
+from .levels import Level, assess
+from .merge import merge_exports
 from .storage import Storage
 
 _KIND_ORDER = ["takeover", "cert_expiry", "ns", "mailsec", "wildcard",
-               "subdomain", "port", "http", "tls", "dns"]
+               "subdomain", "port", "http", "httpsec", "favicon", "tls", "dns"]
 _KIND_LABEL = {
     "takeover": "TAKEOVER", "cert_expiry": "CERT", "ns": "NS", "mailsec": "E-MAIL",
     "wildcard": "WILDCARD", "subdomain": "SUBDOMAIN", "port": "PORT",
-    "http": "HTTP", "tls": "TLS", "dns": "DNS",
+    "http": "HTTP", "httpsec": "HEADERS", "favicon": "FAVICON", "tls": "TLS", "dns": "DNS",
 }
 _ARROW = {"added": "+", "removed": "−", "changed": "~"}
 
@@ -152,6 +155,7 @@ details.kinds[open]>summary::before{content:"▾ "}
 .events .body{font-family:var(--mono);word-break:break-all}
 .events .add .mk{color:var(--add)} .events .rem .mk{color:var(--rem)} .events .chg .mk{color:var(--chg)}
 .events .mk{font-weight:700}
+.events .why{color:var(--crit);font-family:var(--sans);font-size:11px;margin-left:8px;font-weight:600}
 
 .empty{color:var(--muted);padding:16px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:16px 0 0}
@@ -176,6 +180,9 @@ details.kinds[open]>summary::before{content:"▾ "}
 .lghint{font-size:10px;color:var(--muted);margin-left:4px}
 .banner{background:#2a1414;border:1px solid var(--crit);color:#f2a3a3;border-radius:10px;
   padding:11px 14px;margin:16px 0 0;font-size:12.5px}
+.banner code,.note code{font-family:var(--mono);background:rgba(255,255,255,.08);padding:0 4px;border-radius:4px}
+.note{background:#12211a;border:1px solid var(--add);color:#8fd4b3;border-radius:10px;
+  padding:10px 14px;margin:16px 0 0;font-size:12.5px}
 footer{color:var(--muted);font-size:11px;margin-top:30px;text-align:center;padding-top:16px;
   border-top:1px solid var(--border)}
 @media(max-width:560px){.prow{grid-template-columns:1fr;gap:4px}.prow .tgt{text-align:left}}
@@ -485,13 +492,16 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
             cls = {"added": "add", "removed": "rem", "changed": "chg"}[e.event_type.value]
             val = e.new_value if e.event_type.value != "removed" else e.old_value
             when = (e.detected_at or "")[5:16].replace("T", " ")
-            scls, slabel = _SEV.get(severity(e), ("s-muted", ""))
+            risk = assess(e)
+            scls, slabel = _SEV.get(risk.level, ("s-muted", ""))
+            why = (f"<span class=why title='{_esc('; '.join(risk.reasons))}'>▲ "
+                   f"{_esc(risk.reasons[0])}</span>") if risk.reasons else ""
             ev.append(
                 f"<div class='line {cls}'>"
                 f"<span class=when>{_esc(when)}</span>"
                 f"{_chip(scls, slabel)}"
                 f"<span class=body><span class=mk>{_ARROW[e.event_type.value]}</span> "
-                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}</span></div>"
+                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}{why}</span></div>"
             )
         ev.append("</div>")
         parts.append("".join(ev))
@@ -554,7 +564,116 @@ def render_export(cfg, only: str | None, fmt: str) -> tuple[str, str]:
     return json.dumps(recs, indent=2, ensure_ascii=False), "application/json; charset=utf-8"
 
 
-def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
+# ── multi-vantage (consolida exports de várias fontes; reusa padme merge) ────
+def _vantage_exports(cfg) -> tuple[list[list[dict]], list[str]]:
+    """Junta o estado LOCAL (source=cfg.source) + cada .json em web.vantage_dir.
+    Devolve (exports, avisos). A máquina do painel é um ponto de observação; os
+    outros vêm de arquivos exportados por `padme export`. Arquivo inválido é
+    PULADO com aviso — nunca derruba a página."""
+    exports: list[list[dict]] = [_export_rows(cfg, None)]  # já traz source=cfg.source
+    warnings: list[str] = []
+    raw = cfg.web.vantage_dir
+    if not raw:
+        return exports, warnings
+    d = Path(raw)
+    if not d.is_dir():
+        warnings.append(f"vantage_dir não encontrado: {raw}")
+        return exports, warnings
+    for fp in sorted(d.glob("*.json")):
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            warnings.append(f"{fp.name}: inválido ({type(exc).__name__})")
+            continue
+        rows = data if isinstance(data, list) else data.get("rows")
+        if not isinstance(rows, list):
+            warnings.append(f"{fp.name}: formato inesperado (esperava lista de linhas)")
+            continue
+        exports.append(rows)
+    return exports, warnings
+
+
+def _vantage_values(a: dict, sources: list[str]) -> str:
+    """Valor observado por fonte (— = ausente)."""
+    vals = a.get("values", {})
+    bits = []
+    for s in sources:
+        v = vals.get(s)
+        cls = "k" if v is not None else "v"
+        bits.append(f"<span class=row><span class={cls}>{_esc(s)}</span>"
+                    f"  <span class=v>{_esc(v) if v is not None else '—'}</span></span>")
+    return "".join(bits)
+
+
+def render_vantage(cfg) -> str:
+    exports, warnings = _vantage_exports(cfg)
+    merged = merge_exports(exports)
+    sources = merged["sources"]
+    divs = merged["divergences"]
+    presence = [a for a in divs if a["divergence"] == "presence"]
+    value = [a for a in divs if a["divergence"] == "value"]
+
+    parts = [
+        "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
+        "<meta name=viewport content='width=device-width,initial-scale=1'>",
+        "<title>Padmé — multi-vantage</title><style>", _CSS, "</style></head><body>",
+        "<header><div class=top>",
+        "<div class=brand>🛰️ PADMÉ<small>multi-vantage</small></div>",
+        "<div class=spacer></div>",
+        f"<span class=pill>fontes <b>{len(sources)}</b></span>",
+        f"<span class=pill>ativos <b>{merged['asset_count']}</b></span>",
+        '<a class=xbtn href="/">← superfície</a>',
+        "</div></header><div class=wrap>",
+    ]
+    for w in warnings:
+        parts.append(f"<div class=note>⚠ {_esc(w)}</div>")
+
+    parts.append("<div class=eyebrow>fontes (pontos de observação)</div>")
+    parts.append("<div class=panel><div class=calm>"
+                 + (" · ".join(f"<b>{_esc(s)}</b>" for s in sources) or "nenhuma fonte")
+                 + "</div></div>")
+
+    # divergências de PRESENÇA (visto de umas fontes, ausente em outras)
+    parts.append(f"<div class=eyebrow>divergência de presença · {len(presence)}</div>")
+    if not presence:
+        parts.append("<div class=panel><div class=calm>" + _chip("s-ok", "sem divergência")
+                     + "<span>todo ativo aparece em todas as fontes.</span></div></div>")
+    else:
+        rows = []
+        for a in presence:
+            rows.append(
+                "<div class=prow>"
+                f"<div>{_chip('s-warn', 'presença')}</div>"
+                f"<div><div class=who>{_esc(a['kind'].upper())} · {_esc(a['key'])}</div>"
+                f"<div class=det>visto de {_esc(', '.join(a['sources_seen']))} · "
+                f"ausente em {_esc(', '.join(a['sources_missing']))}</div></div>"
+                f"<div class=tgt>{_esc(a['target'])}</div>"
+                "</div>")
+        parts.append("<div class=panel>" + "".join(rows) + "</div>")
+
+    # divergência de VALOR (visto de todas, mas com valor diferente)
+    parts.append(f"<div class=eyebrow>divergência de valor · {len(value)}</div>")
+    if not value:
+        parts.append("<div class=panel><div class=calm>" + _chip("s-ok", "sem divergência")
+                     + "<span>ativos presentes em todas as fontes têm o mesmo valor.</span></div></div>")
+    else:
+        rows = []
+        for a in value:
+            rows.append(
+                "<div class=kind>"
+                f"<div class=who>{_chip('s-info', 'valor')} {_esc(a['kind'].upper())} · "
+                f"{_esc(a['key'])} <span class=tgt>{_esc(a['target'])}</span></div>"
+                + _vantage_values(a, sources) + "</div>")
+        parts.append("<div class=panel>" + "".join(rows) + "</div>")
+
+    parts.append("<footer>Padmé · multi-vantage · consolida exports por (target, kind, key) "
+                 "— mesma lógica do <code>padme merge</code>, sem DB central</footer>")
+    parts.append("</div></body></html>")
+    return "".join(parts)
+
+
+def _render(cfg, exposed: bool = False, only: str | None = None,
+            authed: bool = False) -> str:
     trend_days = 30
     storage = Storage(cfg.db_path)
     try:
@@ -592,12 +711,18 @@ def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
         "<span class=pill>auto <b>30s</b></span>",
         "</div></header><div class=wrap>",
     ]
-    if exposed:
+    if exposed and not authed:
         parts.append("<div class=banner>⚠️ Painel exposto fora de localhost e SEM autenticação. "
-                     "Qualquer um com acesso à rede vê sua superfície de ataque.</div>")
+                     "Qualquer um com acesso à rede vê sua superfície de ataque — "
+                     "defina <code>PADME_WEB_TOKEN</code> ou sirva atrás de um proxy autenticado.</div>")
+    elif exposed and authed:
+        parts.append("<div class=note>🔒 Painel exposto fora de localhost, protegido por token "
+                     "(<code>Authorization: Bearer</code>).</div>")
     toolbar = "<div class=toolbar>"
     if len(all_targets) > 1:
         toolbar += _filter_form(all_targets, only)
+    if cfg.web.vantage_dir:
+        toolbar += '<a class=xbtn href="/vantage">multi-vantage →</a>'
     toolbar += _export_actions(only)
     parts.append(toolbar + "</div>")
 
@@ -625,25 +750,82 @@ def _render(cfg, exposed: bool = False, only: str | None = None) -> str:
     return "".join(parts)
 
 
-def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False) -> None:
-    page_cfg = cfg
+def _bearer_ok(header: str | None, token: str) -> bool:
+    """Valida `Authorization: Bearer <token>` em tempo constante.
+
+    Header ausente/malformado -> False. Comparação com `hmac.compare_digest`
+    (não vaza o tamanho/prefixo do token por timing). Chamado só quando há token
+    configurado."""
+    if not header:
+        return False
+    parts = header.split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return False
+    # compara em bytes: cabeçalhos chegam decodificados em latin-1, e
+    # compare_digest levanta TypeError com str não-ASCII — encode fecha isso
+    # (mantém tempo constante) e nunca deixa a exceção escapar como 500.
+    return hmac.compare_digest(parts[1].strip().encode("utf-8"), token.encode("utf-8"))
+
+
+_ROUTES = ("/", "/export", "/vantage")  # rotas conhecidas (após auth)
+
+
+class PanelServer(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+def make_handler(page_cfg, exposed: bool, auth_token: str | None):
+    """Fábrica do handler HTTP (fecha sobre cfg/exposed/token). Separada de
+    `serve` para ser testável sem depender de `serve_forever`."""
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        server_version = "padme"  # não anuncia versão do Python/BaseHTTPServer
+        sys_version = ""
+
+        def _deny(self):
+            # 401 mínimo: não revela quais rotas existem nem detalhes internos.
+            body = b"401 Unauthorized\n"
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Bearer realm="padme"')
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
+            # auth ANTES do roteamento: cobre /, /export, /vantage e qualquer
+            # rota futura de uma vez. Sem token configurado, não exige nada.
+            if auth_token is not None and not _bearer_ok(
+                    self.headers.get("Authorization"), auth_token):
+                self._deny()
+                return
             parsed = urllib.parse.urlparse(self.path)
+            route = parsed.path.rstrip("/") or "/"
+            if route not in _ROUTES:
+                self.send_error(404, "Not Found")
+                return
             params = urllib.parse.parse_qs(parsed.query)
             only = params.get("target", [None])[0]
-            if parsed.path.rstrip("/") == "/export":
+            if route == "/export":
                 fmt = (params.get("fmt", ["json"])[0] or "json").lower()
                 fmt = "csv" if fmt == "csv" else "json"
                 text, ctype = render_export(page_cfg, only, fmt)
                 body = text.encode("utf-8")
-                fname = f"padme-{only or 'todos'}.{fmt}"
+                # sanitiza o nome do arquivo: `only` vem do ?target= (atacante-
+                # controlado); um \r\n aqui permitiria header injection.
+                safe = "".join(c for c in (only or "todos") if c.isalnum() or c in "._-")
+                fname = f"padme-{safe or 'todos'}.{fmt}"
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+            elif route == "/vantage":
+                body = render_vantage(page_cfg).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
             else:
-                body = _render(page_cfg, exposed=exposed, only=only).encode("utf-8")
+                body = _render(page_cfg, exposed=exposed, only=only,
+                               authed=auth_token is not None).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -651,14 +833,18 @@ def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False)
             self.wfile.write(body)
 
         def log_message(self, *args):
-            pass
+            pass  # nunca loga requests (evita vazar o token de um header em log)
 
-    class Server(socketserver.ThreadingTCPServer):
-        allow_reuse_address = True
-        daemon_threads = True
+    return Handler
 
-    with Server((host, port), Handler) as httpd:
-        print(f"Painel em http://{host}:{port}  (Ctrl+C para parar)")
+
+def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
+          token: str | None = None) -> None:
+    auth_token = token or None  # "" também desliga a auth
+    handler = make_handler(cfg, exposed, auth_token)
+    with PanelServer((host, port), handler) as httpd:
+        posture = "com token" if auth_token else "SEM auth"
+        print(f"Painel em http://{host}:{port}  ({posture} · Ctrl+C para parar)")
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

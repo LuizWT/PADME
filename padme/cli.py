@@ -18,6 +18,7 @@ import csv
 import io
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime
@@ -215,16 +216,36 @@ async def _cmd_test_telegram(cfg: Config, args) -> int:
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
+def _resolve_web_token(cfg: Config) -> str:
+    """Token do painel. Fica FORA do argv (não vira `--token` p/ não vazar em
+    `ps`/histórico): vem do YAML (`web.token`, geralmente `${PADME_WEB_TOKEN}`)
+    ou direto da env `PADME_WEB_TOKEN`. YAML explícito tem precedência."""
+    return (cfg.web.token or os.environ.get("PADME_WEB_TOKEN", "")).strip()
+
+
 async def _cmd_web(cfg: Config, args) -> int:
     from .webpanel import serve
-    if args.host not in _LOOPBACK:
+    host = args.host if args.host is not None else cfg.web.bind
+    port = args.port if args.port is not None else cfg.web.port
+    token = _resolve_web_token(cfg)
+    exposed = host not in _LOOPBACK
+
+    if exposed and not token and not args.allow_no_auth:
         print(
-            f"⚠️  Servindo o painel em {args.host} (fora de localhost). O painel NÃO tem\n"
-            "    autenticação e expõe sua superfície de ataque. Só faça isso em rede\n"
-            "    confiável / atrás de um proxy autenticado.",
+            f"⛔ Recusando servir em {host} (fora de localhost) SEM autenticação.\n"
+            "    Isso expõe sua superfície de ataque a qualquer um na rede. Escolha uma:\n"
+            "      • defina o token:  export PADME_WEB_TOKEN=... (ou web.token no config)\n"
+            "      • sirva local:     padme web            (bind em 127.0.0.1)\n"
+            "      • ciente do risco: padme web --host " + host + " --allow-no-auth",
             file=sys.stderr,
         )
-    serve(cfg, args.host, args.port, exposed=args.host not in _LOOPBACK)
+        return 3
+    if exposed:
+        detail = ("protegido por token (Authorization: Bearer)." if token
+                  else "SEM autenticação (--allow-no-auth). Só em rede confiável / atrás de proxy.")
+        print(f"⚠️  Servindo o painel em {host} (fora de localhost) — {detail}", file=sys.stderr)
+
+    serve(cfg, host, port, exposed=exposed, token=token or None)
     return 0
 
 
@@ -255,9 +276,12 @@ async def _cmd_doctor(cfg: Config, args) -> int:
     try:
         integ = storage.integrity_check()
         cnt = storage.counts()
+        sz = storage.db_size()
         print(f"banco:        {cfg.db_path}")
         print(f"integridade:  {integ}")
         print(f"contagens:    targets={cnt['targets']} state={cnt['state']} events={cnt['events']}")
+        print(f"tamanho:      {sz['total'] / 1024:.0f} KiB (db {sz['db'] / 1024:.0f} KiB"
+              f" + wal {sz['wal'] / 1024:.0f} KiB)")
         print("alvos:")
         for t in cfg.targets:
             m = storage.target_meta(t) or {}
@@ -337,8 +361,10 @@ def build_parser() -> argparse.ArgumentParser:
     tn.set_defaults(func=_cmd_test_notify)
 
     wb = sub.add_parser("web", help="painel web read-only do estado/histórico")
-    wb.add_argument("--host", default="127.0.0.1")
-    wb.add_argument("--port", type=int, default=8787)
+    wb.add_argument("--host", default=None, help="bind (padrão: web.bind do config ou 127.0.0.1)")
+    wb.add_argument("--port", type=int, default=None, help="porta (padrão: web.port do config ou 8787)")
+    wb.add_argument("--allow-no-auth", action="store_true",
+                    help="permite servir fora de localhost SEM token (decisão consciente)")
     wb.set_defaults(func=_cmd_web)
 
     dp = sub.add_parser("doctor", help="diagnóstico: integridade do banco, saúde dos scans e config")

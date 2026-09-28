@@ -29,6 +29,7 @@ from .collectors import (
     bruteforce,
     dns,
     dnsrecon,
+    favicon,
     http,
     ports,
     subdomains,
@@ -49,7 +50,8 @@ _USER_AGENT = "Padme-ASM/0.1 (+attack-surface-monitor)"
 # collector -> Kind do escopo (a "célula" onde ausência = remoção real)
 _SCOPE_KIND = {
     "dns": Kind.DNS,
-    "http": Kind.HTTP,
+    "http": Kind.HTTP,      # cobre HTTP e HTTPSEC (postura vem da mesma resposta)
+    "favicon": Kind.FAVICON,
     "tls": Kind.TLS,        # cobre TLS e CERT_EXPIRY
     "takeover": Kind.TAKEOVER,
     "ports": Kind.PORT,
@@ -167,12 +169,21 @@ class Engine:
                         "(network.allow_private_ips=false)", host, ", ".join(sorted(ips)))
                     return  # escopos ativos não marcados -> estado preservado
 
+            http_ok = False
             if col.http:
                 cr = await _safe(
                     http.collect_host(host, client, body_cache, net.follow_redirects,
-                                      col.max_response_bytes),
+                                      col.max_response_bytes, col.http_security),
                     host, "http", result)
                 _absorb(cr, result, "http", host)
+                http_ok = cr.ok
+            # favicon: 1 GET extra, só p/ host que respondeu HTTP (não sonda morto)
+            if col.favicon and http_ok:
+                cr = await _safe(
+                    favicon.collect_host(host, client, net.follow_redirects,
+                                         col.max_response_bytes),
+                    host, "favicon", result)
+                _absorb(cr, result, "favicon", host)
             if col.tls:
                 cr = await _safe(
                     tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days),

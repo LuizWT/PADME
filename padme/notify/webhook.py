@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from ..levels import Level, severity
+from ..levels import Level, assess
 from ..models import Event, EventType, Kind
 from .base import NotificationResult, chunk_text, post_with_retry
 from .formatting import DESC as _DESC
@@ -77,11 +77,13 @@ def format_events_md(target: str, events: list[Event], when: datetime | None = N
 
 
 def event_to_dict(e: Event) -> dict:
+    risk = assess(e)  # severidade final + o porquê (regras contextuais)
     return {
         "event_id": e.event_id,
         "scan_id": e.scan_id,
         "detected_at": e.detected_at,
-        "severity": severity(e).name.lower(),
+        "severity": risk.level.name.lower(),
+        "risk_reasons": risk.reasons,  # [] quando ficou na severidade base
         "kind": e.kind.value,          # collector de origem
         "type": e.event_type.value,
         "key": e.key,

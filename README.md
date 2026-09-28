@@ -76,6 +76,12 @@ operação de conjuntos: `key` nova = **added**, `key` sumiu = **removed**,
 mesmo `key` com `value` diferente = **changed**. Cada evento recebe uma
 **severidade**, e **cada canal** aplica o seu próprio limiar de nível.
 
+A severidade é **contextual e explicável** (`levels.assess`): parte de uma base
+por categoria e é **elevada por regras nomeadas** — uma porta administrativa/dados
+recém-exposta (RDP, VNC, Redis, MongoDB…) vira `critical`, DMARC em `p=none` vira
+`high`. Cada elevação carrega o **motivo** ("por que virou critical?"), que
+aparece no painel e no `risk_reasons` do webhook.
+
 > [!IMPORTANT]
 > **Ausência só vira `removed` quando o escopo foi observado com sucesso.** Cada
 > collector devolve `ok=True/False`; se a coleta de um host/categoria falhou
@@ -87,6 +93,18 @@ mesmo `key` com `value` diferente = **changed**. Cada evento recebe uma
 Fontes de subdomínio (passivas, Certificate Transparency):
 `crt.name` e `crt.sh`. O parser é defensivo — extrai hostnames válidos sob o
 apex independente do formato exato da resposta.
+
+### Sinais de postura (headers, tech, favicon)
+
+Reaproveitando o **mesmo GET** do collector HTTP (sem custo extra), o Padmé
+registra a **postura de cabeçalhos de segurança** (`HTTPSEC`: HSTS, CSP,
+X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy — o `value` lista o
+que **falta**) e um **fingerprint de tecnologia** leve no metadata do HTTP
+(nginx, Cloudflare, PHP…), derivado só de cabeçalhos. Um GET extra a
+`/favicon.ico` gera um **hash de favicon** (`FAVICON`, `sha256/16`) para
+**pivotar infraestrutura** — dois hosts com o mesmo hash tendem a compartilhar a
+mesma stack. Tudo respeita o `ok`/escopo: coleta inconclusiva **não** vira
+`removed`.
 
 ### Subdomain takeover
 
@@ -124,8 +142,12 @@ vez, o evento vira `EXPIRADO`.
   Ligue conscientemente só se for monitorar rede interna.
 - **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
   lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
-- **Painel só em localhost por padrão.** Servir em `--host 0.0.0.0` imprime um
-  aviso e mostra um banner: o painel não tem autenticação.
+- **Painel seguro por padrão.** Bind em `127.0.0.1`; um token opcional
+  (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
+  (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de
+  localhost **sem** token é **recusado** (a menos de `--allow-no-auth`) — expor a
+  superfície é decisão consciente. Ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para
+  o painel atrás de proxy + TLS.
 
 ---
 
@@ -229,7 +251,11 @@ python -m padme export --format json
 python -m padme export --format csv --out superficie.csv
 
 # Painel web read-only (lê o padme.db; atualiza sozinho a cada 30s)
-python -m padme web            # http://127.0.0.1:8787
+python -m padme web            # http://127.0.0.1:8787 (localhost, sem token)
+
+# Painel com token (exige Authorization: Bearer em todas as rotas)
+export PADME_WEB_TOKEN="$(openssl rand -hex 32)"
+python -m padme web
 
 # Testar todos os canais de notificação configurados
 python -m padme test-notify
@@ -241,8 +267,9 @@ python -m padme doctor
 python -m padme merge casa.json vps-eu.json --out consolidado.json
 ```
 
-> O painel aceita **filtro por domínio**: `http://127.0.0.1:8787/?target=alvo.com`
-> (ou clique nos chips no topo).
+> O painel aceita **filtro por domínio** (`?target=alvo.com` ou o dropdown no
+> topo) e uma visão **multi-vantage** em `/vantage` quando `web.vantage_dir`
+> aponta para exports de outras fontes (consolida com o `padme merge`).
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
@@ -313,8 +340,9 @@ Teste todos de uma vez com `python -m padme test-notify`.
 
 - **Docker / compose** (recomendado): `docker compose up -d` — restart
   automático embutido. Ver a seção [Docker](#docker-sentinela-247).
-- **systemd** (em servidor sem Docker): crie um service que roda
-  `padme monitor` com `Restart=always`.
+- **systemd** (em servidor sem Docker): unit completa com hardening, backup do
+  SQLite, rotação de segredos e painel atrás de proxy+TLS estão no
+  **[runbook operacional](docs/RUNBOOK.md)**.
 - **cron + `monitor --once --lock`**: se preferir não deixar processo vivo,
   agende `padme monitor --once --lock /tmp/padme.lock` — um ciclo por vez, sem
   sobrepor execuções (o `--lock` sai na hora se o ciclo anterior ainda roda).
@@ -350,7 +378,7 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 ```bash
 pip install pytest ruff
 ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
-pytest -q                        # 168 testes
+pytest -q                        # 198 testes
 ```
 
 ## Estrutura
@@ -361,7 +389,7 @@ padme/
 │   ├── cli.py            # comandos scan / monitor / events / export / web / doctor
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
-│   ├── levels.py         # severidade dos eventos + filtro por nível
+│   ├── levels.py         # severidade base + assess() contextual (risco explicável)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
 │   ├── logredact.py      # redação de segredos nos logs
 │   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
@@ -372,10 +400,12 @@ padme/
 │   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat + retenção
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
-│   ├── webpanel.py       # painel read-only + saúde da coleta + tendência (stdlib)
+│   ├── webpanel.py       # painel read-only (auth Bearer) + tendência + /vantage (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
-│   │                     #   http, tls, takeover, ports (com banner-grab)
+│   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
+│   │                     #   takeover, ports (com banner-grab)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
+├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
 ├── .github/workflows/    # CI: ruff + compileall + pytest (matriz 3.10/3.11/3.12)
 ├── scripts/release.sh    # release limpo via git archive
 ├── Dockerfile            # imagem do sentinela (roda `padme`)
@@ -384,6 +414,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 168 testes: unitários + reliability + netpolicy +
+└── tests/                # 198 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

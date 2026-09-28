@@ -169,6 +169,25 @@ class AlertsConfig:
 
 
 @dataclass
+class WebConfig:
+    """Painel web read-only. Bind SEGURO por padrão (loopback).
+
+    `token`: se definido, o painel exige `Authorization: Bearer <token>` em TODAS
+    as rotas. Mantenha o segredo FORA do repositório — use `token: ${PADME_WEB_TOKEN}`
+    ou só a env var `PADME_WEB_TOKEN` (a CLI a lê mesmo sem `web.token`).
+    `vantage_dir`: diretório com exports .json de outras fontes (multi-vantage) —
+    o painel os consolida em /vantage reutilizando `padme merge` (sem DB central)."""
+    bind: str = "127.0.0.1"
+    port: int = 8787
+    token: str = ""
+    vantage_dir: str = ""
+
+    def resolved(self) -> "WebConfig":
+        return WebConfig(bind=self.bind, port=self.port, token=_expand(self.token),
+                         vantage_dir=self.vantage_dir)
+
+
+@dataclass
 class HeartbeatConfig:
     enabled: bool = False
     url: str = ""            # ping de watchdog (healthchecks.io etc.); vazio = só arquivo
@@ -194,6 +213,8 @@ class CollectorsConfig:
     dns: bool = True          # passivo
     dns_records: bool = True  # passivo — NS + SPF/DMARC do apex (sinais RED)
     http: bool = True         # ativo leve (GET nos hosts)
+    http_security: bool = True  # postura de headers de segurança (mesmo GET; sem custo extra)
+    favicon: bool = True      # ativo leve — 1 GET a /favicon.ico (hash p/ pivot de infra)
     tls: bool = True          # ativo leve (handshake)
     cert_expiry_days: int = 14  # avisa quando o cert está a <= N dias de expirar
     max_response_bytes: int = 262144  # teto de corpo HTTP lido por host (256 KiB)
@@ -218,6 +239,7 @@ class Config:
     network: NetworkConfig = field(default_factory=NetworkConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
@@ -255,6 +277,7 @@ class Config:
         net = raw.get("network") or {}
         stg = raw.get("storage") or {}
         al = raw.get("alerts") or {}
+        web = raw.get("web") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
@@ -284,6 +307,8 @@ class Config:
                 dns=_as_bool(col.get("dns"), True),
                 dns_records=_as_bool(col.get("dns_records"), True),
                 http=_as_bool(col.get("http"), True),
+                http_security=_as_bool(col.get("http_security"), True),
+                favicon=_as_bool(col.get("favicon"), True),
                 tls=_as_bool(col.get("tls"), True),
                 cert_expiry_days=_as_int(col.get("cert_expiry_days"), "collectors.cert_expiry_days", 14),
                 max_response_bytes=_as_int(col.get("max_response_bytes"), "collectors.max_response_bytes", 262144),
@@ -304,6 +329,12 @@ class Config:
                 flap_threshold=_as_int(al.get("flap_threshold"), "alerts.flap_threshold", 4),
                 flap_window_minutes=_as_int(al.get("flap_window_minutes"), "alerts.flap_window_minutes", 60),
             ),
+            web=WebConfig(
+                bind=str(web.get("bind", "127.0.0.1")).strip() or "127.0.0.1",
+                port=_as_int(web.get("port"), "web.port", 8787),
+                token=str(web.get("token", "")),
+                vantage_dir=str(web.get("vantage_dir", "")).strip(),
+            ).resolved(),
             telegram=TelegramConfig(
                 enabled=_as_bool(tg.get("enabled"), False),
                 bot_token=str(tg.get("bot_token", "")),
@@ -370,6 +401,8 @@ def _validate(cfg: "Config") -> None:
         errs.append("alerts.flap_window_minutes deve ser > 0")
     if not (1 <= cfg.email.smtp_port <= 65535):
         errs.append(f"email.smtp_port fora de 1..65535: {cfg.email.smtp_port}")
+    if not (1 <= cfg.web.port <= 65535):
+        errs.append(f"web.port fora de 1..65535: {cfg.web.port}")
     for name, lvl in (("telegram", cfg.telegram.level), ("discord", cfg.discord.level),
                       ("webhook", cfg.webhook.level), ("email", cfg.email.level)):
         if str(lvl).strip().lower() not in _VALID_LEVELS:

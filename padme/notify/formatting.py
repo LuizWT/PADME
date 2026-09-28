@@ -21,6 +21,8 @@ KIND_LABEL = {
     Kind.SUBDOMAIN: "SUBDOMAIN",
     Kind.PORT: "PORT",
     Kind.HTTP: "HTTP",
+    Kind.HTTPSEC: "HEADERS",
+    Kind.FAVICON: "FAVICON",
     Kind.TLS: "TLS",
     Kind.DNS: "DNS",
 }
@@ -28,7 +30,7 @@ KIND_LABEL = {
 # ordem de exibição: o mais crítico primeiro
 KIND_ORDER = [
     Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.NS, Kind.MAILSEC, Kind.WILDCARD,
-    Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.TLS, Kind.DNS,
+    Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.HTTPSEC, Kind.FAVICON, Kind.TLS, Kind.DNS,
 ]
 
 # descrição técnica curta por (categoria, tipo de evento)
@@ -36,6 +38,8 @@ DESC = {
     Kind.PORT: {"added": "porta abriu", "removed": "porta fechou (não responde mais)", "changed": "porta alterada"},
     Kind.SUBDOMAIN: {"added": "subdomínio novo", "removed": "subdomínio sumiu", "changed": "subdomínio alterado"},
     Kind.HTTP: {"added": "serviço HTTP novo", "removed": "HTTP parou de responder", "changed": "resposta HTTP mudou"},
+    Kind.HTTPSEC: {"added": "postura de headers registrada", "removed": "endpoint não avaliado", "changed": "headers de segurança mudaram"},
+    Kind.FAVICON: {"added": "favicon novo (pivot de infra)", "removed": "favicon removido", "changed": "favicon mudou (troca de infra/serviço)"},
     Kind.TLS: {"added": "certificado novo", "removed": "TLS parou de responder", "changed": "certificado alterado"},
     Kind.DNS: {"added": "registro novo", "removed": "registro removido", "changed": "registro alterado"},
     Kind.NS: {"added": "nameserver novo", "removed": "nameserver removido", "changed": "nameserver alterado (delegação / possível hijack)"},
