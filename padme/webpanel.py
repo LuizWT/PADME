@@ -25,6 +25,7 @@ import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
+from .evidence import evidence_of
 from .levels import Level, assess
 from .merge import merge_exports
 from .storage import Storage
@@ -160,6 +161,7 @@ details.kinds[open]>summary::before{content:"▾ "}
 .events .mk{font-weight:700}
 .events .why{color:var(--crit);font-family:var(--sans);font-size:11px;margin-left:8px;font-weight:600}
 .events .conf{color:var(--muted);font-family:var(--sans);font-size:10px;margin-left:8px}
+.events .proof{color:var(--ink2);font-family:var(--sans);font-size:10px;margin-left:8px;opacity:.85}
 .events .chgdet{display:block;color:var(--ink2);font-size:11px;margin:2px 0 0 18px}
 
 .empty{color:var(--muted);padding:16px}
@@ -254,6 +256,21 @@ def _changes_html(changes: dict | None) -> str:
     bits = [f"{_esc(f)}: {_esc(ch.get('old'))} → {_esc(ch.get('new'))}"
             for f, ch in changes.items()]
     return "<span class=chgdet>" + " · ".join(bits) + "</span>"
+
+
+def _proof_html(e, value: str | None) -> str:
+    """Evidência normalizada da observação (§6.3), inline e discreta. Só para
+    ADDED/CHANGED — um REMOVED não reafirma uma observação atual. O tipo fica
+    visível; os fatos completos no tooltip."""
+    if e.event_type.value == "removed":
+        return ""
+    ev = evidence_of(e.kind, e.key, value, e.metadata)
+    if not ev:
+        return ""
+    typ = ev.get("type", "")
+    facts = " · ".join(f"{k}={v}" for k, v in ev.items() if k != "type")
+    full = f"{typ} — {facts}" if facts else typ
+    return f"<span class=proof title='{_esc(full)}'>prova: {_esc(typ)}</span>"
 
 
 # severidade (Level) -> (classe de status, rótulo curto)
@@ -526,12 +543,13 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
             conf = ("" if risk.confidence.name == "CONFIRMED"
                     else f"<span class=conf>conf: {risk.confidence.name.lower()}</span>")
             changes = _changes_html(e.metadata.get("_changes")) if e.metadata else ""
+            proof = _proof_html(e, val)
             ev.append(
                 f"<div class='line {cls}'>"
                 f"<span class=when>{_esc(when)}</span>"
                 f"{_chip(scls, slabel)}"
                 f"<span class=body><span class=mk>{_ARROW[e.event_type.value]}</span> "
-                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}{why}{conf}{changes}</span></div>"
+                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}{why}{conf}{proof}{changes}</span></div>"
             )
         ev.append("</div>")
         parts.append("".join(ev))

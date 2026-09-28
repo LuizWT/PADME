@@ -42,6 +42,11 @@ def test_kind_sem_evidencia_retorna_none():
     assert evidence_of(Kind.SUBDOMAIN, "x.a.com", "", {}) is None
 
 
+def test_port_removed_sem_fato_nao_afirma_open():
+    # REMOVED de porta: metadata vazia -> sem o fato "port", não reafirma "open"
+    assert evidence_of(Kind.PORT, "a.com:3389", "open", {}) is None
+
+
 def test_webhook_inclui_evidence():
     e = Event("a.com", EventType.ADDED, Kind.PORT, "a.com:3389", None, "open",
               metadata={"port": 3389, "banner": "OpenSSH_9.6"})

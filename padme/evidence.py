@@ -8,7 +8,9 @@ que sustenta o achado.
 
 É uma FUNÇÃO PURA sobre dados já coletados: nada de I/O, nada de storage novo,
 nada de migração. Metadata continua sendo o enriquecimento cru; a evidência é a
-sua leitura normalizada ("como isto foi observado").
+sua leitura normalizada ("como isto foi observado"). Quando não há fato de
+sustentação (só o `type` sobraria — ex.: um REMOVED cujo record já não existe),
+devolve None: melhor sem evidência do que uma evidência vazia/enganosa.
 """
 
 from __future__ import annotations
@@ -16,64 +18,64 @@ from __future__ import annotations
 from .models import Kind
 
 
-def _compact(d: dict) -> dict:
-    """Remove chaves com valor None/vazio (mantém 0 e False)."""
-    return {k: v for k, v in d.items() if v not in (None, "", [], {})}
+def _ev(d: dict) -> dict | None:
+    """Poda None/vazio (mantém 0/False) e exige ao menos um fato além do `type`."""
+    out = {k: v for k, v in d.items() if v not in (None, "", [], {})}
+    return out if len(out) > 1 else None
 
 
 def evidence_of(kind: Kind, key: str, value: str | None, metadata: dict | None) -> dict | None:
     """Projeção normalizada da evidência de um record/evento, ou None quando não
-    há uma forma útil. `value` é o resumo humano; `metadata` os fatos crus."""
+    há fato útil. `value` é o resumo humano; `metadata` os fatos crus."""
     md = metadata or {}
     val = value or ""
 
     if kind == Kind.PORT:
-        return _compact({"type": "tcp_connect", "state": "open",
-                         "port": md.get("port"), "banner": md.get("banner")})
+        # state='open' só quando há o fato da porta (um REMOVED não reafirma "open")
+        return _ev({"type": "tcp_connect", "port": md.get("port"),
+                    "state": "open" if md.get("port") is not None else None,
+                    "banner": md.get("banner")})
 
     if kind == Kind.HTTP:
-        return _compact({"type": "http_response", "status": md.get("status"),
-                         "server": md.get("server"), "scheme": md.get("scheme"),
-                         "location": md.get("location"), "title": md.get("title")})
+        return _ev({"type": "http_response", "status": md.get("status"),
+                    "server": md.get("server"), "scheme": md.get("scheme"),
+                    "location": md.get("location"), "title": md.get("title")})
 
     if kind == Kind.HTTPSEC:
-        return _compact({"type": "http_headers", "missing": md.get("missing"),
-                         "present": md.get("present"), "scheme": md.get("scheme")})
+        return _ev({"type": "http_headers", "missing": md.get("missing"),
+                    "present": md.get("present"), "scheme": md.get("scheme")})
 
     if kind == Kind.TLS:
-        return _compact({"type": "tls_handshake", "issuer": md.get("issuer"),
-                         "fingerprint": md.get("fingerprint"),
-                         "expires_at": md.get("expires_at")})
+        return _ev({"type": "tls_handshake", "issuer": md.get("issuer"),
+                    "fingerprint": md.get("fingerprint"), "expires_at": md.get("expires_at")})
 
     if kind == Kind.CERT_EXPIRY:
-        return _compact({"type": "tls_cert", "expires_at": md.get("expires_at"),
-                         "days_left": md.get("days_left"), "expired": md.get("expired")})
+        return _ev({"type": "tls_cert", "expires_at": md.get("expires_at"),
+                    "days_left": md.get("days_left"), "expired": md.get("expired")})
 
     if kind == Kind.TAKEOVER:
-        return _compact({"type": "takeover_check", "cname": md.get("cname"),
-                         "service": md.get("service"), "reason": md.get("reason") or val})
+        return _ev({"type": "takeover_check", "cname": md.get("cname"),
+                    "service": md.get("service"), "reason": md.get("reason") or val})
 
     if kind == Kind.NS:
-        return _compact({"type": "dns_ns", "nameserver": md.get("nameserver") or val})
+        return _ev({"type": "dns_ns", "nameserver": md.get("nameserver") or val})
 
     if kind == Kind.MAILSEC:
-        return _compact({"type": "dns_txt", "record": md.get("type"),
-                         "policy": md.get("policy"), "p": md.get("p")})
+        return _ev({"type": "dns_txt", "record": md.get("type"),
+                    "policy": md.get("policy"), "p": md.get("p")})
 
     if kind == Kind.DNS:
-        # key = "host|TYPE|valor"
-        parts = key.split("|", 2)
+        parts = key.split("|", 2)  # key = "host|TYPE|valor"
         record_type = parts[1] if len(parts) >= 2 else None
-        return _compact({"type": "dns_record", "record_type": record_type, "value": val})
+        return _ev({"type": "dns_record", "record_type": record_type, "value": val})
 
     if kind == Kind.FAVICON:
-        return _compact({"type": "favicon_hash", "hash": val, "algo": md.get("algo")})
+        return _ev({"type": "favicon_hash", "hash": val, "algo": md.get("algo")})
 
     if kind == Kind.WILDCARD:
-        return _compact({"type": "dns_wildcard", "ips": val})
+        return _ev({"type": "dns_wildcard", "ips": val})
 
     if kind == Kind.SUBDOMAIN:
-        # value = 'live' | 'quiet' (liveness); vazio em records antigos -> sem evidência
-        return {"type": "dns_resolve", "liveness": val} if val else None
+        return _ev({"type": "dns_resolve", "liveness": val})
 
     return None
