@@ -344,6 +344,7 @@ nunca em 4xx):
        "risk": {"rule_id": "high-risk-port-added",
                 "reasons": ["NEW_OPEN_PORT", "REMOTE_ACCESS_SERVICE", "INTERNET_EXPOSED_ASSET"]},
        "kind": "port", "type": "added", "key": "vpn.alvo.com:3389", "old": null, "new": "open",
+       "evidence": {"type": "tcp_connect", "state": "open", "port": 3389},
        "source": "vps-eu", "context": {"exposure": "internet", "criticality": "critical"}}
     ],
     "text": "**PADMÉ** · `alvo.com` ..."
@@ -352,7 +353,9 @@ nunca em 4xx):
 
   > Contrato **aditivo** (`schema_version` só muda se algum campo for removido):
   > `confidence`, `risk.rule_id`/`risk.reasons` (códigos estáveis), `source`,
-  > `context` e, em `CHANGED`, `changes` (diff por campo) foram **acrescentados**.
+  > `context`, `evidence` (a prova normalizada — `tcp_connect`/`http_response`/
+  > `tls_handshake`/`takeover_check`/`dns_record`…) e, em `CHANGED`, `changes`
+  > (diff por campo) foram **acrescentados**.
 
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 Teste todos de uma vez com `python -m padme test-notify`.
@@ -412,6 +415,7 @@ padme/
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── levels.py         # severidade base + assess() (severity+confidence+reason codes)
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
+│   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
 │   ├── ratelimit.py      # pacing responsável: rps global + jitter + intervalo por host
 │   ├── logredact.py      # redação de segredos nos logs
