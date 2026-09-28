@@ -119,6 +119,9 @@ header{position:sticky;top:0;z-index:5;background:rgba(13,13,13,.86);
 .health{display:flex;flex-wrap:wrap;gap:6px 16px;padding:9px 16px;border-bottom:1px solid var(--border);
   font-size:11.5px;color:var(--muted)}
 .health b{color:var(--ink2);font-weight:600}
+.collhealth{display:flex;flex-wrap:wrap;gap:6px 12px;padding:0 16px 9px;border-bottom:1px solid var(--border);
+  font-size:10.5px;color:var(--muted)}
+.collhealth .chp{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono)}
 
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;padding:14px 16px}
 .tile{background:var(--inset);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
@@ -156,6 +159,8 @@ details.kinds[open]>summary::before{content:"▾ "}
 .events .add .mk{color:var(--add)} .events .rem .mk{color:var(--rem)} .events .chg .mk{color:var(--chg)}
 .events .mk{font-weight:700}
 .events .why{color:var(--crit);font-family:var(--sans);font-size:11px;margin-left:8px;font-weight:600}
+.events .conf{color:var(--muted);font-family:var(--sans);font-size:10px;margin-left:8px}
+.events .chgdet{display:block;color:var(--ink2);font-size:11px;margin:2px 0 0 18px}
 
 .empty{color:var(--muted);padding:16px}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:16px 0 0}
@@ -240,6 +245,15 @@ def _ts_human(ts) -> str:
         return datetime.fromtimestamp(float(ts)).strftime("%d/%m %H:%M")
     except Exception:
         return "—"
+
+
+def _changes_html(changes: dict | None) -> str:
+    """Detalhe do diff semântico de um CHANGED: campo: old → new."""
+    if not changes:
+        return ""
+    bits = [f"{_esc(f)}: {_esc(ch.get('old'))} → {_esc(ch.get('new'))}"
+            for f, ch in changes.items()]
+    return "<span class=chgdet>" + " · ".join(bits) + "</span>"
 
 
 # severidade (Level) -> (classe de status, rótulo curto)
@@ -442,7 +456,16 @@ def _health(meta: dict | None) -> str:
         bits.append(f"erros: <b>{errs}</b>")
     if dur is not None:
         bits.append(f"duração: <b>{dur} ms</b>")
-    return "<div class=health>" + " · ".join(bits) + "</div>"
+    out = "<div class=health>" + " · ".join(bits) + "</div>"
+    # saúde POR collector (DNS ok / PORTS partial / CT error) — §7 do roadmap
+    ch = meta.get("collectors_health") or {}
+    if ch:
+        _cls = {"ok": "s-ok", "partial": "s-warn", "error": "s-crit"}
+        chips = "".join(
+            f"<span class=chp>{_esc(name)} {_chip(_cls.get(v.get('status'), 's-muted'), v.get('status', '?'))}</span>"
+            for name, v in sorted(ch.items()))
+        out += f"<div class=collhealth>{chips}</div>"
+    return out
 
 
 def _host_status(kinds: dict, meta: dict | None) -> str:
@@ -494,14 +517,21 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
             when = (e.detected_at or "")[5:16].replace("T", " ")
             risk = assess(e)
             scls, slabel = _SEV.get(risk.level, ("s-muted", ""))
-            why = (f"<span class=why title='{_esc('; '.join(risk.reasons))}'>▲ "
-                   f"{_esc(risk.reasons[0])}</span>") if risk.reasons else ""
+            labels = risk.reason_labels()
+            why = ""
+            if risk.level > risk.base and labels:   # só destaca quando o contexto elevou
+                extra = f" +{len(labels) - 1}" if len(labels) > 1 else ""
+                why = (f"<span class=why title='{_esc(' · '.join(labels))}'>▲ "
+                       f"{_esc(labels[0])}{extra}</span>")
+            conf = ("" if risk.confidence.name == "CONFIRMED"
+                    else f"<span class=conf>conf: {risk.confidence.name.lower()}</span>")
+            changes = _changes_html(e.metadata.get("_changes")) if e.metadata else ""
             ev.append(
                 f"<div class='line {cls}'>"
                 f"<span class=when>{_esc(when)}</span>"
                 f"{_chip(scls, slabel)}"
                 f"<span class=body><span class=mk>{_ARROW[e.event_type.value]}</span> "
-                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}{why}</span></div>"
+                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}{why}{conf}{changes}</span></div>"
             )
         ev.append("</div>")
         parts.append("".join(ev))
@@ -769,6 +799,19 @@ def _bearer_ok(header: str | None, token: str) -> bool:
 
 _ROUTES = ("/", "/export", "/vantage")  # rotas conhecidas (após auth)
 
+# CSP compatível com o HTML real do painel: <style>/<script> e style="" inline
+# (daí 'unsafe-inline'), ícones/imagens só como data:, formulário GET p/ mesma
+# origem. Sem fontes/JS externos — o painel é 100% self-contained.
+_CSP = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        "img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+_SEC_RESPONSE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": _CSP,
+}
+
 
 class PanelServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
@@ -783,15 +826,22 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
         server_version = "padme"  # não anuncia versão do Python/BaseHTTPServer
         sys_version = ""
 
-        def _deny(self):
-            # 401 mínimo: não revela quais rotas existem nem detalhes internos.
-            body = b"401 Unauthorized\n"
-            self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Bearer realm="padme"')
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+        def _write(self, code: int, ctype: str, body: bytes, extra: dict | None = None):
+            """Escreve a resposta SEMPRE com os headers de segurança do painel."""
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            for k, v in _SEC_RESPONSE_HEADERS.items():
+                self.send_header(k, v)
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
+
+        def _deny(self):
+            # 401 mínimo: não revela quais rotas existem nem detalhes internos.
+            self._write(401, "text/plain; charset=utf-8", b"401 Unauthorized\n",
+                        {"WWW-Authenticate": 'Bearer realm="padme"'})
 
         def do_GET(self):
             # auth ANTES do roteamento: cobre /, /export, /vantage e qualquer
@@ -803,7 +853,7 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             parsed = urllib.parse.urlparse(self.path)
             route = parsed.path.rstrip("/") or "/"
             if route not in _ROUTES:
-                self.send_error(404, "Not Found")
+                self._write(404, "text/plain; charset=utf-8", b"404 Not Found\n")
                 return
             params = urllib.parse.parse_qs(parsed.query)
             only = params.get("target", [None])[0]
@@ -811,26 +861,19 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
                 fmt = (params.get("fmt", ["json"])[0] or "json").lower()
                 fmt = "csv" if fmt == "csv" else "json"
                 text, ctype = render_export(page_cfg, only, fmt)
-                body = text.encode("utf-8")
                 # sanitiza o nome do arquivo: `only` vem do ?target= (atacante-
                 # controlado); um \r\n aqui permitiria header injection.
                 safe = "".join(c for c in (only or "todos") if c.isalnum() or c in "._-")
                 fname = f"padme-{safe or 'todos'}.{fmt}"
-                self.send_response(200)
-                self.send_header("Content-Type", ctype)
-                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self._write(200, ctype, text.encode("utf-8"),
+                            {"Content-Disposition": f'attachment; filename="{fname}"'})
             elif route == "/vantage":
-                body = render_vantage(page_cfg).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self._write(200, "text/html; charset=utf-8",
+                            render_vantage(page_cfg).encode("utf-8"))
             else:
                 body = _render(page_cfg, exposed=exposed, only=only,
                                authed=auth_token is not None).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+                self._write(200, "text/html; charset=utf-8", body)
 
         def log_message(self, *args):
             pass  # nunca loga requests (evita vazar o token de um header em log)

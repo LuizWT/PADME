@@ -33,7 +33,7 @@ except ImportError:
 
 from .alerts import damp_flapping
 from .config import Config
-from .engine import Engine, build_notifiers
+from .engine import Engine, build_notifiers, summarize_health
 from .levels import Level
 from .logredact import install_secret_redaction
 from .models import Event
@@ -74,7 +74,8 @@ async def _cmd_scan(cfg: Config, args) -> int:
             events = engine.apply(result)
             errs = len(result.errors)
             storage.update_health(target, error_count=errs, partial=errs > 0,
-                                  duration_ms=int((time.monotonic() - t0) * 1000))
+                                  duration_ms=int((time.monotonic() - t0) * 1000),
+                                  collectors=summarize_health(result))
             _print_events(target, events, baseline=first)
             if errs:
                 print(f"[{target}] coleta parcial: {errs} erro(s) de collector "
@@ -294,6 +295,10 @@ async def _cmd_doctor(cfg: Config, args) -> int:
                   f" · erros={ec if ec is not None else '—'}"
                   f" · parcial={'sim' if m.get('last_partial') else 'não'}"
                   f" · dur={dur if dur is not None else '—'}ms")
+            ch = m.get("collectors_health") or {}
+            if ch:
+                bits = " ".join(f"{name}={v.get('status')}" for name, v in sorted(ch.items()))
+                print(f"      collectors: {bits}")
         warns = _config_warnings(cfg)
         if warns:
             print("avisos de configuração:")

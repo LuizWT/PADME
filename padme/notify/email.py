@@ -18,12 +18,13 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
+from .formatting import risk_suffix as _risk_suffix
 
 
 def _plain_line(e: Event) -> str:
     mark = _MARK[e.event_type]
     desc = _DESC.get(e.kind, {}).get(e.event_type.value, "")
-    suffix = f" — {desc}" if desc else ""
+    suffix = (f" — {desc}" if desc else "") + _risk_suffix(e)
     if e.kind == Kind.DNS and "|" in e.key:
         host, rtype, val = (e.key.split("|", 2) + ["", ""])[:3]
         return f"  {mark} {host} {rtype} {val}{suffix}"

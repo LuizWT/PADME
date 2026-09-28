@@ -36,9 +36,10 @@ def test_metadata_round_trip_state_e_evento():
                 metadata={"issuer": "LE", "fingerprint": "z"})],
         observed_scopes={("tls", "x.com")},
     )
-    # evento added carrega o metadata
-    assert evs[0].metadata == {"issuer": "LE", "fingerprint": "z"}
-    # persistido no state (all_state devolve dict)
+    # evento added carrega o metadata do record + proveniência (_collector)
+    assert evs[0].metadata["issuer"] == "LE" and evs[0].metadata["fingerprint"] == "z"
+    assert evs[0].metadata["_collector"] == "tls"
+    # persistido no state (all_state devolve dict) — state NÃO carrega proveniência
     row = next(r for r in s.all_state(["x.com"]) if r["kind"] == "tls")
     assert row["metadata"] == {"issuer": "LE", "fingerprint": "z"}
     # recarregado em recent_events
@@ -53,7 +54,9 @@ def test_sem_metadata_fica_vazio():
     s.apply_scan("x.com", [])
     s.apply_scan("x.com", [Record(Kind.PORT, "x.com:22", "open")],
                  observed_scopes={("port", "x.com")})
-    assert s.recent_events("x.com")[0].metadata == {}
+    # evento sem metadata de record ainda ganha só a proveniência (_collector)
+    assert s.recent_events("x.com")[0].metadata == {"_collector": "ports"}
+    # o state permanece limpo (sem proveniência)
     assert next(r for r in s.all_state(["x.com"]))["metadata"] == {}
     s.close(); os.remove(db)
 

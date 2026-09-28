@@ -86,6 +86,7 @@ class Engine:
                         target, self.cfg.timeout, self.cfg.collectors.wildcard_probes)
                     # detecção concluiu -> escopo observado (mesmo se não houver curinga)
                     result.observed_scopes.add((Kind.WILDCARD.value, target))
+                    result.mark_collector("wildcard", True)
                     if wc.active:
                         log.info("[%s] wildcard DNS ativo (confiança %.0f%%) -> %s",
                                  target, wc.confidence * 100, ", ".join(sorted(wc.ips)))
@@ -93,6 +94,7 @@ class Engine:
                             Record(Kind.WILDCARD, target, ", ".join(sorted(wc.ips)))
                         )
                 except Exception as exc:  # noqa: BLE001
+                    result.mark_collector("wildcard", False)
                     result.errors.append(f"wildcard: {exc}")
 
             # 0b. sinais RED no apex: NS (delegação/hijack) + SPF/DMARC (spoofing)
@@ -100,10 +102,12 @@ class Engine:
                 try:
                     cr = await dnsrecon.collect(target, self.cfg.timeout)
                     result.records.extend(cr.records)
+                    result.mark_collector("dnsrecon", cr.ok)
                     if cr.ok:  # observação autoritativa -> escopos podem gerar REMOVED
                         result.observed_scopes.add((Kind.NS.value, target))
                         result.observed_scopes.add((Kind.MAILSEC.value, target))
                 except Exception as exc:  # noqa: BLE001
+                    result.mark_collector("dnsrecon", False)
                     result.errors.append(f"dnsrecon: {exc}")
 
             # 1. subdomínios
@@ -113,9 +117,11 @@ class Engine:
                     cr = await subdomains.collect(target, client)
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
+                    result.mark_collector("subdomains", cr.ok)
                     if cr.ok:  # alguma fonte CT respondeu -> escopo observado
                         result.observed_scopes.add((Kind.SUBDOMAIN.value, target))
                 except Exception as exc:  # noqa: BLE001
+                    result.mark_collector("subdomains", False)
                     result.errors.append(f"subdomains: {exc}")
             if self.cfg.collectors.bruteforce:
                 try:
@@ -203,7 +209,8 @@ class Engine:
 
     def apply(self, result: ScanResult) -> list[Event]:
         return self.storage.apply_scan(
-            result.target, result.records, observed_scopes=result.observed_scopes
+            result.target, result.records, observed_scopes=result.observed_scopes,
+            source=self.cfg.source, context_rules=self.cfg.context.assets,
         )
 
 
@@ -220,9 +227,28 @@ async def _safe(coro, host: str, name: str, result: ScanResult) -> CollectionRes
 def _absorb(cr: CollectionResult, result: ScanResult, name: str, host: str) -> None:
     """Junta os records e, se a coleta foi autoritativa, marca o escopo observado."""
     result.records.extend(cr.records)
+    result.mark_collector(name, cr.ok)
     if cr.ok:
         scope_kind = _SCOPE_KIND[name]
         result.observed_scopes.add((scope_kind.value, host))
+
+
+def summarize_health(result: ScanResult) -> dict[str, dict]:
+    """Consolida collector_stats em status por collector (§7 do roadmap):
+    ok (só sucesso) · partial (mistura) · error (só falha). Vazio se não rodou."""
+    out: dict[str, dict] = {}
+    for name, s in sorted(result.collector_stats.items()):
+        ok, fail = s.get("ok", 0), s.get("fail", 0)
+        if ok and not fail:
+            status = "ok"
+        elif ok and fail:
+            status = "partial"
+        elif fail and not ok:
+            status = "error"
+        else:
+            continue
+        out[name] = {"status": status, "ok": ok, "fail": fail}
+    return out
 
 
 def _ips_from_dns(records: list[Record]) -> set[str]:

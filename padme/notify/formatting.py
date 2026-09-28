@@ -8,6 +8,7 @@ mas os DADOS (marcador, rótulo, ordem, descrição) vêm de um lugar só.
 
 from __future__ import annotations
 
+from ..levels import Confidence, assess
 from ..models import Event, EventType, Kind
 
 MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
@@ -76,3 +77,18 @@ def group_by_kind(events: list[Event]) -> list[tuple[Kind, list[Event]]]:
 def desc(e: Event) -> str:
     """Descrição técnica curta do evento (ou '' se não houver)."""
     return DESC.get(e.kind, {}).get(e.event_type.value, "")
+
+
+def risk_suffix(e: Event) -> str:
+    """Anexo curto com o PORQUÊ do risco — só quando o evento foi ELEVADO pelo
+    contexto ou a confiança não é CONFIRMED (mantém o alerta comum enxuto).
+    Texto puro, seguro em HTML e Markdown (sem dado de usuário)."""
+    r = assess(e)
+    if r.level <= r.base and r.confidence == Confidence.CONFIRMED:
+        return ""
+    parts = []
+    if r.reasons:
+        parts.append("⚠ " + ", ".join(r.reason_labels()))
+    if r.confidence != Confidence.CONFIRMED:
+        parts.append(f"confiança {r.confidence.name.lower()}")
+    return (" · " + " · ".join(parts)) if parts else ""

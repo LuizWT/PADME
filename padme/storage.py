@@ -31,7 +31,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .models import Event, EventType, Kind, Record, scope_of
+from .models import COLLECTOR_OF, Event, EventType, Kind, Record, scope_of, subject_host
 
 
 def _jdump(meta: dict | None) -> str | None:
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS targets (
 );
 """
 
-_SCHEMA_VERSION = 4
+_SCHEMA_VERSION = 5
 
 
 class Storage:
@@ -125,6 +125,10 @@ class Storage:
             for tbl in ("state", "events"):
                 if not self._has_column(tbl, "metadata"):
                     self._conn.execute(f"ALTER TABLE {tbl} ADD COLUMN metadata TEXT")
+        if ver < 5:
+            # v4 -> v5: saúde POR COLLECTOR do último scan (JSON em targets).
+            if not self._has_column("targets", "collectors_health"):
+                self._conn.execute("ALTER TABLE targets ADD COLUMN collectors_health TEXT")
         if ver != _SCHEMA_VERSION:
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
@@ -138,6 +142,15 @@ class Storage:
         )
         return {(r["kind"], r["key"]): r["value"] for r in cur.fetchall()}
 
+    def load_state_full(self, target: str) -> dict[tuple[str, str], dict]:
+        """Estado atual com value E metadata (JSON decodificado) — usado pelo
+        diff semântico p/ saber QUAL campo mudou num CHANGED."""
+        cur = self._conn.execute(
+            "SELECT kind, key, value, metadata FROM state WHERE target = ?", (target,)
+        )
+        return {(r["kind"], r["key"]): {"value": r["value"], "metadata": _jload(r["metadata"])}
+                for r in cur.fetchall()}
+
     def is_known_target(self, target: str) -> bool:
         """Alvo já teve um baseline gravado? (independe de `state` estar vazio)."""
         cur = self._conn.execute(
@@ -149,7 +162,12 @@ class Storage:
     def target_meta(self, target: str) -> dict | None:
         cur = self._conn.execute("SELECT * FROM targets WHERE target = ?", (target,))
         row = cur.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        if "collectors_health" in d:  # JSON -> dict (saúde por collector)
+            d["collectors_health"] = _jload(d.get("collectors_health"))
+        return d
 
     def all_state(self, targets: list[str] | None = None) -> list[dict]:
         """Estado atual completo (para export), opcionalmente filtrado por alvo.
@@ -239,6 +257,9 @@ class Storage:
         target: str,
         records: list[Record],
         observed_scopes: set[tuple[str, str]] | None = None,
+        *,
+        source: str | None = None,
+        context_rules: list | None = None,
     ) -> list[Event]:
         """Aplica um scan.
 
@@ -248,8 +269,14 @@ class Storage:
         `observed_scopes` (de engine): só os escopos aí presentes podem gerar
         REMOVED; ausência em escopo NÃO observado preserva o estado (erro de
         coleta != remoção). `None` = compat: todos os escopos são removíveis.
+
+        `source`/`context_rules` (proveniência + contexto): carimbam no metadata
+        do evento a fonte (vantage), o collector de origem e o contexto do ativo,
+        e detalham CHANGED por campo semântico. Opcionais — sem eles, o
+        comportamento é o de antes.
         """
-        from .differ import diff  # import tardio p/ evitar ciclo
+        from .context import resolve as resolve_ctx
+        from .differ import diff, field_changes  # import tardio p/ evitar ciclo
 
         now = time.time()
         baseline = not self.is_known_target(target)
@@ -261,7 +288,8 @@ class Storage:
             self._conn.commit()
             return []
 
-        old = self.load_state(target)
+        old_full = self.load_state_full(target)
+        old = {k: v["value"] for k, v in old_full.items()}
         new = {r.ident(): r.value for r in records}
         events = diff(target, old, new)
 
@@ -277,14 +305,30 @@ class Storage:
             kept.append(e)
 
         meta_by_ident = {r.ident(): r.metadata for r in records}
+        rules = context_rules or []
         scan_id = uuid.uuid4().hex
         detected_at = datetime.fromtimestamp(now, tz=timezone.utc).isoformat(timespec="seconds")
         for e in kept:
             e.event_id = uuid.uuid4().hex
             e.scan_id = scan_id
             e.detected_at = detected_at
-            # eventos added/changed carregam o metadata do record observado
-            e.metadata = meta_by_ident.get((e.kind.value, e.key), {}) or {}
+            # added/changed carregam o metadata do record observado
+            md = dict(meta_by_ident.get((e.kind.value, e.key), {}) or {})
+            # proveniência: de onde veio a evidência (§6 do roadmap)
+            if source:
+                md["_source"] = source
+            md["_collector"] = COLLECTOR_OF.get(e.kind)
+            ctx = resolve_ctx(subject_host(e.kind, e.key, target), target, rules)
+            if ctx is not None:
+                md["_context"] = ctx.as_dict()
+            # diff semântico: QUAL campo mudou (§5 do roadmap)
+            if e.event_type == EventType.CHANGED:
+                prev = old_full.get((e.kind.value, e.key), {})
+                changes = field_changes(e.kind, prev.get("value", ""), prev.get("metadata"),
+                                        e.new_value or "", md)
+                if changes:
+                    md["_changes"] = changes
+            e.metadata = md
             cur.execute(
                 "INSERT INTO events (target, ts, event_type, kind, key, old_value, new_value, event_id, scan_id, metadata)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -341,10 +385,12 @@ class Storage:
         )
 
     def update_health(self, target: str, *, error_count: int, partial: bool,
-                      duration_ms: int, when: float | None = None) -> None:
+                      duration_ms: int, collectors: dict | None = None,
+                      when: float | None = None) -> None:
         """Grava a saúde da última coleta do alvo. `last_success_at` só avança
         quando a coleta veio limpa (error_count == 0) — assim o painel distingue
-        'último scan' de 'último scan confiável'."""
+        'último scan' de 'último scan confiável'. `collectors`: status por
+        collector do último scan (JSON)."""
         now = time.time() if when is None else when
         if error_count == 0:
             self._conn.execute(
@@ -358,6 +404,9 @@ class Storage:
                 " last_partial=?, last_duration_ms=? WHERE target=?",
                 (now, error_count, int(partial), duration_ms, target),
             )
+        if collectors is not None:
+            self._conn.execute("UPDATE targets SET collectors_health=? WHERE target=?",
+                               (_jdump(collectors), target))
         self._conn.commit()
 
     def prune_events(self, retention_days: int) -> int:

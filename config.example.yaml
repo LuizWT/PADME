@@ -78,6 +78,24 @@ web:
   # Diretório com exports .json de OUTRAS fontes (multi-vantage). O painel os
   # consolida em /vantage reusando o `padme merge` — sem DB central. Vazio = off.
   vantage_dir: ""
+  # (o painel também envia headers de segurança: nosniff, X-Frame-Options: DENY,
+  #  Referrer-Policy, Cache-Control: no-store e uma CSP compatível com o HTML.)
+
+# Contexto de ativo — deixa o risk engine ELEVAR o risco com base no ativo, não
+# só no tipo de evento. Casa por `match` (exato ou glob, ex.: "*.corp.x.com")
+# contra o host do evento e o alvo; a regra mais específica vence. Tudo opcional.
+context:
+  assets: []
+    # - match: "vpn.exemplo.com"
+    #   criticality: critical       # low | medium | high | critical
+    #   environment: production
+    #   exposure: internet          # internet | internal  (interfere na severidade)
+    #   owner: infra
+    #   forbidden_ports: [22, 3389]  # se aparecer, vira UNEXPECTED/CRITICAL
+    #   expected_ports: [443]        # porta fora desta lista = UNEXPECTED_PORT
+    # - match: "status.exemplo.com"
+    #   criticality: low
+    #   exposure: internet
 
 telegram:
   enabled: true

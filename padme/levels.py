@@ -91,15 +91,70 @@ def _base_severity(e: Event) -> Level:
     return Level.DEBUG  # dns
 
 
+class Confidence(IntEnum):
+    """Confiança na OBSERVAÇÃO/classificação — dimensão INDEPENDENTE da severidade.
+
+        severity   = quão relevante/impactante é
+        confidence = quão confiável é a observação que sustenta a conclusão
+
+    A maioria dos sinais do Padmé é observação direta (connect TCP, resposta DNS,
+    handshake TLS) => CONFIRMED. Inferências (dangling por NXDOMAIN) ficam abaixo.
+    Ganha mais nuance quando entrarem provedores externos de discovery."""
+    LOW = 0
+    MEDIUM = 1
+    HIGH = 2
+    CONFIRMED = 3
+
+
+# Portas de acesso remoto x portas de dados (para o código de razão correto).
+_DATA_PORTS = {1433, 2049, 3306, 5432, 5984, 6379, 9200, 11211, 27017}
+
+# Reason codes estruturados (estáveis p/ webhook/n8n/relatório) + rótulo humano.
+NEW_OPEN_PORT = "NEW_OPEN_PORT"
+REMOTE_ACCESS_SERVICE = "REMOTE_ACCESS_SERVICE"
+DATA_SERVICE = "DATA_SERVICE"
+INTERNET_EXPOSED_ASSET = "INTERNET_EXPOSED_ASSET"
+CRITICAL_ASSET = "CRITICAL_ASSET"
+FORBIDDEN_PORT = "FORBIDDEN_PORT"
+UNEXPECTED_PORT = "UNEXPECTED_PORT"
+SUBDOMAIN_TAKEOVER = "SUBDOMAIN_TAKEOVER"
+DMARC_NOT_ENFORCED = "DMARC_NOT_ENFORCED"
+MAIL_PROTECTION_REMOVED = "MAIL_PROTECTION_REMOVED"
+NAMESERVER_CHANGED = "NAMESERVER_CHANGED"
+CERT_EXPIRING = "CERT_EXPIRING"
+
+REASON_LABEL = {
+    NEW_OPEN_PORT: "porta aberta nova",
+    REMOTE_ACCESS_SERVICE: "serviço de acesso remoto",
+    DATA_SERVICE: "serviço de dados exposto",
+    INTERNET_EXPOSED_ASSET: "ativo exposto à Internet",
+    CRITICAL_ASSET: "ativo crítico",
+    FORBIDDEN_PORT: "porta proibida pela política",
+    UNEXPECTED_PORT: "porta fora do estado esperado",
+    SUBDOMAIN_TAKEOVER: "subdomain takeover",
+    DMARC_NOT_ENFORCED: "DMARC não bloqueia spoofing (p=none)",
+    MAIL_PROTECTION_REMOVED: "proteção de e-mail removida",
+    NAMESERVER_CHANGED: "nameserver alterado (delegação/hijack)",
+    CERT_EXPIRING: "certificado expirando",
+}
+
+
 @dataclass
 class RiskAssessment:
-    """Severidade final + o PORQUÊ (regras determinísticas que a elevaram).
+    """Resultado da avaliação de risco: severidade final, base, CONFIANÇA,
+    a regra que decidiu (`rule_id`) e os `reasons` (CÓDIGOS estruturados).
 
-    `reasons` vazio = ficou na severidade base. Sempre explicável: cada regra
-    contextual que dispara deixa uma frase curta aqui."""
+    Determinístico e explicável: sempre dá pra responder 'por que virou X?'.
+    `reasons` vazio + level==base = ficou na régua base (compat total)."""
     level: Level
     base: Level
+    confidence: Confidence = Confidence.CONFIRMED
+    rule_id: str | None = None
     reasons: list[str] = field(default_factory=list)
+
+    def reason_labels(self) -> list[str]:
+        """Razões em texto humano (p/ painel/notificação)."""
+        return [REASON_LABEL.get(c, c) for c in self.reasons]
 
 
 def _port_of(e: Event) -> int | None:
@@ -114,39 +169,80 @@ def _port_of(e: Event) -> int | None:
         return None
 
 
-def assess(e: Event) -> RiskAssessment:
-    """Severidade CONTEXTUAL, determinística e explicável.
+def _confidence(e: Event) -> Confidence:
+    """Confiança na observação. Observação direta = CONFIRMED; takeover por
+    inferência (dangling via NXDOMAIN, sem fingerprint) = HIGH."""
+    if e.kind == Kind.TAKEOVER:
+        reason = str((e.metadata or {}).get("reason", "")).lower()
+        return Confidence.CONFIRMED if "fingerprint" in reason else Confidence.HIGH
+    return Confidence.CONFIRMED
 
-    Parte da base e ELEVA por regras nomeadas (nunca abaixa). Cada regra
-    responde 'por que isso virou HIGH/CRITICAL?'. Sem contexto aplicável, a
-    severidade é a base — total compatibilidade com o comportamento anterior."""
+
+def assess(e: Event) -> RiskAssessment:
+    """Severidade CONTEXTUAL, determinística e explicável (item risk engine).
+
+    Parte da base e ELEVA por regras nomeadas (nunca abaixa), usando o contexto
+    de ativo carimbado no evento (`_context`: exposure/criticality/expected/
+    forbidden ports). Sem contexto, comporta-se como a régua base — compat total."""
     base = _base_severity(e)
     level = base
     reasons: list[str] = []
+    rule_id: str | None = None
+    ctx = (e.metadata or {}).get("_context") or {}
+    exposure = ctx.get("exposure")
+    criticality = ctx.get("criticality")
+    expected = set(ctx.get("expected_ports") or [])
+    forbidden = set(ctx.get("forbidden_ports") or [])
 
-    # Regra 1 — porta administrativa/dados recém-EXPOSTA sobe pra CRITICAL.
+    # ── PORTAS ────────────────────────────────────────────────────────────
     if e.kind == Kind.PORT and e.event_type == EventType.ADDED:
+        reasons.append(NEW_OPEN_PORT)
         port = _port_of(e)
         if port in _HIGH_RISK_PORTS:
+            reasons.append(DATA_SERVICE if port in _DATA_PORTS else REMOTE_ACCESS_SERVICE)
+            level = max(level, Level.CRITICAL)   # serviço admin/dados novo = crítico
+            rule_id = "high-risk-port-added"
+        if exposure == "internet":
+            reasons.append(INTERNET_EXPOSED_ASSET)
+        if port is not None and port in forbidden:   # política: porta proibida
+            reasons.append(FORBIDDEN_PORT)
             level = max(level, Level.CRITICAL)
-            reasons.append(f"porta {_HIGH_RISK_PORTS[port]} ({port}) recém-exposta "
-                           "— acesso administrativo/dados")
-
-    # Regra 2 — DMARC presente mas em p=none (não bloqueia spoofing) => >= HIGH.
-    if e.kind == Kind.MAILSEC and e.event_type != EventType.REMOVED:
-        pol = (e.metadata or {}).get("p")
-        if (pol is not None and str(pol).lower() == "none") \
-                or "p=none" in str(e.new_value or "").lower():
+            rule_id = "forbidden-port-open"
+        elif port is not None and expected and port not in expected:  # fora do esperado
+            reasons.append(UNEXPECTED_PORT)
             level = max(level, Level.HIGH)
-            reasons.append("DMARC em p=none — não bloqueia spoofing")
+            rule_id = rule_id or "unexpected-port-open"
 
-    # Regra 3 — takeover é sempre crítico (dá o porquê explícito no alerta).
+    # ── TAKEOVER ──────────────────────────────────────────────────────────
     if e.kind == Kind.TAKEOVER and e.event_type != EventType.REMOVED:
+        reasons.append(SUBDOMAIN_TAKEOVER)
         level = max(level, Level.CRITICAL)
-        svc = (e.metadata or {}).get("service")
-        reasons.append(f"subdomain takeover{f' — {svc}' if svc else ''}")
+        rule_id = rule_id or "subdomain-takeover"
 
-    return RiskAssessment(level=level, base=base, reasons=reasons)
+    # ── E-MAIL (SPF/DMARC) ────────────────────────────────────────────────
+    if e.kind == Kind.MAILSEC:
+        if e.event_type == EventType.REMOVED:
+            reasons.append(MAIL_PROTECTION_REMOVED)   # base já é HIGH
+        else:
+            pol = ctx.get("_dmarc_p") or (e.metadata or {}).get("p")
+            if (pol is not None and str(pol).lower() == "none") \
+                    or "p=none" in str(e.new_value or "").lower():
+                reasons.append(DMARC_NOT_ENFORCED)
+                level = max(level, Level.HIGH)
+                rule_id = rule_id or "dmarc-p-none"
+
+    # ── NS / CERT (anotação explicativa; não muda o nível base) ───────────
+    if e.kind == Kind.NS:
+        reasons.append(NAMESERVER_CHANGED)
+    if e.kind == Kind.CERT_EXPIRY and e.event_type != EventType.REMOVED:
+        reasons.append(CERT_EXPIRING)
+
+    # ── contexto do ativo (anotação transversal) ─────────────────────────
+    if criticality == "critical" and level >= Level.MEDIUM:
+        reasons.append(CRITICAL_ASSET)
+
+    return RiskAssessment(level=level, base=base, confidence=_confidence(e),
+                          rule_id=rule_id, reasons=reasons)
 
 
 def severity(e: Event) -> Level:

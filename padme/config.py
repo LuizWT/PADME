@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from .context import AssetContext, ContextConfig
+
 _TRUE = {"true", "1", "yes", "y", "on", "sim"}
 _FALSE = {"false", "0", "no", "n", "off", "nao", "não", ""}
 _VALID_LEVELS = {"debug", "low", "medium", "high", "critical", "all", "verbose", "info",
@@ -240,6 +242,7 @@ class Config:
     storage: StorageConfig = field(default_factory=StorageConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    context: ContextConfig = field(default_factory=ContextConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
@@ -278,6 +281,7 @@ class Config:
         stg = raw.get("storage") or {}
         al = raw.get("alerts") or {}
         web = raw.get("web") or {}
+        ctx = raw.get("context") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
         wh = raw.get("webhook") or {}
@@ -335,6 +339,7 @@ class Config:
                 token=str(web.get("token", "")),
                 vantage_dir=str(web.get("vantage_dir", "")).strip(),
             ).resolved(),
+            context=_parse_context(ctx),
             telegram=TelegramConfig(
                 enabled=_as_bool(tg.get("enabled"), False),
                 bot_token=str(tg.get("bot_token", "")),
@@ -372,6 +377,52 @@ class Config:
         )
         _validate(cfg)
         return cfg
+
+
+_CRITICALITY = {"low", "medium", "high", "critical", "unknown"}
+_EXPOSURE = {"internet", "internal", "unknown"}
+
+
+def _ports(v: object, name: str) -> tuple[int, ...]:
+    if not v:
+        return ()
+    if not isinstance(v, (list, tuple)):
+        raise ValueError(f"{name} deve ser uma lista de portas")
+    out = []
+    for p in v:
+        n = _as_int(p, name, 0)
+        if not (1 <= n <= 65535):
+            raise ValueError(f"{name}: porta fora de 1..65535: {p}")
+        out.append(n)
+    return tuple(out)
+
+
+def _parse_context(ctx: dict) -> ContextConfig:
+    """Lê `context.assets` -> regras de contexto de ativo (§4.3/§11 do roadmap)."""
+    raw_assets = ctx.get("assets") or []
+    if not isinstance(raw_assets, list):
+        raise ValueError("context.assets deve ser uma lista")
+    rules: list[AssetContext] = []
+    for i, a in enumerate(raw_assets):
+        if not isinstance(a, dict):
+            raise ValueError(f"context.assets[{i}] deve ser um mapa")
+        match = str(a.get("match", "")).strip().lower()
+        if not match:
+            raise ValueError(f"context.assets[{i}]: 'match' é obrigatório")
+        crit = str(a.get("criticality", "unknown")).strip().lower()
+        expo = str(a.get("exposure", "unknown")).strip().lower()
+        if crit not in _CRITICALITY:
+            raise ValueError(f"context.assets[{i}].criticality inválido: {crit!r}")
+        if expo not in _EXPOSURE:
+            raise ValueError(f"context.assets[{i}].exposure inválido: {expo!r}")
+        rules.append(AssetContext(
+            match=match, criticality=crit,
+            environment=str(a.get("environment", "unknown")).strip().lower() or "unknown",
+            exposure=expo, owner=str(a.get("owner", "")).strip(),
+            expected_ports=_ports(a.get("expected_ports"), f"context.assets[{i}].expected_ports"),
+            forbidden_ports=_ports(a.get("forbidden_ports"), f"context.assets[{i}].forbidden_ports"),
+        ))
+    return ContextConfig(assets=rules)
 
 
 def _validate(cfg: "Config") -> None:

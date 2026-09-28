@@ -22,6 +22,7 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
+from .formatting import risk_suffix as _risk_suffix
 
 
 def _esc(s: str | None) -> str:
@@ -37,7 +38,8 @@ def _key_html(e: Event) -> str:
 
 def _desc(e: Event) -> str:
     d = _DESC.get(e.kind, {}).get(e.event_type.value, "")
-    return f" — {d}" if d else ""
+    base = f" — {d}" if d else ""
+    return base + _esc(_risk_suffix(e))   # anexa o "porquê" nos eventos elevados
 
 
 def _event_line(e: Event) -> str:

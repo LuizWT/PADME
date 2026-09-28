@@ -20,6 +20,7 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
+from .formatting import risk_suffix
 
 # Versão do contrato JSON do webhook genérico (consumidores tipo n8n).
 WEBHOOK_SCHEMA_VERSION = 1
@@ -35,7 +36,8 @@ def _md_key(e: Event) -> str:
 
 def _md_desc(e: Event) -> str:
     d = _DESC.get(e.kind, {}).get(e.event_type.value, "")
-    return f" — {d}" if d else ""
+    base = f" — {d}" if d else ""
+    return base + risk_suffix(e)   # anexa o "porquê" nos eventos elevados
 
 
 def _md_line(e: Event) -> str:
@@ -77,20 +79,33 @@ def format_events_md(target: str, events: list[Event], when: datetime | None = N
 
 
 def event_to_dict(e: Event) -> dict:
-    risk = assess(e)  # severidade final + o porquê (regras contextuais)
-    return {
+    risk = assess(e)  # severidade final + confiança + o porquê (regras contextuais)
+    md = e.metadata or {}
+    d = {
         "event_id": e.event_id,
         "scan_id": e.scan_id,
         "detected_at": e.detected_at,
         "severity": risk.level.name.lower(),
-        "risk_reasons": risk.reasons,  # [] quando ficou na severidade base
+        "confidence": risk.confidence.name.lower(),   # dimensão independente
+        "risk": {                                     # contrato aditivo (§21)
+            "rule_id": risk.rule_id,
+            "reasons": risk.reasons,                  # códigos estáveis (ex.: NEW_OPEN_PORT)
+        },
         "kind": e.kind.value,          # collector de origem
         "type": e.event_type.value,
         "key": e.key,
         "old": e.old_value,
         "new": e.new_value,
-        "metadata": e.metadata or {},
+        "metadata": md,
     }
+    # proveniência e diff semântico (quando presentes) em campos de topo p/ n8n
+    if md.get("_source"):
+        d["source"] = md["_source"]
+    if md.get("_context"):
+        d["context"] = md["_context"]
+    if md.get("_changes"):
+        d["changes"] = md["_changes"]
+    return d
 
 
 # ── notificadores ──────────────────────────────────────────────────────────

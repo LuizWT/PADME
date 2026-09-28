@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 from .alerts import damp_flapping
 from .config import Config
-from .engine import Engine, build_notifiers
+from .engine import Engine, build_notifiers, summarize_health
 from .heartbeat import from_config as heartbeat_from_config
 from .notify import NotificationManager
 from .storage import Storage
@@ -44,7 +44,8 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
 
         errs = len(result.errors)
         storage.update_health(target, error_count=errs, partial=errs > 0,
-                              duration_ms=int((time.monotonic() - t0) * 1000))
+                              duration_ms=int((time.monotonic() - t0) * 1000),
+                              collectors=summarize_health(result))
         if errs:
             log.warning("[%s] coleta PARCIAL: %d erro(s) de collector (estado preservado).",
                         target, errs)

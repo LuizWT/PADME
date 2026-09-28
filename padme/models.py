@@ -56,6 +56,34 @@ _SCOPE_KIND = {
 _TARGET_SCOPED = {Kind.SUBDOMAIN, Kind.WILDCARD, Kind.NS, Kind.MAILSEC}
 
 
+# kind -> collector que o produziu (proveniência: "de onde veio a evidência").
+COLLECTOR_OF = {
+    Kind.SUBDOMAIN: "subdomains", Kind.WILDCARD: "wildcard",
+    Kind.DNS: "dns", Kind.NS: "dnsrecon", Kind.MAILSEC: "dnsrecon",
+    Kind.HTTP: "http", Kind.HTTPSEC: "http", Kind.FAVICON: "favicon",
+    Kind.TLS: "tls", Kind.CERT_EXPIRY: "tls",
+    Kind.TAKEOVER: "takeover", Kind.PORT: "ports",
+}
+
+
+def subject_host(kind: Kind, key: str, target: str) -> str:
+    """Host concreto a que o evento se refere (p/ casar contexto de ativo).
+
+    Difere de `scope_of`: aqui o subdomínio devolve o FQDN específico (não o
+    apex), porque o contexto de ativo é por host."""
+    if kind in (Kind.SUBDOMAIN, Kind.TAKEOVER, Kind.FAVICON):
+        return key
+    if kind in (Kind.NS, Kind.MAILSEC, Kind.WILDCARD):
+        return target
+    if kind == Kind.DNS:
+        return key.split("|", 1)[0]
+    if kind in (Kind.HTTP, Kind.HTTPSEC):
+        return key.split("://", 1)[-1].split("/", 1)[0]
+    if kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT):
+        return key.rsplit(":", 1)[0]
+    return target
+
+
 def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:
     """Escopo de observação de um Record: (kind_do_escopo, id_do_escopo).
 
@@ -149,3 +177,10 @@ class ScanResult:
     # escopos observados AUTORITATIVAMENTE neste scan: {(scope_kind, scope_id)}.
     # Só estes podem gerar REMOVED no diff; o resto é preservado.
     observed_scopes: set[tuple[str, str]] = field(default_factory=set)
+    # saúde por collector neste scan: {nome: {"ok": n, "fail": n}}. Vira
+    # "DNS OK / PORTS PARTIAL / CT ERROR" no doctor e no painel (§7 do roadmap).
+    collector_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def mark_collector(self, name: str, ok: bool) -> None:
+        s = self.collector_stats.setdefault(name, {"ok": 0, "fail": 0})
+        s["ok" if ok else "fail"] += 1

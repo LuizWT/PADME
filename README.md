@@ -76,11 +76,17 @@ operação de conjuntos: `key` nova = **added**, `key` sumiu = **removed**,
 mesmo `key` com `value` diferente = **changed**. Cada evento recebe uma
 **severidade**, e **cada canal** aplica o seu próprio limiar de nível.
 
-A severidade é **contextual e explicável** (`levels.assess`): parte de uma base
-por categoria e é **elevada por regras nomeadas** — uma porta administrativa/dados
-recém-exposta (RDP, VNC, Redis, MongoDB…) vira `critical`, DMARC em `p=none` vira
-`high`. Cada elevação carrega o **motivo** ("por que virou critical?"), que
-aparece no painel e no `risk_reasons` do webhook.
+A severidade é **contextual e explicável** (`levels.assess`), com **confiança**
+como dimensão **independente** (`severity` = impacto; `confidence` = quão confiável
+é a observação). Parte de uma base por categoria e é **elevada por regras nomeadas**,
+usando o **contexto do ativo** (`context.assets`: `exposure`, `criticality`,
+`expected_ports`, `forbidden_ports`): porta administrativa/dados recém-exposta
+(RDP, VNC, Redis…) → `critical`; porta **proibida** pela política → `critical`;
+porta **fora do estado esperado** → `high`; DMARC `p=none` → `high`. Cada
+avaliação carrega **reason codes** estáveis (`NEW_OPEN_PORT`, `INTERNET_EXPOSED_ASSET`,
+`FORBIDDEN_PORT`…) e um `rule_id` — o painel e o webhook mostram o **porquê**.
+Um **CHANGED** ainda traz o diff **por campo** (`_changes`: `status: 200 → 403`),
+e cada evento carrega **proveniência** (`_source`/vantage, `_collector`).
 
 > [!IMPORTANT]
 > **Ausência só vira `removed` quando o escopo foi observado com sucesso.** Cada
@@ -146,8 +152,9 @@ vez, o evento vira `EXPIRADO`.
   (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
   (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de
   localhost **sem** token é **recusado** (a menos de `--allow-no-auth`) — expor a
-  superfície é decisão consciente. Ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para
-  o painel atrás de proxy + TLS.
+  superfície é decisão consciente. As respostas trazem headers de segurança
+  (`nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store`,
+  CSP). Ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para o painel atrás de proxy + TLS.
 
 ---
 
@@ -326,12 +333,19 @@ nunca em 4xx):
     "events": [
       {"event_id": "a1b2…", "scan_id": "9f2c…",
        "detected_at": "2026-09-26T00:46:00+00:00",
-       "severity": "critical", "kind": "takeover", "type": "added",
-       "key": "blog.alvo.com", "old": null, "new": "GitHub Pages | ..."}
+       "severity": "critical", "confidence": "confirmed",
+       "risk": {"rule_id": "high-risk-port-added",
+                "reasons": ["NEW_OPEN_PORT", "REMOTE_ACCESS_SERVICE", "INTERNET_EXPOSED_ASSET"]},
+       "kind": "port", "type": "added", "key": "vpn.alvo.com:3389", "old": null, "new": "open",
+       "source": "vps-eu", "context": {"exposure": "internet", "criticality": "critical"}}
     ],
     "text": "**PADMÉ** · `alvo.com` ..."
   }
   ```
+
+  > Contrato **aditivo** (`schema_version` só muda se algum campo for removido):
+  > `confidence`, `risk.rule_id`/`risk.reasons` (códigos estáveis), `source`,
+  > `context` e, em `CHANGED`, `changes` (diff por campo) foram **acrescentados**.
 
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 Teste todos de uma vez com `python -m padme test-notify`.
@@ -378,7 +392,7 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 ```bash
 pip install pytest ruff
 ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
-pytest -q                        # 198 testes
+pytest -q                        # 211 testes
 ```
 
 ## Estrutura
@@ -389,7 +403,8 @@ padme/
 │   ├── cli.py            # comandos scan / monitor / events / export / web / doctor
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
-│   ├── levels.py         # severidade base + assess() contextual (risco explicável)
+│   ├── levels.py         # severidade base + assess() (severity+confidence+reason codes)
+│   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
 │   ├── logredact.py      # redação de segredos nos logs
 │   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
@@ -414,6 +429,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 198 testes: unitários + reliability + netpolicy +
+└── tests/                # 211 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
