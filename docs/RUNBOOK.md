@@ -130,14 +130,23 @@ sudo systemctl enable --now padme.timer
 ## 2. Backup do SQLite
 
 O banco fica em **WAL**, então **não** copie o `.db` com `cp` durante a escrita
-(pode pegar um snapshot inconsistente, sem o que ainda está no `-wal`). Use a API
-de backup online do SQLite, que é consistente mesmo com o monitor rodando:
+(pode pegar um snapshot inconsistente, sem o que ainda está no `-wal`). Use o
+backup online — consistente mesmo com o monitor rodando. A Padmé traz um comando
+que faz isso (API de backup do SQLite) e já valida a integridade do destino:
+
+```bash
+padme -c /etc/padme/config.yaml backup --out /var/backups/padme/padme-$(date +%F_%H%M).db
+# imprime destino, tamanho e integridade (sai != 0 se a integridade não for 'ok')
+```
+
+Equivalente só com o `sqlite3` (sem a Padmé instalada):
 
 ```bash
 sqlite3 /var/lib/padme/padme.db ".backup '/var/backups/padme/padme-$(date +%F_%H%M).db'"
 ```
 
-**Validação** (todo backup deveria ser testado):
+**Validação** (todo backup deveria ser testado) — o `padme backup` já roda o
+`integrity_check`; para conferir um arquivo à parte:
 
 ```bash
 sqlite3 /var/backups/padme/padme-2026-09-27_0300.db "PRAGMA integrity_check;"   # espera 'ok'
@@ -146,7 +155,7 @@ sqlite3 /var/backups/padme/padme-2026-09-27_0300.db "PRAGMA integrity_check;"   
 **Agendamento** (cron do usuário `padme`, 03:00, retenção de 14 dias):
 
 ```cron
-0 3 * * *  sqlite3 /var/lib/padme/padme.db ".backup '/var/backups/padme/padme-$(date +\%F).db'" && find /var/backups/padme -name 'padme-*.db' -mtime +14 -delete
+0 3 * * *  padme -c /etc/padme/config.yaml backup --out "/var/backups/padme/padme-$(date +\%F).db" && find /var/backups/padme -name 'padme-*.db' -mtime +14 -delete
 ```
 
 - Guarde os backups **fora** do host (rsync/objeto remoto) — um backup no mesmo

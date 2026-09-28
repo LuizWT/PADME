@@ -407,7 +407,7 @@ pytest -q                        # 212 testes
 ```
 padme/
 ├── padme/
-│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor
+│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor / backup / merge
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── levels.py         # severidade base + assess() (severity+confidence+reason codes)

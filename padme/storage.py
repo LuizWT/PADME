@@ -443,3 +443,24 @@ class Storage:
                 pass
         out["total"] = out["db"] + out["wal"]
         return out
+
+    def backup(self, dest_path: str | Path) -> dict:
+        """Backup online consistente via API de backup do SQLite
+        (`sqlite3.Connection.backup`) — seguro mesmo com o monitor escrevendo,
+        e correto sob WAL (não é uma cópia crua do arquivo no meio de uma
+        escrita). Devolve o caminho, o tamanho e o integrity_check do destino."""
+        dest_path = str(dest_path)
+        Path(dest_path).parent.mkdir(parents=True, exist_ok=True)
+        dest = sqlite3.connect(dest_path, timeout=10.0)
+        try:
+            with dest:
+                self._conn.backup(dest)
+            integrity = dest.execute("PRAGMA integrity_check").fetchone()[0]
+        finally:
+            dest.close()
+        size = 0
+        try:
+            size = Path(dest_path).stat().st_size
+        except OSError:
+            pass
+        return {"path": dest_path, "bytes": size, "integrity": integrity}

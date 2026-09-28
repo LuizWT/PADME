@@ -309,6 +309,22 @@ async def _cmd_doctor(cfg: Config, args) -> int:
     return 0 if integ == "ok" else 1
 
 
+async def _cmd_backup(cfg: Config, args) -> int:
+    out = args.out or f"padme-backup-{datetime.now():%Y%m%d-%H%M%S}.db"
+    storage = Storage(cfg.db_path)
+    try:
+        res = storage.backup(out)
+    finally:
+        storage.close()
+    print(f"backup:       {res['path']}")
+    print(f"tamanho:      {res['bytes'] / 1024:.0f} KiB")
+    print(f"integridade:  {res['integrity']}")
+    if res["integrity"] != "ok":
+        print("! integridade do backup não confirmada — verifique o destino.", file=sys.stderr)
+        return 1
+    return 0
+
+
 async def _cmd_test_notify(cfg: Config, args) -> int:
     notifiers = build_notifiers(cfg)
     if not notifiers:
@@ -375,6 +391,11 @@ def build_parser() -> argparse.ArgumentParser:
     dp = sub.add_parser("doctor", help="diagnóstico: integridade do banco, saúde dos scans e config")
     dp.set_defaults(func=_cmd_doctor)
 
+    bk = sub.add_parser("backup", help="backup online consistente do banco SQLite (seguro com o monitor rodando)")
+    bk.add_argument("--out", default=None, metavar="ARQUIVO",
+                    help="destino do backup (padrão: padme-backup-<timestamp>.db)")
+    bk.set_defaults(func=_cmd_backup)
+
     mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
     mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
     mg.add_argument("--out", default=None, help="grava a consolidação em JSON (padrão: resumo no stdout)")
@@ -402,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor", "merge")
+    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor", "merge", "backup")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"
