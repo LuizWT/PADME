@@ -152,6 +152,9 @@ vez, o evento vira `EXPIRADO`.
   `jitter_ms`, padrão desligado).** Teto global de requisições/segundo com jitter
   e intervalo mínimo por host — o monitor 24/7 não martela o alvo nem dispara
   WAF/rate-limit. Não aumenta agressividade; só torna o scan previsível e educado.
+- **Retry educado (`network.max_retries`, padrão `2`).** Requisições HTTP do scan
+  recuam com backoff exponencial + jitter em `429`/`5xx` transitório (respeitando
+  `Retry-After`) e em hiccup de conexão/timeout. `4xx` permanente nunca repete.
 - **Painel seguro por padrão.** Bind em `127.0.0.1`; um token opcional
   (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
   (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de

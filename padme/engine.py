@@ -77,11 +77,16 @@ class Engine:
         limits = httpx.Limits(max_connections=self.cfg.concurrency)
         headers = {"User-Agent": _USER_AGENT}
 
+        # transporte com retry educado em 429/5xx transitório (§12); verify=False
+        # e limits vão no transporte (ignorados no client quando há transport custom).
+        transport = ratelimit.RetryTransport(
+            httpx.AsyncHTTPTransport(verify=False, limits=limits, retries=0),
+            max_retries=self.cfg.network.max_retries,
+        )
         async with httpx.AsyncClient(
             timeout=self.cfg.timeout,
             headers=headers,
-            limits=limits,
-            verify=False,  # queremos observar hosts mesmo com TLS quebrado
+            transport=transport,
             event_hooks={"request": [self._pace]},  # pacing responsável (§12)
         ) as client:
             # 0. curinga de DNS: se o apex responde a qualquer nome, a

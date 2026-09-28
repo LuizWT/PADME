@@ -3,8 +3,10 @@
 import asyncio
 import time
 
+import httpx
+
 from padme.config import Config
-from padme.ratelimit import RateLimiter, from_config
+from padme.ratelimit import RateLimiter, RetryTransport, from_config
 
 
 def test_desligado_e_noop():
@@ -72,3 +74,89 @@ def test_from_config_le_network():
 def test_from_config_padrao_desligado():
     rl = from_config(Config(targets=["x.com"]))
     assert rl.enabled is False
+
+
+# ── RetryTransport ───────────────────────────────────────────────────────────
+def _client_with(handler, **kw):
+    inner = httpx.MockTransport(handler)
+    return httpx.AsyncClient(transport=RetryTransport(inner, backoff_base=0.001, **kw))
+
+
+def test_retry_repete_em_503_e_sucede():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(200 if calls["n"] >= 3 else 503)
+
+    async def run():
+        async with _client_with(handler, max_retries=3) as c:
+            return await c.get("https://a.example/")
+
+    resp = asyncio.run(run())
+    assert resp.status_code == 200
+    assert calls["n"] == 3          # 2 falhas + 1 sucesso
+
+
+def test_retry_respeita_teto():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(503)
+
+    async def run():
+        async with _client_with(handler, max_retries=2) as c:
+            return await c.get("https://a.example/")
+
+    resp = asyncio.run(run())
+    assert resp.status_code == 503
+    assert calls["n"] == 3          # tentativa inicial + 2 retries
+
+
+def test_nao_repete_4xx_permanente():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(404)
+
+    async def run():
+        async with _client_with(handler, max_retries=3) as c:
+            return await c.get("https://a.example/")
+
+    resp = asyncio.run(run())
+    assert resp.status_code == 404
+    assert calls["n"] == 1          # 404 não é transitório
+
+
+def test_max_retries_zero_desliga():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return httpx.Response(503)
+
+    async def run():
+        async with _client_with(handler, max_retries=0) as c:
+            return await c.get("https://a.example/")
+
+    asyncio.run(run())
+    assert calls["n"] == 1
+
+
+def test_retry_em_erro_de_conexao():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise httpx.ConnectError("boom", request=req)
+        return httpx.Response(200)
+
+    async def run():
+        async with _client_with(handler, max_retries=2) as c:
+            return await c.get("https://a.example/")
+
+    resp = asyncio.run(run())
+    assert resp.status_code == 200 and calls["n"] == 2

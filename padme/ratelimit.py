@@ -22,6 +22,66 @@ from __future__ import annotations
 import asyncio
 import random
 
+import httpx
+
+# Status transitórios que merecem uma nova tentativa (o alvo pediu pra esperar,
+# ou é um erro de servidor efêmero). 4xx permanente (404/401/403) nunca repete.
+_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
+_BACKOFF_CAP = 8.0
+
+
+def _retry_after(resp: httpx.Response) -> float | None:
+    """Segundos do header Retry-After (só a forma numérica; a data HTTP é
+    ignorada — o backoff exponencial cobre esse caso)."""
+    val = resp.headers.get("retry-after")
+    if not val:
+        return None
+    try:
+        return max(0.0, float(val.strip()))
+    except ValueError:
+        return None
+
+
+def _backoff(attempt: int, base: float, retry_after: float | None) -> float:
+    """Backoff exponencial com teto + jitter; respeita Retry-After se maior."""
+    exp = min(_BACKOFF_CAP, base * (2 ** (attempt - 1))) + random.uniform(0, base / 2)
+    return max(exp, retry_after) if retry_after is not None else exp
+
+
+class RetryTransport(httpx.AsyncBaseTransport):
+    """Wrapper de transporte httpx: repete em 429/5xx transitório e em erro de
+    conexão/timeout, com backoff exponencial + jitter e respeito ao Retry-After.
+
+    Torna o monitor educado com o alvo (recua quando pedem) e resiliente a
+    hiccups de rede, sem repetir 4xx permanente. `max_retries=0` desliga."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, max_retries: int = 2,
+                 backoff_base: float = 0.5):
+        self._inner = inner
+        self.max_retries = max(0, int(max_retries))
+        self.backoff_base = backoff_base
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        attempt = 0
+        while True:
+            try:
+                resp = await self._inner.handle_async_request(request)
+            except httpx.TransportError:
+                if attempt >= self.max_retries:
+                    raise
+                attempt += 1
+                await asyncio.sleep(_backoff(attempt, self.backoff_base, None))
+                continue
+            if resp.status_code not in _RETRY_STATUSES or attempt >= self.max_retries:
+                return resp
+            wait = _backoff(attempt + 1, self.backoff_base, _retry_after(resp))
+            await resp.aclose()  # descarta o corpo antes de repetir
+            attempt += 1
+            await asyncio.sleep(wait)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
 
 class RateLimiter:
     def __init__(self, rps: float = 0.0, jitter_ms: int = 0,
