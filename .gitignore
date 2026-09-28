@@ -19,3 +19,4 @@ config.yaml
 .env
 *.db-wal
 *.db-shm
+PADME_ROADMAP.md
