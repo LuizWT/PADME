@@ -392,7 +392,7 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 ```bash
 pip install pytest ruff
 ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
-pytest -q                        # 211 testes
+pytest -q                        # 212 testes
 ```
 
 ## Estrutura
@@ -429,6 +429,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 211 testes: unitários + reliability + netpolicy +
+└── tests/                # 212 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
