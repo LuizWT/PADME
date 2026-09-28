@@ -17,7 +17,7 @@ _COMPARABLE_FIELDS = {
     Kind.HTTP: ("status", "server", "title", "location"),
     Kind.HTTPSEC: ("missing",),
     Kind.PORT: ("banner",),
-    Kind.TLS: ("issuer", "fingerprint", "expires_at"),
+    Kind.TLS: ("issuer", "fingerprint", "expires_at", "sans"),
     Kind.MAILSEC: ("p",),
 }
 

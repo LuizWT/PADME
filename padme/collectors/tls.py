@@ -31,14 +31,28 @@ except Exception:  # pragma: no cover
     _HAS_CRYPTO = False
 
 
-def _issuer_and_expiry(cert_bin: bytes) -> tuple[str, datetime | None]:
+_MAX_SANS = 50  # teto defensivo: certs com centenas de SANs não incham o metadata
+
+
+def _sans(cert) -> list[str]:
+    """Nomes DNS do subjectAltName, minúsculos, ordenados e sem duplicatas.
+    SAN nova num cert = domínio novo servido ali = sinal de expansão da superfície."""
+    try:
+        ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+    except Exception:  # noqa: BLE001 — sem SAN ou extensão ilegível
+        return []
+    names = {n.strip().rstrip(".").lower() for n in ext.value.get_values_for_type(x509.DNSName)}
+    return sorted(n for n in names if n)[:_MAX_SANS]
+
+
+def _issuer_and_expiry(cert_bin: bytes) -> tuple[str, datetime | None, list[str]]:
     if not (_HAS_CRYPTO and cert_bin):
-        return "", None
+        return "", None, []
     try:
         cert = x509.load_der_x509_certificate(cert_bin)
     except Exception as exc:  # noqa: BLE001 — observável, mas não derruba o scan
         log.debug("TLS: falha ao parsear certificado (%s)", type(exc).__name__)
-        return "", None
+        return "", None, []
     issuer = ""
     for oid in (NameOID.ORGANIZATION_NAME, NameOID.COMMON_NAME):
         attrs = cert.issuer.get_attributes_for_oid(oid)
@@ -50,7 +64,7 @@ def _issuer_and_expiry(cert_bin: bytes) -> tuple[str, datetime | None]:
     if not_after is None:
         na = cert.not_valid_after
         not_after = na.replace(tzinfo=timezone.utc)
-    return issuer, not_after
+    return issuer, not_after, _sans(cert)
 
 
 def _blocking_cert(host: str, port: int, timeout: float) -> dict | None:
@@ -63,8 +77,8 @@ def _blocking_cert(host: str, port: int, timeout: float) -> dict | None:
     if not cert_bin:
         return None
     fp = hashlib.sha256(cert_bin).hexdigest()[:16]
-    issuer, not_after = _issuer_and_expiry(cert_bin)
-    return {"fp": fp, "issuer": issuer, "not_after": not_after}
+    issuer, not_after, sans = _issuer_and_expiry(cert_bin)
+    return {"fp": fp, "issuer": issuer, "not_after": not_after, "sans": sans}
 
 
 async def collect_host(
@@ -92,6 +106,7 @@ async def collect_host(
     issuer = data["issuer"]
     not_after = data["not_after"]
     fp = data["fp"]
+    sans = data.get("sans") or []
     date_str = not_after.strftime("%Y-%m-%d") if not_after else "?"
     if not issuer or not_after is None:
         # conectou e leu o cert, mas o parser não extraiu tudo: registra pra
@@ -103,7 +118,8 @@ async def collect_host(
     records = [
         Record(kind=Kind.TLS, key=f"{host}:{port}",
                value=f"issuer={issuer} | expira={date_str} | fp={fp}".strip(),
-               metadata={"issuer": issuer, "expires_at": expires_iso, "fingerprint": fp})
+               metadata={"issuer": issuer, "expires_at": expires_iso, "fingerprint": fp,
+                         "sans": sans or None})
     ]
 
     # aviso de expiração — valor por BUCKET: estável dentro da faixa (1 aviso),

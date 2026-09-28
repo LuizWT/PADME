@@ -47,7 +47,8 @@ def evidence_of(kind: Kind, key: str, value: str | None, metadata: dict | None) 
 
     if kind == Kind.TLS:
         return _ev({"type": "tls_handshake", "issuer": md.get("issuer"),
-                    "fingerprint": md.get("fingerprint"), "expires_at": md.get("expires_at")})
+                    "fingerprint": md.get("fingerprint"), "expires_at": md.get("expires_at"),
+                    "sans": md.get("sans")})
 
     if kind == Kind.CERT_EXPIRY:
         return _ev({"type": "tls_cert", "expires_at": md.get("expires_at"),

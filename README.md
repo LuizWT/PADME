@@ -30,7 +30,7 @@ te chama quando a paisagem muda.
 - **Multi-vantage**: cada instância é um `source`; `padme merge` consolida os
   exports e mostra **divergências** entre pontos de observação (geo-block,
   split-horizon, host que só aparece de um lugar).
-- **Metadata estruturada** por evento (issuer/expira/fingerprint, status/server,
+- **Metadata estruturada** por evento (issuer/expira/fingerprint/SANs, status/server,
   service/reason…) no webhook — n8n consome campos, não parseia string.
 - **Amortecimento de flapping**: chave que oscila para de spammar (segue no
   histórico). **Validação forte de config** (falha cedo com mensagem clara).
@@ -134,6 +134,11 @@ expirar (`collectors.cert_expiry_days`, padrão 14), emite um evento
 `CERT_EXPIRY` (severidade `high`). O valor gravado é estável (a data), então
 você recebe **um** aviso ao entrar na janela — não um por dia. Se expirar de
 vez, o evento vira `EXPIRADO`.
+
+O TLS também captura os **SANs** do certificado (`subjectAltName`). Como o
+fingerprint entra no valor, toda reemissão dispara um `CHANGED` — e o diff por
+campo mostra **quais domínios entraram/saíram do cert** (um SAN novo costuma ser
+superfície nova servida ali). Os SANs também vão na evidência (`tls_handshake`).
 
 ### Segurança operacional
 
