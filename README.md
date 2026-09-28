@@ -148,6 +148,10 @@ vez, o evento vira `EXPIRADO`.
   Ligue conscientemente só se for monitorar rede interna.
 - **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
   lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
+- **Pacing responsável (`network.rate_limit_rps` / `per_host_interval_ms` /
+  `jitter_ms`, padrão desligado).** Teto global de requisições/segundo com jitter
+  e intervalo mínimo por host — o monitor 24/7 não martela o alvo nem dispara
+  WAF/rate-limit. Não aumenta agressividade; só torna o scan previsível e educado.
 - **Painel seguro por padrão.** Bind em `127.0.0.1`; um token opcional
   (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
   (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de
@@ -406,6 +410,7 @@ padme/
 │   ├── levels.py         # severidade base + assess() (severity+confidence+reason codes)
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
+│   ├── ratelimit.py      # pacing responsável: rps global + jitter + intervalo por host
 │   ├── logredact.py      # redação de segredos nos logs
 │   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
 │   ├── merge.py          # consolidação multi-vantage (padme merge)

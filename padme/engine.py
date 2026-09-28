@@ -24,7 +24,7 @@ import time
 
 import httpx
 
-from . import netpolicy
+from . import netpolicy, ratelimit
 from .collectors import (
     bruteforce,
     dns,
@@ -63,6 +63,12 @@ class Engine:
         self.cfg = config
         self.storage = storage
         self._sem = asyncio.Semaphore(config.concurrency)
+        self._rate = ratelimit.from_config(config)  # pacing responsável (§12)
+
+    async def _pace(self, request: "httpx.Request") -> None:
+        """Hook de requisição do httpx: aplica o rate-limit antes de cada envio
+        (cobre todos os collectors que usam o client). No-op se desligado."""
+        await self._rate.acquire(request.url.host)
 
     async def scan_target(self, target: str) -> ScanResult:
         result = ScanResult(target=target)
@@ -76,6 +82,7 @@ class Engine:
             headers=headers,
             limits=limits,
             verify=False,  # queremos observar hosts mesmo com TLS quebrado
+            event_hooks={"request": [self._pace]},  # pacing responsável (§12)
         ) as client:
             # 0. curinga de DNS: se o apex responde a qualquer nome, a
             # enumeração ativa não é confiável — detecta e usa pra filtrar.
