@@ -61,3 +61,12 @@ def test_painel_mostra_changes_semanticos():
     s.close(); os.remove(db)
     assert ev.metadata.get("_changes", {}).get("status") == {"old": 200, "new": 403}
     assert "chgdet" in html and "status" in html      # detalhe do campo no painel
+
+
+def test_diff_semantico_tls_usa_chaves_reais():
+    from padme.differ import field_changes
+    ch = field_changes(
+        Kind.TLS, "issuer=LE", {"issuer": "LE", "fingerprint": "aa", "expires_at": "2026-10-01"},
+        "issuer=DigiCert", {"issuer": "DigiCert", "fingerprint": "bb", "expires_at": "2027-01-01"})
+    assert ch["issuer"] == {"old": "LE", "new": "DigiCert"}
+    assert "fingerprint" in ch and "expires_at" in ch

@@ -11,11 +11,13 @@ from .models import Event, EventType, Kind
 # Campos SEMÂNTICOS comparáveis por categoria (o que, se mudar, é uma mudança
 # real). Metadata de transporte/tempo fica de fora — não é estado semântico.
 # Usado só para DETALHAR um CHANGED (o gatilho continua sendo o `value`).
+# Nomes iguais aos que os collectors realmente colocam no metadata (http.py,
+# tls.py, ports.py, dnsrecon.py) — senão o diff por campo não acha nada.
 _COMPARABLE_FIELDS = {
     Kind.HTTP: ("status", "server", "title", "location"),
     Kind.HTTPSEC: ("missing",),
-    Kind.PORT: ("state", "banner"),
-    Kind.TLS: ("issuer", "subject", "expires", "fingerprint"),
+    Kind.PORT: ("banner",),
+    Kind.TLS: ("issuer", "fingerprint", "expires_at"),
     Kind.MAILSEC: ("p",),
 }
 
