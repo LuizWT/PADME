@@ -1,6 +1,6 @@
 """Testes do fingerprint de serviço/produto/versão das portas (§5.3)."""
 
-from padme.collectors.ports import fingerprint
+from padme.collectors.ports import _decode_banner, fingerprint
 from padme.differ import field_changes
 from padme.evidence import evidence_of
 from padme.models import Kind
@@ -58,6 +58,40 @@ def test_dovecot_pop3_banner_produto():
 def test_proftpd_banner_produto_e_versao():
     fp = fingerprint(21, "220 ProFTPD 1.3.7a Server ready.")
     assert fp["service"] == "ftp" and fp["product"] == "ProFTPD" and fp["version"] == "1.3.7a"
+
+
+def test_mysql_handshake_decodifica_versao():
+    # greeting do MySQL: [3B tamanho][seq=0x00][0x0a proto][versão NUL-terminada]
+    data = b"\x4a\x00\x00\x00\x0a" + b"8.0.34" + b"\x00" + b"\x11\x22\x33\x44"
+    banner = _decode_banner(data)
+    assert banner == "MySQL 8.0.34"
+    assert fingerprint(3306, banner) == {"service": "mysql", "product": "MySQL",
+                                         "version": "8.0.34"}
+
+
+def test_mariadb_handshake_extrai_versao_real():
+    # MariaDB prefixa uma versão de replicação falsa (5.5.5-) antes da real
+    ver = b"5.5.5-10.6.12-MariaDB-1:10.6.12+maria~focal"
+    data = b"\x60\x00\x00\x00\x0a" + ver + b"\x00" + b"\x00\x00"
+    banner = _decode_banner(data)
+    assert banner == "MariaDB 10.6.12"
+    fp = fingerprint(3306, banner)
+    assert fp["service"] == "mysql" and fp["product"] == "MariaDB"
+    assert fp["version"] == "10.6.12"
+
+
+def test_decode_banner_texto_nao_e_confundido_com_mysql():
+    # banner de texto (SMTP) não casa a assinatura binária do MySQL
+    data = b"220 mail.example.com ESMTP Postfix\r\n"
+    assert _decode_banner(data) == "220 mail.example.com ESMTP Postfix"
+    # assinatura binária sem versão de forma válida cai fora (não vira "MySQL")
+    assert _decode_banner(b"\x01\x02\x03\x00\x0aXYZ\x00") == ""
+
+
+def test_smtp_openbsd_haraka_na_allowlist():
+    assert fingerprint(25, "220 mx.example.org ESMTP OpenSMTPD")["product"] == "OpenSMTPD"
+    fp = fingerprint(25, "220 mail ESMTP Haraka 3.0.2 ready")
+    assert fp["product"] == "Haraka" and fp["version"] == "3.0.2"
 
 
 def test_diff_detecta_mudanca_de_versao():

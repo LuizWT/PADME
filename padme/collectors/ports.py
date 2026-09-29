@@ -5,6 +5,14 @@ e, se o serviço mandar um banner de saudação (SSH/SMTP/FTP…), lê os primei
 bytes. O banner entra no valor da porta — então uma MUDANÇA de banner (ex.: versão
 do OpenSSH mudou) vira um evento por si só, um sinal RED valioso.
 
+A maioria dos serviços de saudação é texto livre (SSH/SMTP/FTP/POP3/IMAP): o
+produto/versão sai por regra de protocolo (SSH) ou por uma allowlist curta de
+nomes que realmente se anunciam. Alguns protocolos falam PRIMEIRO com um
+greeting BINÁRIO e ESTRUTURADO — é o caso do MySQL/MariaDB, cujo handshake
+carrega a versão do servidor em posição fixa (sinal claro, decodificável sem
+adivinhação); esse é decodificado para um banner legível ("MySQL 8.0.34") já na
+leitura, e o fingerprint de texto extrai produto/versão dali.
+
 Confiabilidade: porta recusada = definitivamente fechada; só-timeout = host
 inalcançável -> `ok=False` (preserva). Banner-grab nunca derruba a checagem da
 porta (falha de leitura = sem banner).
@@ -54,7 +62,9 @@ _PORT_SERVICE = {
 # connect puro, então nginx/Apache raramente casam aqui (ficam pela porta).
 _PRODUCTS = ("OpenSSH", "dropbear", "libssh",
              "vsFTPd", "ProFTPD", "Pure-FTPd", "FileZilla",
-             "Postfix", "Exim", "Sendmail", "Dovecot", "Courier", "Cyrus",
+             "Postfix", "Exim", "Sendmail", "OpenSMTPD", "Haraka",
+             "Dovecot", "Courier", "Cyrus",
+             "MariaDB", "MySQL",
              "nginx", "Apache")
 _PRODUCT_RE = re.compile(
     r"\b(" + "|".join(re.escape(p) for p in _PRODUCTS) + r")\b[ /_]?v?(\d[\w.]*)?",
@@ -107,6 +117,33 @@ def _clean_banner(data: bytes) -> str:
     return line[:80]
 
 
+def _mysql_banner(data: bytes) -> str:
+    """Versão do servidor a partir do handshake inicial do MySQL/MariaDB, que
+    fala PRIMEIRO. Layout (protocolo 10): [3B tamanho][1B seq=0][1B 0x0a]
+    [versão terminada em NUL]. Só reconhece quando a assinatura casa E a versão
+    tem forma de versão — sinal claro, sem adivinhação. Devolve '' se não for.
+
+    MariaDB anuncia com um prefixo de replicação falso '5.5.5-' seguido da versão
+    real e do sufixo '-MariaDB'; extraímos a versão real."""
+    if len(data) >= 6 and data[3] == 0x00 and data[4] == 0x0A:
+        end = data.find(b"\x00", 5)
+        raw = data[5:(end if end != -1 else len(data))].decode("latin-1", "ignore")
+        ver = "".join(c for c in raw if c.isprintable()).strip()
+        if "mariadb" in ver.lower():
+            m = re.search(r"(\d+\.\d+\.\d+)-MariaDB", ver, re.IGNORECASE)
+            return f"MariaDB {m.group(1)}" if m else "MariaDB"
+        m = re.match(r"\d+\.\d+(?:\.\d+)?", ver)
+        if m:
+            return f"MySQL {m.group(0)}"
+    return ""
+
+
+def _decode_banner(data: bytes) -> str:
+    """Banner legível: decodifica protocolos binários estruturados (MySQL/
+    MariaDB) e cai na primeira linha de texto para o resto."""
+    return _mysql_banner(data) or _clean_banner(data)
+
+
 async def _check_port(host: str, port: int, timeout: float, grab: bool) -> tuple[str, str]:
     """Retorna (estado, banner). estado: 'open' | 'closed' | 'unknown'."""
     try:
@@ -122,7 +159,7 @@ async def _check_port(host: str, port: int, timeout: float, grab: bool) -> tuple
     if grab:
         try:  # serviços tipo SSH/SMTP/FTP mandam saudação sozinhos
             data = await asyncio.wait_for(reader.read(_BANNER_BYTES), timeout=min(timeout, 2.0))
-            banner = _clean_banner(data)
+            banner = _decode_banner(data)
         except Exception:  # noqa: BLE001 — sem banner não é erro
             banner = ""
     writer.close()

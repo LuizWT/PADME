@@ -26,7 +26,9 @@ te chama quando a paisagem muda.
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
 - **Sinais RED**: mudança de **NS** (delegação / hijack de zona), **SPF/DMARC**
   (remoção = domínio spoofável) e **banner-grab** nas portas (mudança de banner
-  = versão de serviço mudou).
+  = versão de serviço mudou). Além do texto de saudação (SSH/SMTP/FTP…), o
+  handshake binário do **MySQL/MariaDB** é decodificado para a versão exata do
+  servidor — banco exposto com versão conhecida é sinal forte.
 - **Multi-vantage**: cada instância é um `source`; `padme merge` consolida os
   exports e mostra **divergências** entre pontos de observação (geo-block,
   split-horizon, host que só aparece de um lugar).
@@ -448,6 +450,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 251 testes: unitários + reliability + netpolicy +
+└── tests/                # 255 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
