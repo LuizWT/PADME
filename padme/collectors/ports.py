@@ -61,8 +61,10 @@ _PORT_SERVICE = {
 # Wappalyzer; cada match vem de um sinal claro. Servidores HTTP não saúdam num
 # connect puro, então nginx/Apache raramente casam aqui (ficam pela porta).
 _PRODUCTS = ("OpenSSH", "dropbear", "libssh",
-             "vsFTPd", "ProFTPD", "Pure-FTPd", "FileZilla",
+             "vsFTPd", "ProFTPD", "Pure-FTPd", "FileZilla", "Serv-U",
+             "CrushFTP", "bftpd", "Microsoft FTP Service",
              "Postfix", "Exim", "Sendmail", "OpenSMTPD", "Haraka",
+             "Microsoft ESMTP", "Zimbra", "MailEnable",
              "Dovecot", "Courier", "Cyrus",
              "MariaDB", "MySQL",
              "nginx", "Apache")

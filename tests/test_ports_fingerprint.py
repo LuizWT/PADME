@@ -94,6 +94,18 @@ def test_smtp_openbsd_haraka_na_allowlist():
     assert fp["product"] == "Haraka" and fp["version"] == "3.0.2"
 
 
+def test_ftp_servidores_alvos_frequentes():
+    # daemons FTP que se anunciam e são alvos recorrentes (CVE)
+    assert fingerprint(21, "220 Serv-U FTP Server v15.1.6 ready")["product"] == "Serv-U"
+    assert fingerprint(21, "220 CrushFTP Server ready")["product"] == "CrushFTP"
+
+
+def test_smtp_exchange_e_zimbra():
+    assert fingerprint(25, "220 host Microsoft ESMTP MAIL Service ready")["product"] == "Microsoft ESMTP"
+    fp = fingerprint(25, "220 mx ESMTP Zimbra 8.8.15_GA_3869 ready")
+    assert fp["product"] == "Zimbra" and fp["version"].startswith("8.8.15")
+
+
 def test_diff_detecta_mudanca_de_versao():
     old = {"port": 22, "banner": "SSH-2.0-OpenSSH_9.6p1", "service": "ssh",
            "product": "OpenSSH", "version": "9.6p1"}
