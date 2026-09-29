@@ -28,6 +28,7 @@ from pathlib import Path
 from .evidence import evidence_of
 from .levels import Level, assess
 from .merge import merge_exports
+from .models import Kind
 from .storage import Storage
 
 _KIND_ORDER = ["takeover", "cert_expiry", "ns", "mailsec", "wildcard",
@@ -107,6 +108,7 @@ header{position:sticky;top:0;z-index:5;background:rgba(13,13,13,.86);
 .prow:first-child{border-top:0}
 .prow .who{font-family:var(--mono);font-size:12.5px;color:var(--ink);word-break:break-all}
 .prow .det{font-size:12px;color:var(--ink2);word-break:break-all}
+.prow .proof{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px;word-break:break-all}
 .prow .tgt{font-size:11px;color:var(--muted);font-family:var(--mono);text-align:right}
 .calm{padding:16px;display:flex;align-items:center;gap:10px;color:var(--ink2)}
 
@@ -273,6 +275,17 @@ def _proof_html(e, value: str | None) -> str:
     return f"<span class=proof title='{_esc(full)}'>prova: {_esc(typ)}</span>"
 
 
+def _evidence_facts(kind: Kind, key: str, value: str, metadata: dict | None) -> str:
+    """Prova normalizada compacta ('tipo — k=v · k=v') p/ o cartão de finding
+    agregado, ou '' se não houver. Mesma projeção do webhook/timeline (evidence_of)."""
+    ev = evidence_of(kind, key, value, metadata)
+    if not ev:
+        return ""
+    typ = ev.get("type", "")
+    facts = " · ".join(f"{k}={v}" for k, v in ev.items() if k != "type")
+    return f"{typ} — {facts}" if facts else typ
+
+
 def _prioritize_events(events: list):
     """Ordena a timeline por RELEVÂNCIA (severidade do assess) e depois por
     recência — o que importa (takeover, exposição crítica) fica no topo em vez de
@@ -304,16 +317,19 @@ def _collect_problems(by_target: dict, meta: dict) -> list[dict]:
     for target, kinds in by_target.items():
         for it in kinds.get("takeover", []):
             prob.append({"rank": 4, "cls": "s-crit", "sev": "crítico", "kind": "TAKEOVER",
-                         "who": it["key"], "det": it["value"], "tgt": target})
+                         "who": it["key"], "det": it["value"], "tgt": target,
+                         "evidence": _evidence_facts(Kind.TAKEOVER, it["key"], it["value"], it.get("metadata"))})
         for it in kinds.get("cert_expiry", []):
             expired = "EXPIRAD" in (it["value"] or "").upper()
             prob.append({"rank": 4 if expired else 3,
                          "cls": "s-crit" if expired else "s-serious",
                          "sev": "expirado" if expired else "expira",
-                         "kind": "CERT", "who": it["key"], "det": it["value"], "tgt": target})
+                         "kind": "CERT", "who": it["key"], "det": it["value"], "tgt": target,
+                         "evidence": _evidence_facts(Kind.CERT_EXPIRY, it["key"], it["value"], it.get("metadata"))})
         for it in kinds.get("wildcard", []):
             prob.append({"rank": 2, "cls": "s-warn", "sev": "atenção", "kind": "WILDCARD",
-                         "who": it["key"], "det": f"catch-all {it['value']}", "tgt": target})
+                         "who": it["key"], "det": f"catch-all {it['value']}", "tgt": target,
+                         "evidence": _evidence_facts(Kind.WILDCARD, it["key"], it["value"], it.get("metadata"))})
     # coleta parcial por alvo (não é da superfície, mas é um problema operacional)
     for target, m in meta.items():
         if m and m.get("last_partial"):
@@ -331,11 +347,13 @@ def _problems_panel(problems: list[dict]) -> str:
                 + "<span>nenhum problema aberto na superfície monitorada.</span></div></div>")
     rows = []
     for p in problems:
+        proof = p.get("evidence")
+        proof_html = f"<div class=proof>prova: {_esc(proof)}</div>" if proof else ""
         rows.append(
             "<div class=prow>"
             f"<div>{_chip(p['cls'], p['sev'])}</div>"
             f"<div><div class=who>{_esc(p['kind'])} · {_esc(p['who'])}</div>"
-            f"<div class=det>{_esc(p['det'])}</div></div>"
+            f"<div class=det>{_esc(p['det'])}</div>{proof_html}</div>"
             f"<div class=tgt>{_esc(p['tgt'])}</div>"
             "</div>"
         )

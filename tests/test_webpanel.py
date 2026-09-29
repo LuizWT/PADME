@@ -136,3 +136,20 @@ def test_prioritize_events_por_relevancia():
     # o crítico (mesmo mais antigo) vem primeiro; o debug recente, por último
     assert ordem[0][0].kind == Kind.TAKEOVER
     assert ordem[-1][0].kind == Kind.DNS
+
+
+def test_problems_panel_mostra_evidencia():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    # takeover no estado atual -> vira cartão de "problema aberto"
+    s.apply_scan("acme.com", [
+        Record(Kind.TAKEOVER, "blog.acme.com", "GitHub Pages",
+               metadata={"cname": "acme.github.io", "service": "GitHub Pages",
+                         "reason": "CNAME dangling (NXDOMAIN)"}),
+    ])
+    s.close()
+    out = _render(Config(targets=["acme.com"], db_path=db))
+    os.remove(db)
+    assert "problemas abertos" in out
+    # a prova normalizada aparece no cartão agregado (não só na timeline)
+    assert "prova:" in out and "takeover_check" in out and "NXDOMAIN" in out
