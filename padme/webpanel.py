@@ -273,6 +273,16 @@ def _proof_html(e, value: str | None) -> str:
     return f"<span class=proof title='{_esc(full)}'>prova: {_esc(typ)}</span>"
 
 
+def _prioritize_events(events: list):
+    """Ordena a timeline por RELEVÂNCIA (severidade do assess) e depois por
+    recência — o que importa (takeover, exposição crítica) fica no topo em vez de
+    soterrado sob ruído (mudança de DNS etc.). Cada linha mostra o timestamp, então
+    a cronologia continua legível. Devolve [(evento, risco)] já avaliado (§15.4)."""
+    scored = [(e, assess(e)) for e in events]
+    scored.sort(key=lambda er: (int(er[1].level), er[0].detected_at or ""), reverse=True)
+    return scored
+
+
 # severidade (Level) -> (classe de status, rótulo curto)
 _SEV = {
     Level.CRITICAL: ("s-crit", "crítico"),
@@ -528,11 +538,10 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
     parts.append(_trend(serie, trend_days))
     if events:
         ev = ['<div class=events>']
-        for e in events:
+        for e, risk in _prioritize_events(events):
             cls = {"added": "add", "removed": "rem", "changed": "chg"}[e.event_type.value]
             val = e.new_value if e.event_type.value != "removed" else e.old_value
             when = (e.detected_at or "")[5:16].replace("T", " ")
-            risk = assess(e)
             scls, slabel = _SEV.get(risk.level, ("s-muted", ""))
             labels = risk.reason_labels()
             why = ""
