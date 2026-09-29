@@ -55,7 +55,8 @@ Legenda: `[x]` feito · `[~]` parcial · `[ ]` pendente · `[-]` adiado por desi
 - [x] Port diff: banner + **`service`/`product`/`version`** (serviço da porta;
       produto/versão do banner de saudação, mapa curto e explicável).
 - [x] Health por collector (`ok`/`partial`/`error` no doctor e no painel).
-- [x] Painel mostrando razões/contexto e **evidência normalizada** por evento.
+- [x] Painel mostrando razões/contexto e **evidência normalizada** por evento
+      e no **cartão de finding agregado** (topo de "problemas abertos").
 - [x] Timeline: eventos por dia + tendência + **priorização por relevância**
       (severidade primeiro, recência depois — o crítico não fica soterrado).
 
@@ -109,7 +110,6 @@ identidade de ativo com relações, lifecycle de finding, entrega durável, etc.
 
 ## Próximos incrementos candidatos (baixo risco, mesmo padrão)
 
-- [ ] Evidência também no cartão de finding agregado (reusando `evidence_of`).
 - [ ] `service`/`product`/`version` visíveis no painel (hoje vão na evidência/webhook).
 - [ ] Mais protocolos no fingerprint de porta conforme aparecerem (sinal claro só).
 
