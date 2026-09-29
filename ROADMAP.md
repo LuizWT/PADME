@@ -47,15 +47,17 @@ Legenda: `[x]` feito · `[~]` parcial · `[ ]` pendente · `[-]` adiado por desi
 - [x] Testes de risco (regras que disparam e que **não** disparam).
 - [x] Proveniência mínima (`_collector`/`_source`/`scan_id`/`detected_at`).
 
-## V0.3 — Observabilidade e diff semântico — quase completo
+## V0.3 — Observabilidade e diff semântico — concluído
 
 - [x] Estado comparável estruturado (`comparable_state`) e diff por campo.
 - [x] HTTP semantic diff (status/server/title/location).
 - [x] TLS semantic diff (issuer/fingerprint/expires_at) + **SANs**.
-- [~] Port diff: banner feito; `service`/`product`/`version` pendentes.
+- [x] Port diff: banner + **`service`/`product`/`version`** (serviço da porta;
+      produto/versão do banner de saudação, mapa curto e explicável).
 - [x] Health por collector (`ok`/`partial`/`error` no doctor e no painel).
 - [x] Painel mostrando razões/contexto e **evidência normalizada** por evento.
-- [~] Timeline: eventos por dia + tendência; priorização por relevância pendente.
+- [x] Timeline: eventos por dia + tendência + **priorização por relevância**
+      (severidade primeiro, recência depois — o crítico não fica soterrado).
 
 ## V0.4 — Multi-vantage + sinais RED — concluído
 
@@ -107,10 +109,9 @@ identidade de ativo com relações, lifecycle de finding, entrega durável, etc.
 
 ## Próximos incrementos candidatos (baixo risco, mesmo padrão)
 
-- [ ] Porta: `service`/`product`/`version` a partir do banner (mapa pequeno e
-      explicável), na evidência e no diff semântico.
-- [ ] Timeline do painel priorizada por relevância (§15.4).
 - [ ] Evidência também no cartão de finding agregado (reusando `evidence_of`).
+- [ ] `service`/`product`/`version` visíveis no painel (hoje vão na evidência/webhook).
+- [ ] Mais protocolos no fingerprint de porta conforme aparecerem (sinal claro só).
 
 ---
 
