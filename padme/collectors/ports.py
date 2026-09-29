@@ -21,18 +21,41 @@ from ..models import CollectionResult, Kind, Record
 
 _BANNER_BYTES = 128
 
-# serviço esperado por porta (determinístico, do número da porta — não do banner)
+# serviço esperado por porta (determinístico, do número da porta — não do banner).
+# Foco em monitoração de exposição: além do básico, portas que, abertas na
+# borda, são sinal por si só (bancos, admin, orquestração, cache, mensageria).
+# Cada entrada é a atribuição convencional/IANA da porta — não um chute.
 _PORT_SERVICE = {
-    21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 80: "http",
-    110: "pop3", 143: "imap", 443: "https", 465: "smtps", 587: "smtp",
-    993: "imaps", 995: "pop3s", 3306: "mysql", 3389: "rdp", 5432: "postgresql",
-    6379: "redis", 8080: "http", 8443: "https",
+    # básico / correio / web
+    20: "ftp-data", 21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
+    69: "tftp", 80: "http", 110: "pop3", 143: "imap", 443: "https",
+    465: "smtps", 587: "smtp", 993: "imaps", 995: "pop3s", 990: "ftps",
+    8080: "http", 8000: "http", 8081: "http", 8443: "https", 8888: "http",
+    # infra / rede / diretório
+    111: "rpcbind", 123: "ntp", 135: "msrpc", 137: "netbios-ns",
+    139: "netbios-ssn", 161: "snmp", 389: "ldap", 445: "smb", 636: "ldaps",
+    873: "rsync", 1080: "socks", 2049: "nfs", 3128: "http-proxy",
+    5060: "sip", 5900: "vnc",
+    # bancos de dados
+    1433: "mssql", 1521: "oracle", 3306: "mysql", 5432: "postgresql",
+    5984: "couchdb", 6379: "redis", 9042: "cassandra", 11211: "memcached",
+    27017: "mongodb",
+    # orquestração / mensageria / observabilidade / big data
+    2375: "docker", 2376: "docker-tls", 2181: "zookeeper", 5601: "kibana",
+    6443: "kubernetes-api", 8086: "influxdb", 9092: "kafka",
+    9200: "elasticsearch", 9300: "elasticsearch", 15672: "rabbitmq",
+    # acesso remoto
+    3389: "rdp",
 }
 
-# produtos conhecidos que se anunciam no banner de saudação (lista curta e
-# explicável — NÃO é um catálogo tipo Wappalyzer; cada match vem de um sinal claro).
-_PRODUCTS = ("OpenSSH", "dropbear", "vsFTPd", "ProFTPD", "Pure-FTPd", "FileZilla",
-             "Postfix", "Exim", "Sendmail", "Dovecot", "Courier", "nginx", "Apache")
+# produtos conhecidos que se anunciam no banner de SAUDAÇÃO (o serviço fala
+# primeiro, sem requisição). Lista curta e explicável — NÃO é um catálogo tipo
+# Wappalyzer; cada match vem de um sinal claro. Servidores HTTP não saúdam num
+# connect puro, então nginx/Apache raramente casam aqui (ficam pela porta).
+_PRODUCTS = ("OpenSSH", "dropbear", "libssh",
+             "vsFTPd", "ProFTPD", "Pure-FTPd", "FileZilla",
+             "Postfix", "Exim", "Sendmail", "Dovecot", "Courier", "Cyrus",
+             "nginx", "Apache")
 _PRODUCT_RE = re.compile(
     r"\b(" + "|".join(re.escape(p) for p in _PRODUCTS) + r")\b[ /_]?v?(\d[\w.]*)?",
     re.IGNORECASE,

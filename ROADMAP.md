@@ -53,7 +53,8 @@ Legenda: `[x]` feito · `[~]` parcial · `[ ]` pendente · `[-]` adiado por desi
 - [x] HTTP semantic diff (status/server/title/location).
 - [x] TLS semantic diff (issuer/fingerprint/expires_at) + **SANs**.
 - [x] Port diff: banner + **`service`/`product`/`version`** (serviço da porta;
-      produto/versão do banner de saudação, mapa curto e explicável).
+      produto/versão do banner de saudação, mapa curto e explicável) — visíveis
+      no painel, na evidência e no webhook.
 - [x] Health por collector (`ok`/`partial`/`error` no doctor e no painel).
 - [x] Painel mostrando razões/contexto e **evidência normalizada** por evento
       e no **cartão de finding agregado** (topo de "problemas abertos").
@@ -110,8 +111,13 @@ identidade de ativo com relações, lifecycle de finding, entrega durável, etc.
 
 ## Próximos incrementos candidatos (baixo risco, mesmo padrão)
 
-- [ ] `service`/`product`/`version` visíveis no painel (hoje vão na evidência/webhook).
-- [ ] Mais protocolos no fingerprint de porta conforme aparecerem (sinal claro só).
+- [x] `service`/`product`/`version` visíveis no painel (linha do ativo, além da
+      evidência/webhook).
+- [x] Mais protocolos no fingerprint de porta — mapa de serviço expandido para
+      exposição (bancos, admin, orquestração, cache, mensageria: redis, mongodb,
+      elasticsearch, docker, kubernetes-api, mssql, smb, memcached, rabbitmq…) e
+      mais produtos de saudação (libssh, Cyrus). Sinal claro só; nada de catálogo.
+- [ ] Novos protocolos de banner conforme aparecerem, sempre com sinal claro.
 
 ---
 

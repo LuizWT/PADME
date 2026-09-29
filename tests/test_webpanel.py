@@ -53,6 +53,32 @@ def test_render():
     assert "subdomínios" in out and "portas abertas" in out
 
 
+def test_render_mostra_service_product_version_da_porta():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("alvo.com", [
+        Record(Kind.PORT, "alvo.com:22", "open · SSH-2.0-OpenSSH_9.6p1",
+               metadata={"port": 22, "banner": "SSH-2.0-OpenSSH_9.6p1",
+                         "service": "ssh", "product": "OpenSSH", "version": "9.6p1"}),
+    ])
+    s.close()
+    cfg = Config(targets=["alvo.com"], db_path=db)
+    out = _render(cfg)
+    os.remove(db)
+    # o que antes só ia na evidência/webhook agora aparece na linha do ativo
+    assert "class=fp" in out
+    assert ">ssh<" in out
+    assert "OpenSSH 9.6p1" in out
+
+
+def test_port_fp_sem_service_nem_product_vazio():
+    from padme.webpanel import _port_fp
+    assert _port_fp({"port": 4444, "banner": "algo-proprietario"}) == ""
+    assert _port_fp(None) == ""
+    # só service (porta conhecida, banner sem produto) já rende badge
+    assert "svc" in _port_fp({"service": "redis"})
+
+
 def test_stat_tiles_destaca_criticos():
     from padme.webpanel import _stat_tiles
     kinds = {

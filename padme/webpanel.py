@@ -144,6 +144,9 @@ details.kinds[open]>summary::before{content:"▾ "}
 .kind b{color:var(--info);font-size:11px;letter-spacing:.06em}
 .row{padding:2px 0 2px 12px;white-space:pre-wrap;word-break:break-all;font-family:var(--mono);font-size:12.5px}
 .row .k{color:var(--ink)} .row .v{color:var(--muted)}
+.row .fp{margin-left:8px}
+.row .fp .svc{color:var(--info);font-size:11px;letter-spacing:.04em}
+.row .fp .prod{color:var(--ink2);font-size:11px;margin-left:6px}
 
 .trend{padding:12px 16px;border-top:1px solid var(--border)}
 .trend .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
@@ -284,6 +287,24 @@ def _evidence_facts(kind: Kind, key: str, value: str, metadata: dict | None) -> 
     typ = ev.get("type", "")
     facts = " · ".join(f"{k}={v}" for k, v in ev.items() if k != "type")
     return f"{typ} — {facts}" if facts else typ
+
+
+def _port_fp(metadata: dict | None) -> str:
+    """Badges de service/product/version de uma porta (do metadata do record).
+    O que hoje só ia na evidência/webhook agora aparece na linha do ativo."""
+    md = metadata or {}
+    svc = md.get("service")
+    product = md.get("product")
+    version = md.get("version")
+    if not (svc or product):
+        return ""
+    bits = []
+    if svc:
+        bits.append(f"<span class=svc>{_esc(svc)}</span>")
+    if product:
+        pv = f"{product} {version}" if version else product
+        bits.append(f"<span class=prod>{_esc(pv)}</span>")
+    return f"<span class=fp>{''.join(bits)}</span>"
 
 
 def _prioritize_events(events: list):
@@ -549,7 +570,8 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
             det.append(f"<div class=kind><b>{_KIND_LABEL[kind]}</b>")
             for it in sorted(items, key=lambda x: x["key"]):
                 v = f"  <span class=v>{_esc(it['value'])}</span>" if it["value"] else ""
-                det.append(f"<div class=row><span class=k>{_esc(it['key'])}</span>{v}</div>")
+                fp = _port_fp(it.get("metadata")) if kind == "port" else ""
+                det.append(f"<div class=row><span class=k>{_esc(it['key'])}</span>{v}{fp}</div>")
             det.append("</div>")
         det.append("</details>")
         parts.append("".join(det))
