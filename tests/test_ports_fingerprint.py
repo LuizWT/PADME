@@ -40,6 +40,26 @@ def test_evidence_inclui_service_product_version():
     assert ev["service"] == "ssh" and ev["product"] == "OpenSSH" and ev["version"] == "9.6p1"
 
 
+def test_service_map_cobre_exposicao_relevante():
+    # portas que, abertas na borda, são sinal por si só (bancos/admin/orquestração)
+    casos = {6379: "redis", 27017: "mongodb", 9200: "elasticsearch",
+             2375: "docker", 6443: "kubernetes-api", 5432: "postgresql",
+             1433: "mssql", 445: "smb", 11211: "memcached", 15672: "rabbitmq"}
+    for porta, svc in casos.items():
+        assert fingerprint(porta, "")["service"] == svc
+
+
+def test_dovecot_pop3_banner_produto():
+    fp = fingerprint(110, "+OK Dovecot ready.")
+    assert fp["service"] == "pop3" and fp["product"] == "Dovecot"
+    assert "version" not in fp
+
+
+def test_proftpd_banner_produto_e_versao():
+    fp = fingerprint(21, "220 ProFTPD 1.3.7a Server ready.")
+    assert fp["service"] == "ftp" and fp["product"] == "ProFTPD" and fp["version"] == "1.3.7a"
+
+
 def test_diff_detecta_mudanca_de_versao():
     old = {"port": 22, "banner": "SSH-2.0-OpenSSH_9.6p1", "service": "ssh",
            "product": "OpenSSH", "version": "9.6p1"}
