@@ -144,6 +144,42 @@ def test_render_mostra_evidencia_em_added():
     assert "prova:" in out and "tcp_connect" in out
 
 
+def test_explainability_conta_os_tres_pilares():
+    from padme.models import Event, EventType, Kind
+    from padme.webpanel import _explainability
+    # takeover (CRITICAL) completo: razão + proveniência (_collector) + evidência
+    ok = Event("a.com", EventType.ADDED, Kind.TAKEOVER, "blog.a.com", None, "GitHub Pages",
+               metadata={"_collector": "takeover", "cname": "x.github.io", "reason": "NXDOMAIN"})
+    # idêntico, mas SEM proveniência -> não conta como explicável
+    sem_prov = Event("a.com", EventType.ADDED, Kind.TAKEOVER, "shop.a.com", None, "GitHub Pages",
+                     metadata={"cname": "y.github.io", "reason": "NXDOMAIN"})
+    res = _explainability({"a.com": [ok, sem_prov]})
+    assert res["high"] == 2 and res["explained"] == 1 and res["pct"] == 50
+    assert "proveniência" in res["missing"]
+
+
+def test_explainability_none_sem_evento_grave():
+    from padme.models import Event, EventType, Kind
+    from padme.webpanel import _explainability
+    baixo = Event("a.com", EventType.ADDED, Kind.DNS, "a.com|A|1.2.3.4", None, "1.2.3.4",
+                  metadata={"_collector": "dns"})
+    assert _explainability({"a.com": [baixo]}) is None
+
+
+def test_render_mostra_kpi_de_explicabilidade():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("alvo.com", [])  # baseline
+    s.apply_scan("alvo.com", [    # takeover CRITICAL com metadata -> evento explicável
+        Record(Kind.TAKEOVER, "blog.alvo.com", "GitHub Pages",
+               metadata={"cname": "alvo.github.io", "reason": "CNAME dangling (NXDOMAIN)"}),
+    ])
+    s.close()
+    out = _render(Config(targets=["alvo.com"], db_path=db))
+    os.remove(db)
+    assert "alertas explicáveis" in out
+
+
 def test_trend_svg_vazio_nao_quebra():
     serie = [{"day": "2026-09-20", "added": 0, "removed": 0, "changed": 0, "total": 0}]
     out = _trend_svg(serie, days=1)
