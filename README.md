@@ -31,7 +31,8 @@ te chama quando a paisagem muda.
   exports e mostra **divergências** entre pontos de observação (geo-block,
   split-horizon, host que só aparece de um lugar).
 - **Metadata estruturada** por evento (issuer/expira/fingerprint/SANs, status/server,
-  service/reason…) no webhook — n8n consome campos, não parseia string.
+  porta service/product/version, service/reason…) no webhook — n8n consome campos,
+  não parseia string.
 - **Amortecimento de flapping**: chave que oscila para de spammar (segue no
   histórico). **Validação forte de config** (falha cedo com mensagem clara).
 - **Aviso de expiração de certificado TLS** (antes de virar incidente).
@@ -447,6 +448,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 237 testes: unitários + reliability + netpolicy +
+└── tests/                # 245 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

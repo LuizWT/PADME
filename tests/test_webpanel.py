@@ -122,3 +122,17 @@ def test_trend_svg_vazio_nao_quebra():
     serie = [{"day": "2026-09-20", "added": 0, "removed": 0, "changed": 0, "total": 0}]
     out = _trend_svg(serie, days=1)
     assert out.startswith("<svg") and out.endswith("</svg>")
+
+
+def test_prioritize_events_por_relevancia():
+    from padme.models import Event, EventType, Kind
+    from padme.webpanel import _prioritize_events
+    # DNS (DEBUG) mais recente vs TAKEOVER (CRITICAL) mais antigo
+    dns_novo = Event("a.com", EventType.CHANGED, Kind.DNS, "a.com|A|1.2.3.4",
+                     "1.1.1.1", "1.2.3.4", detected_at="2026-09-29T10:00:00+00:00")
+    takeover_antigo = Event("a.com", EventType.ADDED, Kind.TAKEOVER, "blog.a.com",
+                            None, "GitHub Pages", detected_at="2026-09-27T10:00:00+00:00")
+    ordem = _prioritize_events([dns_novo, takeover_antigo])
+    # o crítico (mesmo mais antigo) vem primeiro; o debug recente, por último
+    assert ordem[0][0].kind == Kind.TAKEOVER
+    assert ordem[-1][0].kind == Kind.DNS
