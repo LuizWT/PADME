@@ -117,7 +117,15 @@ identidade de ativo com relações, lifecycle de finding, entrega durável, etc.
       exposição (bancos, admin, orquestração, cache, mensageria: redis, mongodb,
       elasticsearch, docker, kubernetes-api, mssql, smb, memcached, rabbitmq…) e
       mais produtos de saudação (libssh, Cyrus). Sinal claro só; nada de catálogo.
-- [ ] Novos protocolos de banner conforme aparecerem, sempre com sinal claro.
+- [x] Banner binário estruturado: **handshake MySQL/MariaDB** (o servidor fala
+      primeiro; a versão vem em posição fixa, terminada em NUL) decodificado para
+      um banner legível — versão exata de um banco exposto é sinal forte (CVE).
+      +daemons de saudação que se anunciam e são alvos recorrentes: SMTP
+      (OpenSMTPD, Haraka, Microsoft ESMTP/Exchange, Zimbra, MailEnable) e FTP
+      (Serv-U, CrushFTP, bftpd, Microsoft FTP). Só assinatura clara; greeting de
+      texto livre sem produto em posição fixa continua fora (nada de adivinhação).
+- [ ] Novos protocolos de banner conforme aparecerem, sempre com sinal claro
+      (spec-defined) — texto livre sem produto fixo permanece deliberadamente fora.
 
 ---
 
