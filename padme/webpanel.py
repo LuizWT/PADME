@@ -388,7 +388,45 @@ def _kpi(n, label: str, sub: str = "", cls: str = "") -> str:
             f"<div class=l>{_esc(label)}</div>{sub_html}</div>")
 
 
-def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: int) -> str:
+def _explainability(events_by_target: dict) -> dict | None:
+    """Cobertura de explicabilidade (§27): dos eventos HIGH/CRITICAL recentes,
+    quantos trazem os TRÊS pilares juntos — razão (reason code do risco),
+    proveniência (`_collector`/`_source`) e evidência normalizada. Mede se o
+    alerta grave é justificável na hora, sem o analista caçar contexto. Um
+    número baixo aponta pipeline que grita sem sustentar a conclusão.
+
+    Só considera o que já está carregado (eventos recentes) — sem query nova."""
+    high = explained = 0
+    gaps = {"razão": 0, "proveniência": 0, "evidência": 0}
+    for evs in events_by_target.values():
+        for e in evs:
+            risk = assess(e)
+            if int(risk.level) < int(Level.HIGH):
+                continue
+            high += 1
+            val = e.new_value if e.event_type.value != "removed" else e.old_value
+            md = e.metadata or {}
+            has_reason = bool(risk.reason_labels())
+            has_prov = bool(md.get("_collector") or md.get("_source"))
+            has_ev = evidence_of(e.kind, e.key, val, md) is not None
+            if has_reason and has_prov and has_ev:
+                explained += 1
+            else:
+                if not has_reason:
+                    gaps["razão"] += 1
+                if not has_prov:
+                    gaps["proveniência"] += 1
+                if not has_ev:
+                    gaps["evidência"] += 1
+    if high == 0:
+        return None
+    missing = sorted((k for k, v in gaps.items() if v), key=lambda k: -gaps[k])
+    return {"high": high, "explained": explained,
+            "pct": round(100 * explained / high), "missing": missing}
+
+
+def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: int,
+                 explain: dict | None = None) -> str:
     assets = sum(len(v) for kinds in by_target.values() for v in kinds.values())
     crit = sum(1 for p in problems if p["cls"] in ("s-crit", "s-serious"))
     partial = sum(1 for m in meta.values() if m and m.get("last_partial"))
@@ -403,6 +441,14 @@ def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: i
              f"{partial} parcial(is)" if partial else "sem coleta parcial",
              cls=("warn" if partial else "ok")),
     ]
+    if explain:  # §27: só aparece quando há evento HIGH/CRITICAL recente p/ medir
+        pct = explain["pct"]
+        cls = "ok" if pct == 100 else ("warn" if pct >= 50 else "crit")
+        sub = (f"{explain['explained']}/{explain['high']} HIGH+ com razão+proveniência+evidência"
+               if pct == 100 else
+               f"{explain['explained']}/{explain['high']} HIGH+ · falta "
+               + ", ".join(explain["missing"]))
+        tiles.append(_kpi(f"{pct}%", "alertas explicáveis", sub, cls=cls))
     return "<div class=kpis>" + "".join(tiles) + "</div>"
 
 
@@ -794,6 +840,7 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
             by_target[r["target"]].setdefault(r["kind"], []).append(r)
 
     problems = _collect_problems(by_target, meta)
+    explain = _explainability(events)
 
     parts = [
         "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
@@ -825,7 +872,7 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
 
     scope = f" · {only}" if only else ""
     parts.append(f"<div class=eyebrow>visão geral{scope}</div>")
-    parts.append(_global_kpis(by_target, meta, problems, len(shown)))
+    parts.append(_global_kpis(by_target, meta, problems, len(shown), explain))
 
     parts.append(f"<div class=eyebrow>problemas abertos · {len(problems)}</div>")
     parts.append(_problems_panel(problems))
