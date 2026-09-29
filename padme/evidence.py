@@ -34,7 +34,8 @@ def evidence_of(kind: Kind, key: str, value: str | None, metadata: dict | None) 
         # state='open' só quando há o fato da porta (um REMOVED não reafirma "open")
         return _ev({"type": "tcp_connect", "port": md.get("port"),
                     "state": "open" if md.get("port") is not None else None,
-                    "banner": md.get("banner")})
+                    "service": md.get("service"), "product": md.get("product"),
+                    "version": md.get("version"), "banner": md.get("banner")})
 
     if kind == Kind.HTTP:
         return _ev({"type": "http_response", "status": md.get("status"),

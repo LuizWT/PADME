@@ -16,7 +16,7 @@ from .models import Event, EventType, Kind
 _COMPARABLE_FIELDS = {
     Kind.HTTP: ("status", "server", "title", "location"),
     Kind.HTTPSEC: ("missing",),
-    Kind.PORT: ("banner",),
+    Kind.PORT: ("banner", "service", "product", "version"),
     Kind.TLS: ("issuer", "fingerprint", "expires_at", "sans"),
     Kind.MAILSEC: ("p",),
 }
