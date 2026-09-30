@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import difflib
 import os
 import re
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import yaml
@@ -80,7 +81,7 @@ class TelegramConfig:
     enabled: bool = False
     bot_token: str = ""
     chat_id: str = ""
-    level: str = "medium"     # limiar de severidade enviado (ver padme/levels.py)
+    level: str = "medium"     # limiar de severidade enviado (ver padme/risk.py)
 
     def resolved(self) -> "TelegramConfig":
         """Permite usar env vars: bot_token: ${PADME_TG_TOKEN}."""
@@ -258,6 +259,8 @@ class Config:
     webhook: WebhookConfig = field(default_factory=WebhookConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
     heartbeat: HeartbeatConfig = field(default_factory=HeartbeatConfig)
+    # avisos não-fatais do carregamento (ex.: chave desconhecida — typo ignorado)
+    warnings: list[str] = field(default_factory=list)
 
     @staticmethod
     def load(path: str | Path) -> "Config":
@@ -393,6 +396,7 @@ class Config:
             ).resolved(),
         )
         _validate(cfg)
+        cfg.warnings = _unknown_keys(raw)
         return cfg
 
 
@@ -481,8 +485,66 @@ def _validate(cfg: "Config") -> None:
         raise ValueError("Config inválida:\n  - " + "\n  - ".join(errs))
 
 
+_ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
 def _expand(value: str) -> str:
-    """Expande ${VAR} usando variáveis de ambiente."""
-    if value and value.startswith("${") and value.endswith("}"):
-        return os.environ.get(value[2:-1], "")
-    return value
+    """Expande ${VAR} em QUALQUER ponto do valor (ex.: "Bearer ${TOKEN}").
+    Variável ausente vira "" (o doctor avisa canal habilitado sem credencial)."""
+    if not value:
+        return value
+    return _ENV_RE.sub(lambda m: os.environ.get(m.group(1), ""), value)
+
+
+def _names(cls, rename: dict[str, str] | None = None) -> set[str]:
+    rename = rename or {}
+    return {rename.get(f.name, f.name) for f in fields(cls)}
+
+
+# chaves aceitas por seção do YAML (nomes do YAML, não do dataclass)
+_SECTIONS: dict[str, set[str]] = {
+    "collectors": _names(CollectorsConfig),
+    "network": _names(NetworkConfig),
+    "storage": _names(StorageConfig),
+    "alerts": _names(AlertsConfig),
+    "web": _names(WebConfig),
+    "context": {"assets"},
+    "telegram": _names(TelegramConfig),
+    "discord": _names(DiscordConfig),
+    "webhook": _names(WebhookConfig),
+    "email": _names(EmailConfig, {"from_addr": "from"}),
+    "heartbeat": _names(HeartbeatConfig),
+}
+_TOP = {"targets", "scope_confirmed", "interval_seconds", "concurrency", "timeout",
+        "db_path", "source"} | set(_SECTIONS)
+_ASSET_KEYS = {"match", "criticality", "environment", "exposure", "owner",
+               "expected_ports", "forbidden_ports"}
+
+
+def _unknown_keys(raw: dict) -> list[str]:
+    """Chaves do YAML que a Padmé não conhece. Um typo (`colectors:`) antes era
+    ignorado sem aviso e o bloco inteiro caía no padrão; agora vira aviso, com
+    sugestão do nome mais próximo."""
+    def hint(key: str, valid: set[str]) -> str:
+        close = difflib.get_close_matches(key, sorted(valid), n=1)
+        return f" (quis dizer '{close[0]}'?)" if close else ""
+
+    out: list[str] = []
+    for key in raw:
+        if key not in _TOP:
+            out.append(f"chave desconhecida ignorada: '{key}'{hint(str(key), _TOP)}")
+    for section, valid in _SECTIONS.items():
+        block = raw.get(section)
+        if not isinstance(block, dict):
+            continue
+        for key in block:
+            if key not in valid:
+                out.append(f"chave desconhecida ignorada: '{section}.{key}'{hint(str(key), valid)}")
+    assets = (raw.get("context") or {}).get("assets") if isinstance(raw.get("context"), dict) else None
+    for i, a in enumerate(assets or []):
+        if isinstance(a, dict):
+            for key in a:
+                if key not in _ASSET_KEYS:
+                    out.append(f"chave desconhecida ignorada: 'context.assets[{i}].{key}'"
+                               f"{hint(str(key), _ASSET_KEYS)}")
+    return out

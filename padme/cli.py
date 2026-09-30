@@ -1,10 +1,15 @@
 """CLI do Padmé.
 
 Comandos:
-  padme scan     -> roda um scan único e imprime as mudanças (grava baseline)
-  padme monitor  -> loop contínuo; alerta no Telegram a cada mudança
-  padme events   -> mostra os últimos eventos gravados de um alvo
-  padme test-telegram -> envia uma mensagem de teste
+  padme scan         -> um ciclo avulso (grava/atualiza baseline) e imprime as mudanças
+  padme monitor      -> modo sentinela: varre em loop e notifica (--once p/ cron)
+  padme events       -> últimos eventos gravados de cada alvo
+  padme export       -> estado atual em JSON/CSV
+  padme merge        -> consolida exports de várias fontes (multi-vantage)
+  padme web          -> painel só-leitura
+  padme doctor       -> integridade do banco, saúde dos scans e avisos de config
+  padme backup       -> backup online consistente do SQLite
+  padme test-notify  -> testa todos os canais configurados
 
 Uso responsável: monitore apenas ativos que você é dono ou tem autorização
 explícita para testar.
@@ -20,7 +25,6 @@ import json
 import logging
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -31,13 +35,12 @@ try:
 except ImportError:
     load_dotenv = None
 
-from .alerts import damp_flapping
 from .config import Config
-from .engine import Engine, build_notifiers, summarize_health
-from .levels import Level
+from .engine import Engine, build_notifiers
 from .logredact import install_secret_redaction
 from .models import Event
-from .notify import TelegramNotifier, send_all
+from .notify import TelegramNotifier
+from .risk import Level
 from .scheduler import run_monitor
 from .storage import Storage
 
@@ -65,38 +68,40 @@ def _print_events(target: str, events: list[Event], baseline: bool,
         print(f"  {arrow} [{e.kind.value}] {e.key}  {val or ''}".rstrip())
 
 
+def _override_levels(cfg: Config, level: str | None) -> None:
+    """`--level` vale para TODOS os canais (antes só mexia no Telegram)."""
+    if level:
+        for channel in (cfg.telegram, cfg.discord, cfg.webhook, cfg.email):
+            channel.level = level
+
+
 async def _cmd_scan(cfg: Config, args) -> int:
-    if args.level:
-        cfg.telegram.level = args.level
+    """Um ciclo avulso, pelo MESMO caminho do monitor (scheduler.scan_one), só
+    que imprimindo as mudanças. Com --notify, notifica e usa a fila de reenvio."""
+    from .notify import NotificationManager
+    from .scheduler import retry_pending, scan_one
+
+    _override_levels(cfg, args.level)
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
-    notifiers = build_notifiers(cfg) if args.notify else []
+    notifier = NotificationManager(build_notifiers(cfg) if args.notify else [])
     try:
+        if notifier:
+            await retry_pending(storage, notifier)
         for target in cfg.targets:
-            first = not storage.is_known_target(target)
-            t0 = time.monotonic()
-            result = await engine.scan_target(target)
-            events = engine.apply(result)
-            errs = len(result.errors)
-            storage.update_health(target, error_count=errs, partial=errs > 0,
-                                  duration_ms=int((time.monotonic() - t0) * 1000),
-                                  collectors=summarize_health(result),
-                                  inconclusive=result.inconclusive)
-            _print_events(target, events, baseline=first, total=len(result.records),
-                          provisional=first and not storage.is_known_target(target))
-            if errs:
-                print(f"[{target}] coleta parcial: {errs} erro(s) de collector "
+            o = await scan_one(cfg, engine, storage, notifier, target)
+            _print_events(target, o.events, baseline=o.first, total=len(o.result.records),
+                          provisional=o.provisional)
+            if o.result.errors:
+                print(f"[{target}] coleta parcial: {len(o.result.errors)} erro(s) de collector "
                       f"(estado preservado; veja -v).")
-            for err in result.errors:
+            for err in o.result.errors:
                 log.debug("erro: %s", err)
-            # amortece flapping e cada canal filtra pelo próprio nível; envio concorrente
-            if notifiers and not first and events:
-                to_notify, flapped = damp_flapping(
-                    storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
-                if flapped:
-                    print(f"[{target}] {flapped} evento(s) suprimido(s) da notificação (flapping).")
-                if to_notify:
-                    await send_all(notifiers, target, to_notify)
+            if o.flapped:
+                print(f"[{target}] {o.flapped} evento(s) suprimido(s) da notificação (flapping).")
+            if o.failed_channels:
+                print(f"[{target}] notificação falhou em: {', '.join(o.failed_channels)}"
+                      + (f" ({o.queued} alerta(s) grave(s) na fila de reenvio)" if o.queued else ""))
     finally:
         storage.close()
     return 0
@@ -105,8 +110,7 @@ async def _cmd_scan(cfg: Config, args) -> int:
 async def _cmd_monitor(cfg: Config, args) -> int:
     if args.interval:
         cfg.interval_seconds = args.interval
-    if args.level:
-        cfg.telegram.level = args.level
+    _override_levels(cfg, args.level)
     if args.lock:
         from .singleton import AlreadyRunning, single_instance
         try:
@@ -259,7 +263,7 @@ async def _cmd_web(cfg: Config, args) -> int:
 
 def _config_warnings(cfg: Config) -> list[str]:
     """Sanidade de configuração (não bloqueia; só diagnostica em `doctor`)."""
-    w: list[str] = []
+    w: list[str] = list(cfg.warnings)
     _PLACEHOLDERS = {"SEU_BOT_TOKEN_AQUI", "SEU_CHAT_ID_AQUI", ""}
     if cfg.interval_seconds <= 0:
         w.append("interval_seconds deve ser > 0")
@@ -354,7 +358,7 @@ async def _cmd_test_notify(cfg: Config, args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="padme",
-        description="Padmé — Attack Surface Monitoring com alerta no Telegram.",
+        description="Padmé — Attack Surface Monitoring com alertas multi-canal.",
     )
     p.add_argument("--version", action="version", version=f"padme {__version__}")
     p.add_argument("-c", "--config", default="config.yaml", help="caminho do config YAML")
@@ -365,13 +369,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("scan", help="scan único (grava/atualiza baseline)")
     sp.add_argument("--notify", action="store_true", help="também envia mudanças aos canais de notificação configurados")
     sp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
-                    help="limiar de severidade enviado ao Telegram (sobrescreve o config)")
+                    help="limiar de severidade de TODOS os canais (sobrescreve o config)")
     sp.set_defaults(func=_cmd_scan)
 
     mp = sub.add_parser("monitor", help="modo sentinela: varre em loop e alerta no Telegram")
     mp.add_argument("--interval", type=int, default=None, help="sobrescreve interval_seconds")
     mp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
-                    help="limiar de severidade enviado ao Telegram (sobrescreve o config)")
+                    help="limiar de severidade de TODOS os canais (sobrescreve o config)")
     mp.add_argument("--once", action="store_true",
                     help="roda um único ciclo e sai (ideal p/ cron)")
     mp.add_argument("--lock", default=None, metavar="PATH",
@@ -433,6 +437,9 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         print(f"Erro de config: {exc}", file=sys.stderr)
         return 2
+
+    for w in cfg.warnings:  # typo no YAML: avisa em vez de ignorar calado
+        print(f"aviso de config: {w}", file=sys.stderr)
 
     # comandos que não varrem alvos não exigem confirmação de escopo
     read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor", "merge", "backup")

@@ -19,9 +19,9 @@ from typing import Protocol, runtime_checkable
 
 import httpx
 
-from ..levels import Level, filter_events
 from ..logredact import redact
 from ..models import Event
+from ..risk import Level, filter_events
 
 log = logging.getLogger("padme")
 

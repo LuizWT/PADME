@@ -5,9 +5,9 @@ razão; sem contexto aplicável, fica na base (compat total). Inclui casos que N
 devem disparar.
 """
 
-from padme import levels as L
-from padme.levels import Confidence, Level, assess, severity
+from padme import risk as L
 from padme.models import Event, EventType, Kind
+from padme.risk import Confidence, Level, assess, severity
 
 
 def _port(port, etype=EventType.ADDED, meta=None, ctx=None):

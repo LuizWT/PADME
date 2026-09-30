@@ -38,17 +38,18 @@ from .collectors import (
     wildcard,
 )
 from .config import Config
-from .levels import Level, parse_level
 from .models import CollectionResult, Event, Kind, Record, ScanResult
 from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNotifier
+from .risk import Level, parse_level
 from .storage import Storage
 
 log = logging.getLogger("padme")
 
 _USER_AGENT = "Padme-ASM/0.1 (+attack-surface-monitor)"
 
-# collector -> Kind do escopo (a "célula" onde ausência = remoção real)
-_SCOPE_KIND = {
+# collector -> Kind do escopo que ele observa (a "célula" onde ausência = remoção real).
+# Não confundir com models._SCOPE_KIND (kind de um RECORD -> kind do escopo).
+_COLLECTOR_SCOPE = {
     "dns": Kind.DNS,
     "http": Kind.HTTP,      # cobre HTTP e HTTPSEC (postura vem da mesma resposta)
     "favicon": Kind.FAVICON,
@@ -280,7 +281,7 @@ def _absorb(cr: CollectionResult, result: ScanResult, name: str, host: str) -> N
     if not cr.ok and not cr.error:
         result.inconclusive += 1
     if cr.ok:
-        scope_kind = _SCOPE_KIND[name]
+        scope_kind = _COLLECTOR_SCOPE[name]
         result.observed_scopes.add((scope_kind.value, host))
 
 

@@ -16,8 +16,8 @@ from padme.collectors import wildcard as wcmod
 from padme.config import CollectorsConfig, Config
 from padme.engine import Engine, annotate_liveness, carry_forward_subdomains
 from padme.evidence import evidence_of
-from padme.levels import ISSUE_RESOLVED, Level, assess
 from padme.models import CollectionResult, Event, EventType, Kind, Record, ScanResult
+from padme.risk import ISSUE_RESOLVED, Level, assess
 from padme.storage import Storage
 from padme.webpanel import _explainability
 

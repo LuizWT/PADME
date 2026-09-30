@@ -15,8 +15,8 @@ from datetime import datetime
 
 import httpx
 
-from ..levels import Level
 from ..models import Event, EventType, Kind
+from ..risk import Level
 from .base import NotificationResult, chunk_text, post_with_retry
 from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL

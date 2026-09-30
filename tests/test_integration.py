@@ -13,9 +13,9 @@ from padme.collectors import subdomains as submod
 from padme.collectors import wildcard as wcmod
 from padme.config import CollectorsConfig, Config
 from padme.engine import Engine
-from padme.levels import Level
 from padme.models import CollectionResult, Kind, Record
 from padme.notify import NotificationManager, NotificationResult
+from padme.risk import Level
 from padme.storage import Storage
 
 

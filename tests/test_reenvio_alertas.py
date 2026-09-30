@@ -13,9 +13,9 @@ import pytest
 
 from padme import scheduler
 from padme.config import Config
-from padme.levels import Level
 from padme.models import Kind, Record, ScanResult
 from padme.notify import NotificationManager, NotificationResult
+from padme.risk import Level
 from padme.storage import Storage
 
 

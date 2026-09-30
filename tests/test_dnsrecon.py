@@ -6,8 +6,8 @@ import dns.exception
 import dns.resolver
 
 from padme.collectors import dnsrecon
-from padme.levels import Level, severity
 from padme.models import Event, EventType, Kind
+from padme.risk import Level, severity
 
 
 class _NS:

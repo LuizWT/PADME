@@ -5,9 +5,9 @@ import os
 import sqlite3
 import tempfile
 
-from padme.levels import Level
 from padme.models import Event, EventType, Kind, Record
 from padme.notify import NotificationManager, NotificationResult
+from padme.risk import Level
 from padme.storage import Storage
 
 

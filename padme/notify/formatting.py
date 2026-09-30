@@ -8,8 +8,8 @@ mas os DADOS (marcador, rótulo, ordem, descrição) vêm de um lugar só.
 
 from __future__ import annotations
 
-from ..levels import Confidence, assess
 from ..models import Event, EventType, Kind
+from ..risk import Confidence, assess
 
 MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
 

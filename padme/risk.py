@@ -1,13 +1,14 @@
-"""Níveis de notificação (estilo log level) para o retorno via Telegram.
+"""Motor de risco: severidade contextual e explicável de cada evento.
 
-O terminal sempre mostra tudo. O nível define o LIMIAR mínimo de severidade
-que é enviado ao Telegram — do mais barulhento ao mais crítico:
+`assess(e)` devolve severidade (impacto), confiança (quão confiável é a
+observação), a regra que decidiu e os códigos de razão. `Level` também é o
+limiar mínimo de cada canal de notificação — do mais barulhento ao mais crítico:
 
     DEBUG    (0)  tudo, inclusive registros DNS
-    LOW      (1)  remoções e mudanças menores
-    MEDIUM   (2)  HTTP/TLS mudou, serviço novo   <- padrão
+    LOW      (1)  remoções, mudanças menores e resoluções
+    MEDIUM   (2)  HTTP/TLS mudou, serviço novo, takeover corrigido  <- padrão
     HIGH     (3)  porta nova aberta / subdomínio novo (superfície cresceu)
-    CRITICAL (4)  só subdomain takeover
+    CRITICAL (4)  takeover, porta de acesso remoto/dados nova, porta proibida
 
 Severidade de cada evento (kind + tipo):
     takeover (novo/alterado)  -> CRITICAL
@@ -29,6 +30,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 from .models import Event, EventType, Kind
+from .portmap import DATA_PORTS, HIGH_RISK_PORTS
 
 
 class Level(IntEnum):
@@ -37,18 +39,6 @@ class Level(IntEnum):
     MEDIUM = 2
     HIGH = 3
     CRITICAL = 4
-
-
-# Portas de acesso administrativo remoto / serviços de dados que costumam ficar
-# sem autenticação forte. Uma porta DESTAS recém-aberta é bem mais grave que uma
-# porta comum nova — daí a elevação contextual (item: priorização de risco).
-_HIGH_RISK_PORTS: dict[int, str] = {
-    23: "Telnet", 445: "SMB", 512: "rexec", 513: "rlogin", 514: "rsh",
-    1433: "MSSQL", 2049: "NFS", 2375: "Docker API", 2376: "Docker API",
-    3306: "MySQL", 3389: "RDP", 4444: "Metasploit", 5432: "PostgreSQL",
-    5900: "VNC", 5984: "CouchDB", 5985: "WinRM", 5986: "WinRM",
-    6379: "Redis", 9200: "Elasticsearch", 11211: "Memcached", 27017: "MongoDB",
-}
 
 
 _ALIASES = {
@@ -118,8 +108,6 @@ class Confidence(IntEnum):
     CONFIRMED = 3
 
 
-# Portas de acesso remoto x portas de dados (para o código de razão correto).
-_DATA_PORTS = {1433, 2049, 3306, 5432, 5984, 6379, 9200, 11211, 27017}
 
 # Reason codes estruturados (estáveis p/ webhook/n8n/relatório) + rótulo humano.
 NEW_OPEN_PORT = "NEW_OPEN_PORT"
@@ -212,8 +200,8 @@ def assess(e: Event) -> RiskAssessment:
     if e.kind == Kind.PORT and e.event_type == EventType.ADDED:
         reasons.append(NEW_OPEN_PORT)
         port = _port_of(e)
-        if port in _HIGH_RISK_PORTS:
-            reasons.append(DATA_SERVICE if port in _DATA_PORTS else REMOTE_ACCESS_SERVICE)
+        if port in HIGH_RISK_PORTS:
+            reasons.append(DATA_SERVICE if port in DATA_PORTS else REMOTE_ACCESS_SERVICE)
             level = max(level, Level.CRITICAL)   # serviço admin/dados novo = crítico
             rule_id = "high-risk-port-added"
         if exposure == "internet":

@@ -83,7 +83,7 @@ operação de conjuntos: `key` nova = **added**, `key` sumiu = **removed**,
 mesmo `key` com `value` diferente = **changed**. Cada evento recebe uma
 **severidade**, e **cada canal** aplica o seu próprio limiar de nível.
 
-A severidade é **contextual e explicável** (`levels.assess`), com **confiança**
+A severidade é **contextual e explicável** (`risk.assess`), com **confiança**
 como dimensão **independente** (`severity` = impacto; `confidence` = quão confiável
 é a observação). Parte de uma base por categoria e é **elevada por regras nomeadas**,
 usando o **contexto do ativo** (`context.assets`: `exposure`, `criticality`,
@@ -490,7 +490,8 @@ padme/
 │   ├── cli.py            # comandos scan / monitor / events / export / web / doctor / backup / merge
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
-│   ├── levels.py         # severidade base + assess() (severity+confidence+reason codes)
+│   ├── risk.py           # motor de risco: severidade base + assess() (severity+confidence+reason codes)
+│   ├── portmap.py        # tabela única de portas: serviço, risco (acesso remoto/dados), TLS implícito
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
@@ -501,10 +502,12 @@ padme/
 │   ├── alerts.py         # amortecimento de flapping
 │   ├── differ.py         # engine de diff (puro, testável)
 │   ├── engine.py         # orquestra collectors + escopos observados + diff
-│   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat + retenção
+│   ├── scheduler.py      # ciclo por alvo (scan_one, usado por monitor e scan) + reenvio + heartbeat
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
 │   ├── webpanel.py       # painel só-leitura (auth Basic/Bearer) + tendência + /vantage (stdlib)
+│   ├── panel_metrics.py  # dados dos cartões: problemas, priorização, KPIs §27 (sem HTML)
+│   ├── panel_assets.py   # CSS e JS do painel (strings estáticas)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
 │   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
 │   │                     #   takeover, ports (com banner-grab)

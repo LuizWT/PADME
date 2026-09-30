@@ -4,10 +4,10 @@ import asyncio
 
 import httpx
 
-from padme.levels import Level
 from padme.models import Event, EventType, Kind
 from padme.notify import NotificationResult, chunk_text, send_all
 from padme.notify.base import post_with_retry
+from padme.risk import Level
 
 
 # ── chunk_text robusto (§14 / cenário 8) ────────────────────────────────────

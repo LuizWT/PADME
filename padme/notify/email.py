@@ -11,8 +11,8 @@ import smtplib
 from datetime import datetime
 from email.message import EmailMessage
 
-from ..levels import Level
 from ..models import Event, EventType, Kind
+from ..risk import Level
 from .base import NotificationResult
 from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
