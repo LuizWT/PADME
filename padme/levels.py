@@ -10,12 +10,16 @@ que é enviado ao Telegram — do mais barulhento ao mais crítico:
     CRITICAL (4)  só subdomain takeover
 
 Severidade de cada evento (kind + tipo):
-    takeover                  -> CRITICAL
-    cert_expiry / wildcard    -> HIGH
+    takeover (novo/alterado)  -> CRITICAL
+    cert_expiry (novo/escala) -> HIGH
+    wildcard ADDED            -> HIGH
     port/subdomain ADDED      -> HIGH
     http/tls (add/changed)    -> MEDIUM
     http/tls REMOVED,
       port/subdomain removido -> LOW
+    takeover corrigido        -> MEDIUM (aviso de resolução, não alerta crítico)
+    cert renovado, wildcard
+      some ou troca de IP     -> LOW
     dns                       -> DEBUG
 """
 
@@ -70,10 +74,18 @@ def parse_level(value: object, default: Level = Level.MEDIUM) -> Level:
 def _base_severity(e: Event) -> Level:
     """Severidade BASE por (categoria, tipo) — a régua histórica, estável."""
     k, t = e.kind, e.event_type
+    # REMOVED de um PROBLEMA = o problema foi resolvido: não herda a gravidade.
+    # Takeover corrigido vira MEDIUM (chega aos canais padrão como aviso de
+    # resolução — fecha o ciclo do achado mais grave, e é raro); cert renovado
+    # fica LOW (acontece em todo ciclo de renovação).
     if k == Kind.TAKEOVER:
-        return Level.CRITICAL
-    if k in (Kind.CERT_EXPIRY, Kind.WILDCARD):
-        return Level.HIGH
+        return Level.MEDIUM if t == EventType.REMOVED else Level.CRITICAL
+    if k == Kind.CERT_EXPIRY:
+        return Level.LOW if t == EventType.REMOVED else Level.HIGH
+    if k == Kind.WILDCARD:
+        # curinga NOVO é o achado; troca do IP do catch-all (rotação de CDN) ou
+        # curinga removido não é superfície nova.
+        return Level.HIGH if t == EventType.ADDED else Level.LOW
     if k == Kind.NS:  # mudança de nameserver do apex = delegação / possível hijack
         return Level.HIGH
     if k == Kind.MAILSEC:  # SPF/DMARC removido = domínio spoofável -> HIGH
@@ -122,6 +134,7 @@ DMARC_NOT_ENFORCED = "DMARC_NOT_ENFORCED"
 MAIL_PROTECTION_REMOVED = "MAIL_PROTECTION_REMOVED"
 NAMESERVER_CHANGED = "NAMESERVER_CHANGED"
 CERT_EXPIRING = "CERT_EXPIRING"
+ISSUE_RESOLVED = "ISSUE_RESOLVED"
 
 REASON_LABEL = {
     NEW_OPEN_PORT: "porta aberta nova",
@@ -136,6 +149,7 @@ REASON_LABEL = {
     MAIL_PROTECTION_REMOVED: "proteção de e-mail removida",
     NAMESERVER_CHANGED: "nameserver alterado (delegação/hijack)",
     CERT_EXPIRING: "certificado expirando",
+    ISSUE_RESOLVED: "problema resolvido",
 }
 
 
@@ -236,6 +250,8 @@ def assess(e: Event) -> RiskAssessment:
         reasons.append(NAMESERVER_CHANGED)
     if e.kind == Kind.CERT_EXPIRY and e.event_type != EventType.REMOVED:
         reasons.append(CERT_EXPIRING)
+    if e.kind in (Kind.TAKEOVER, Kind.CERT_EXPIRY) and e.event_type == EventType.REMOVED:
+        reasons.append(ISSUE_RESOLVED)
 
     # ── contexto do ativo (anotação transversal) ─────────────────────────
     if criticality == "critical" and level >= Level.MEDIUM:

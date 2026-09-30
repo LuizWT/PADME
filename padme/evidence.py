@@ -63,8 +63,12 @@ def evidence_of(kind: Kind, key: str, value: str | None, metadata: dict | None) 
         return _ev({"type": "dns_ns", "nameserver": md.get("nameserver") or val})
 
     if kind == Kind.MAILSEC:
-        return _ev({"type": "dns_txt", "record": md.get("type"),
-                    "policy": md.get("policy"), "p": md.get("p")})
+        # key = "apex|SPF" / "apex|DMARC": o tipo sai da key e a política do valor
+        # quando o metadata não veio (ex.: REMOVED — a política que foi removida),
+        # como o NS já faz com o nameserver.
+        record = md.get("type") or (key.rsplit("|", 1)[-1].lower() if "|" in key else None)
+        return _ev({"type": "dns_txt", "record": record,
+                    "policy": md.get("policy") or val, "p": md.get("p")})
 
     if kind == Kind.DNS:
         parts = key.split("|", 2)  # key = "host|TYPE|valor"

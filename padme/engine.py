@@ -74,6 +74,11 @@ class Engine:
         result = ScanResult(target=target)
         t0 = time.monotonic()
         log.debug("[%s] scan iniciado", target)
+        # subdomínios já conhecidos (valor = live/quiet anterior): continuam sendo
+        # inspecionados mesmo se a descoberta falhar, e só saem do estado com
+        # prova de DNS (ver carry_forward_subdomains).
+        known_subs = {key: value for (kind, key), value in self.storage.load_state(target).items()
+                      if kind == Kind.SUBDOMAIN.value}
         limits = httpx.Limits(max_connections=self.cfg.concurrency)
         headers = {"User-Agent": _USER_AGENT}
 
@@ -115,6 +120,7 @@ class Engine:
                     cr = await dnsrecon.collect(target, self.cfg.timeout)
                     result.records.extend(cr.records)
                     result.mark_collector("dnsrecon", cr.ok)
+                    result.inconclusive += not cr.ok
                     if cr.ok:  # observação autoritativa -> escopos podem gerar REMOVED
                         result.observed_scopes.add((Kind.NS.value, target))
                         result.observed_scopes.add((Kind.MAILSEC.value, target))
@@ -130,6 +136,7 @@ class Engine:
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
                     result.mark_collector("subdomains", cr.ok)
+                    result.inconclusive += not cr.ok
                     if cr.ok:  # alguma fonte CT respondeu -> escopo observado
                         result.observed_scopes.add((Kind.SUBDOMAIN.value, target))
                 except Exception as exc:  # noqa: BLE001
@@ -142,21 +149,34 @@ class Engine:
                         target, words, self.cfg.timeout, self.cfg.concurrency, wildcard=wc)
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
+                    result.mark_collector("bruteforce", cr.ok)
+                    result.inconclusive += not cr.ok
                     # bruteforce é suplementar: NÃO marca o escopo de subdomínio
                 except FileNotFoundError as exc:
                     # wordlist configurada e ausente: sinal claro, não silêncio
                     log.warning("[%s] bruteforce pulado: %s", target, exc)
+                    result.mark_collector("bruteforce", False)
                     result.errors.append(f"bruteforce: {exc}")
                 except Exception as exc:  # noqa: BLE001
+                    result.mark_collector("bruteforce", False)
                     result.errors.append(f"bruteforce: {exc}")
+            hosts |= set(known_subs)  # conhecidos seguem monitorados mesmo sem descoberta
             log.info("[%s] %d host(s) para inspecionar", target, len(hosts))
 
             # 2. host-level (concorrente)
             tasks = [self._scan_host(h, client, result) for h in sorted(hosts)]
             await asyncio.gather(*tasks)
 
-        # 3. qualidade de sinal: marca subdomínio como live (tem serviço) ou quiet
-        result.records = annotate_liveness(result.records)
+        # 3. subdomínio conhecido que a descoberta não trouxe só sai com prova de DNS
+        result.records = carry_forward_subdomains(
+            result.records, result.observed_scopes, known_subs)
+        # a partir daqui toda ausência de subdomínio foi provada pelo DNS
+        # (o resto foi mantido acima), então o escopo pode gerar REMOVED.
+        result.observed_scopes.add((Kind.SUBDOMAIN.value, target))
+
+        # 4. qualidade de sinal: live (tem serviço) ou quiet — só muda com prova
+        result.records = annotate_liveness(
+            result.records, result.observed_scopes, known_subs, self._live_kinds())
         log.info("[%s] scan concluído: %d host(s), %d record(s), %d erro(s), %dms",
                  target, len(hosts), len(result.records), len(result.errors),
                  int((time.monotonic() - t0) * 1000))
@@ -219,10 +239,17 @@ class Engine:
                     host, "ports", result)
                 _absorb(cr, result, "ports", host)
 
+    def _live_kinds(self) -> tuple[Kind, ...]:
+        """Escopos ativos ligados que sustentam 'live' (HTTP/TLS/portas)."""
+        col = self.cfg.collectors
+        return tuple(k for k, on in ((Kind.HTTP, col.http), (Kind.TLS, col.tls),
+                                     (Kind.PORT, col.ports)) if on)
+
     def apply(self, result: ScanResult) -> list[Event]:
         return self.storage.apply_scan(
             result.target, result.records, observed_scopes=result.observed_scopes,
             source=self.cfg.source, context_rules=self.cfg.context.assets,
+            complete=result.complete,
         )
 
 
@@ -237,9 +264,13 @@ async def _safe(coro, host: str, name: str, result: ScanResult) -> CollectionRes
 
 
 def _absorb(cr: CollectionResult, result: ScanResult, name: str, host: str) -> None:
-    """Junta os records e, se a coleta foi autoritativa, marca o escopo observado."""
+    """Junta os records e, se a coleta foi autoritativa, marca o escopo observado.
+    `ok=False` sem `error` é coleta INCONCLUSIVA (timeout, sem resposta); com
+    `error` veio de exceção (`_safe`) e já está em `result.errors`."""
     result.records.extend(cr.records)
     result.mark_collector(name, cr.ok)
+    if not cr.ok and not cr.error:
+        result.inconclusive += 1
     if cr.ok:
         scope_kind = _SCOPE_KIND[name]
         result.observed_scopes.add((scope_kind.value, host))
@@ -284,23 +315,76 @@ async def _resolve_ips_quick(host: str, timeout: float) -> set[str]:
     return {info[4][0] for info in infos}
 
 
-def annotate_liveness(records: list[Record]) -> list[Record]:
+def _dns_hosts(records: list[Record]) -> set[str]:
+    """Hosts com algum registro DNS neste scan."""
+    return {r.key.split("|", 1)[0] for r in records if r.kind == Kind.DNS}
+
+
+def _dns_gone(host: str, observed: set[tuple[str, str]], dns_hosts: set[str]) -> bool:
+    """O nome deixou de resolver: DNS observado com sucesso e sem nenhum registro
+    (NXDOMAIN / sem A, AAAA, CNAME ou MX). É a prova usada para "sumiu"."""
+    return (Kind.DNS.value, host) in observed and host not in dns_hosts
+
+
+def carry_forward_subdomains(records: list[Record], observed: set[tuple[str, str]],
+                             known: dict[str, str]) -> list[Record]:
+    """Subdomínio já conhecido que a descoberta NÃO trouxe neste scan é mantido,
+    a menos que o DNS dele tenha sido observado e o nome não resolva mais.
+
+    Ausência na descoberta não é remoção: o CT pode cair ou voltar vazio, o
+    bruteforce trata timeout como "não resolve" e pode ser desligado. Só o DNS do
+    próprio host diz, com autoridade, que o nome deixou de existir."""
+    present = {r.key for r in records if r.kind == Kind.SUBDOMAIN}
+    dns_hosts = _dns_hosts(records)
+    out = list(records)
+    for host, value in sorted(known.items()):
+        if host not in present and not _dns_gone(host, observed, dns_hosts):
+            out.append(Record(Kind.SUBDOMAIN, host, value))
+    return out
+
+
+def annotate_liveness(records: list[Record],
+                      observed: set[tuple[str, str]] | None = None,
+                      previous: dict[str, str] | None = None,
+                      live_kinds: tuple[Kind, ...] = (Kind.HTTP, Kind.TLS, Kind.PORT),
+                      ) -> list[Record]:
     """Marca cada subdomínio como 'live' (tem HTTP/TLS/porta viva no scan) ou
     'quiet' (só resolve em DNS). Reduz ruído: alerta vira 'alvo vivo', não só
-    'existe um nome'. Um 'quiet -> live' futuro é sinal de host que acordou."""
+    'existe um nome'. Um 'quiet -> live' futuro é sinal de host que acordou.
+
+    'live' vem de evidência positiva. 'quiet' exige evidência NEGATIVA
+    autoritativa: o nome deixou de resolver, ou todos os collectors ativos
+    ligados observaram o host sem achar nada. Sem isso (timeout, host pulado por
+    IP privado) o valor anterior é mantido — senão um timeout de HTTP viraria um
+    `live -> quiet` falso enquanto o estado HTTP do host segue preservado.
+
+    Sem `observed` (compat), ausência de serviço conta como 'quiet'."""
     live: set[str] = set()
     for r in records:
         if r.kind == Kind.HTTP:
             live.add(r.key.split("://", 1)[-1].split("/", 1)[0])
         elif r.kind in (Kind.TLS, Kind.PORT):
             live.add(r.key.rsplit(":", 1)[0])
+    dns_hosts = _dns_hosts(records)
+    prev = previous or {}
+
+    def quiet_proven(host: str) -> bool:
+        if _dns_gone(host, observed, dns_hosts):
+            return True
+        return bool(live_kinds) and all((k.value, host) in observed for k in live_kinds)
 
     out: list[Record] = []
     for r in records:
-        if r.kind == Kind.SUBDOMAIN:
-            out.append(Record(Kind.SUBDOMAIN, r.key, "live" if r.key in live else "quiet"))
-        else:
+        if r.kind != Kind.SUBDOMAIN:
             out.append(r)
+            continue
+        if r.key in live:
+            value = "live"
+        elif observed is None or quiet_proven(r.key):
+            value = "quiet"
+        else:
+            value = prev.get(r.key) or "quiet"
+        out.append(Record(Kind.SUBDOMAIN, r.key, value, metadata=r.metadata))
     return out
 
 
