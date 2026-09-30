@@ -307,6 +307,10 @@ async def _cmd_doctor(cfg: Config, args) -> int:
             if ch:
                 bits = " ".join(f"{name}={v.get('status')}" for name, v in sorted(ch.items()))
                 print(f"      collectors: {bits}")
+        pend = storage.pending_counts()
+        if pend:
+            bits = " ".join(f"{ch}={n}" for ch, n in sorted(pend.items()))
+            print(f"alertas graves aguardando reenvio: {bits}")
         warns = _config_warnings(cfg)
         if warns:
             print("avisos de configuração:")

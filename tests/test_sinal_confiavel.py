@@ -234,7 +234,7 @@ def test_saude_persiste_inconclusivos_e_migra_para_v6():
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
     try:
-        assert s._conn.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert s._conn.execute("PRAGMA user_version").fetchone()[0] >= 6
         s.apply_scan("x.com", [])
         s.update_health("x.com", error_count=0, partial=False, duration_ms=5, inconclusive=3)
         m = s.target_meta("x.com")

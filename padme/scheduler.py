@@ -4,6 +4,11 @@ Roda um scan de todos os alvos, aplica o diff, notifica só o que mudou (cada
 canal pelo seu próprio nível), e dorme até a próxima varredura. O primeiro
 ciclo de um alvo novo grava o baseline (sem spam de "tudo é novo" e sem poluir
 o histórico).
+
+Alerta grave não se perde em silêncio: se um canal falha ao entregar um evento
+HIGH ou CRITICAL, ele entra numa fila no banco e é reenviado a esse canal no
+ciclo seguinte (e depois de um reinício). Desiste após `_RETRY_MAX_ATTEMPTS`
+tentativas ou `_RETRY_MAX_AGE`, com log de erro — nunca some sem aviso.
 """
 
 from __future__ import annotations
@@ -17,10 +22,72 @@ from .alerts import damp_flapping
 from .config import Config
 from .engine import Engine, build_notifiers, summarize_health
 from .heartbeat import from_config as heartbeat_from_config
+from .levels import Level, filter_events, severity
+from .models import Event
 from .notify import NotificationManager
 from .storage import Storage
 
 log = logging.getLogger("padme")
+
+_RETRY_MIN_LEVEL = Level.HIGH      # só alerta grave entra na fila de reenvio
+_RETRY_MAX_ATTEMPTS = 5
+_RETRY_MAX_AGE = 24 * 3600         # segundos
+
+
+def queue_failed(storage: Storage, notifiers: list, results: list, target: str,
+                 events: list[Event]) -> int:
+    """Enfileira, por canal que FALHOU, os eventos graves que ele deveria ter
+    entregue (os que passam no nível dele). Devolve quantos entraram na fila."""
+    queued = 0
+    for n, r in zip(notifiers, results):
+        if r.ok:
+            continue
+        chosen = [e.event_id for e in filter_events(events, n.level)
+                  if severity(e) >= _RETRY_MIN_LEVEL and e.event_id]
+        if chosen:
+            storage.queue_notifications(n.name, target, chosen)
+            queued += len(chosen)
+    return queued
+
+
+async def retry_pending(storage: Storage, notifier: NotificationManager) -> None:
+    """Reenvia a cada canal os alertas graves que ele não entregou antes."""
+    now = time.time()
+    for n in notifier.notifiers:
+        rows = storage.pending_notifications(n.name)
+        if not rows:
+            continue
+        expired = [r["event_id"] for r in rows
+                   if r["attempts"] >= _RETRY_MAX_ATTEMPTS or now - r["created_at"] > _RETRY_MAX_AGE]
+        if expired:
+            storage.resolve_notifications(n.name, expired)
+            log.error("notification.%s: DESISTINDO de %d alerta(s) grave(s) não entregue(s) "
+                      "após %d tentativas/%dh — veja o painel/histórico.",
+                      n.name, len(expired), _RETRY_MAX_ATTEMPTS, _RETRY_MAX_AGE // 3600)
+        by_target: dict[str, list[str]] = {}
+        for r in rows:
+            if r["event_id"] not in expired:
+                by_target.setdefault(r["target"], []).append(r["event_id"])
+        for target, ids in by_target.items():
+            events = storage.events_by_ids(ids)
+            gone = set(ids) - {e.event_id for e in events}
+            if gone:  # evento apagado pela retenção: não há o que reenviar
+                storage.resolve_notifications(n.name, list(gone))
+            if not events:
+                continue
+            try:
+                res = await n.notify_events(target, events)
+                ok = res.ok
+            except Exception as exc:  # noqa: BLE001 — canal quebrado não derruba o loop
+                log.debug("notification.%s: reenvio falhou: %s", n.name, type(exc).__name__)
+                ok = False
+            sent = [e.event_id for e in events]
+            if ok:
+                storage.resolve_notifications(n.name, sent)
+                log.info("[%s] notification.%s: %d alerta(s) pendente(s) reenviado(s).",
+                         target, n.name, len(sent))
+            else:
+                storage.bump_notifications(n.name, sent)
 
 
 async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
@@ -65,8 +132,11 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
                 results = await notifier.dispatch(target, to_notify)
                 failed = [r for r in results if not r.ok]
                 if failed:
-                    log.warning("[%s] notificação falhou em %d canal(is): %s", target,
-                                len(failed), ", ".join(r.channel for r in failed))
+                    queued = queue_failed(storage, notifier.notifiers, results, target, to_notify)
+                    log.warning("[%s] notificação falhou em %d canal(is): %s%s", target,
+                                len(failed), ", ".join(r.channel for r in failed),
+                                f" — {queued} alerta(s) grave(s) na fila de reenvio"
+                                if queued else "")
         else:
             log.info("[%s] sem mudanças.", target)
     return scan_ok
@@ -97,6 +167,8 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
     try:
         while True:
             cycle += 1
+            if notifier:  # antes do scan: cobre também o que ficou de um reinício
+                await retry_pending(storage, notifier)
             cycle_ok = await _run_cycle(cfg, engine, storage, notifier, cycle)
             if heartbeat:
                 await heartbeat.beat(cycle, ok=cycle_ok)

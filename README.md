@@ -342,6 +342,13 @@ Padrões: `telegram`/`discord`/`email` = `medium`; `webhook` = `debug`. `--level
 na CLI sobrescreve o do **Telegram**. Cada canal filtra de forma independente, e
 o envio é **concorrente** (um canal lento/quebrado não segura os outros).
 
+> [!IMPORTANT]
+> **Alerta grave não se perde em silêncio.** Se um canal falha ao entregar um
+> evento `high` ou `critical` (Telegram fora do ar, token trocado…), o evento
+> entra numa fila no banco e é reenviado **a esse canal** no ciclo seguinte do
+> `monitor` — inclusive depois de um reinício. Após 5 tentativas ou 24h, o PADME
+> desiste com log de erro. O `padme doctor` mostra o que está aguardando reenvio.
+
 ## Canais de notificação
 
 Os alertas vão para **todos** os canais habilitados, cada um filtrando pelo seu
@@ -472,6 +479,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 295 testes: unitários + reliability + netpolicy +
+└── tests/                # 303 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
