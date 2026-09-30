@@ -119,6 +119,7 @@ async def _resolves(resolver, target: str) -> str:
 async def _body(
     client: httpx.AsyncClient, host: str, cache: dict[str, str] | None = None,
     follow_redirects: bool = False, max_bytes: int = DEFAULT_MAX_BYTES,
+    allow_private: bool = False,
 ) -> tuple[str, bool]:
     """Retorna (corpo, buscado_ok). buscado_ok=False se nenhum esquema respondeu
     (a checagem de fingerprint fica inconclusiva). Corpo limitado a max_bytes."""
@@ -127,7 +128,8 @@ async def _body(
         if cache is not None and url in cache:  # reaproveita o GET do collector HTTP
             return cache[url], True
         try:
-            _, body = await _fetch_limited(client, url, follow_redirects, max_bytes)
+            _, body = await _fetch_limited(client, url, follow_redirects, max_bytes,
+                                           allow_private)
             return body, True
         except Exception:
             continue
@@ -137,7 +139,7 @@ async def _body(
 async def collect_host(
     host: str, client: httpx.AsyncClient, timeout: float,
     cache: dict[str, str] | None = None, follow_redirects: bool = False,
-    max_bytes: int = DEFAULT_MAX_BYTES,
+    max_bytes: int = DEFAULT_MAX_BYTES, allow_private: bool = False,
 ) -> CollectionResult:
     target, resolves, cname_ok = await _cname_target(host, timeout)
     if target is None:
@@ -157,7 +159,8 @@ async def collect_host(
         elif not resolves:
             reason = "CNAME dangling (NXDOMAIN)"
     elif fp["fingerprint"]:
-        body, fetched = await _body(client, host, cache, follow_redirects, max_bytes)
+        body, fetched = await _body(client, host, cache, follow_redirects, max_bytes,
+                                    allow_private)
         if not fetched:
             ok = False  # não conseguimos o corpo -> inconclusivo, preserva
         elif fp["fingerprint"].lower() in body.lower():

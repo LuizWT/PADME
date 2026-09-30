@@ -5,7 +5,10 @@ Registra status, header Server e o <title> da página. Mudança de status
 
 Segurança (anti-SSRF): NÃO segue redirects por padrão — um `Location:
 http://127.0.0.1/` transformaria o monitor em proxy pra rede interna. Quando
-não segue, registra o destino do redirect.
+não segue, registra o destino do redirect. Com `follow_redirects` ligado, os
+saltos são seguidos MANUALMENTE (`open_stream`) e cada destino passa pela
+política de rede antes da requisição; salto bloqueado não é seguido e o 3xx é
+registrado como se o follow estivesse desligado.
 
 Memória: lê no máximo `max_bytes` do corpo (streaming) — não baixa uma página
 de 100 MB só pra extrair um `<title>`. O corpo (truncado) é reaproveitado pelo
@@ -18,14 +21,20 @@ virar "removido".
 
 from __future__ import annotations
 
+import logging
 import re
+from contextlib import asynccontextmanager
 
 import httpx
 
+from .. import netpolicy
 from ..models import CollectionResult, Kind, Record
+
+log = logging.getLogger("padme")
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 DEFAULT_MAX_BYTES = 262144  # 256 KiB — suficiente p/ <title> e fingerprints
+MAX_REDIRECTS = 5          # teto de saltos quando follow_redirects está ligado
 
 # ── postura de cabeçalhos de segurança (sinal RED, sem request extra) ────────
 # Reaproveita a MESMA resposta do GET. `value` lista o que FALTA (o achado);
@@ -94,11 +103,44 @@ def _tech_fingerprint(headers) -> list[str]:
     return tech
 
 
+def _hop_timeout(client: httpx.AsyncClient) -> float:
+    t = getattr(client.timeout, "connect", None)
+    return float(t) if t else 5.0
+
+
+@asynccontextmanager
+async def open_stream(client: httpx.AsyncClient, url: str, follow_redirects: bool,
+                      allow_private: bool = False):
+    """GET em streaming. Com `follow_redirects`, segue os saltos À MÃO (nunca
+    pelo httpx), validando cada destino na política de rede ANTES de requisitar.
+    Salto bloqueado, esquema estranho ou teto de saltos -> entrega a própria
+    resposta 3xx (o chamador registra o destino, como no follow desligado)."""
+    hops = 0
+    while True:
+        async with client.stream("GET", url, follow_redirects=False) as r:
+            nxt = None
+            location = r.headers.get("location", "")
+            if follow_redirects and 300 <= r.status_code < 400 and location \
+                    and hops < MAX_REDIRECTS:
+                candidate = str(r.url.join(location))
+                if await netpolicy.redirect_target_allowed(
+                        candidate, allow_private, _hop_timeout(client)):
+                    nxt = candidate
+                else:
+                    log.debug("redirect NÃO seguido (política de rede): %s -> %s",
+                              r.url, candidate)
+            if nxt is None:
+                yield r
+                return
+        url, hops = nxt, hops + 1
+
+
 async def _fetch_limited(
-    client: httpx.AsyncClient, url: str, follow_redirects: bool, max_bytes: int
+    client: httpx.AsyncClient, url: str, follow_redirects: bool, max_bytes: int,
+    allow_private: bool = False,
 ) -> tuple[httpx.Response, str]:
     """GET com corpo limitado a `max_bytes`. Não lê corpo de redirect (3xx)."""
-    async with client.stream("GET", url, follow_redirects=follow_redirects) as r:
+    async with open_stream(client, url, follow_redirects, allow_private) as r:
         if 300 <= r.status_code < 400:
             return r, ""  # redirect: interessa o Location, não o corpo
         total = 0
@@ -118,13 +160,15 @@ async def collect_host(
     follow_redirects: bool = False,
     max_bytes: int = DEFAULT_MAX_BYTES,
     security: bool = True,
+    allow_private: bool = False,
 ) -> CollectionResult:
     records: list[Record] = []
     observed_any = False
     for scheme in ("https", "http"):
         url = f"{scheme}://{host}"
         try:
-            r, body = await _fetch_limited(client, url, follow_redirects, max_bytes)
+            r, body = await _fetch_limited(client, url, follow_redirects, max_bytes,
+                                           allow_private)
         except Exception:
             continue  # esse esquema não respondeu; tenta o outro
         observed_any = True
