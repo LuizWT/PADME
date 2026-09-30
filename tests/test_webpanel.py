@@ -180,6 +180,40 @@ def test_render_mostra_kpi_de_explicabilidade():
     assert "alertas explicáveis" in out
 
 
+def test_collector_reliability_consolida_e_aponta_degradado():
+    from padme.webpanel import _collector_reliability
+    meta = {
+        "a.com": {"collectors_health": {
+            "dns": {"status": "ok"}, "http": {"status": "ok"},
+            "tls": {"status": "error"}}},
+        "b.com": {"collectors_health": {
+            "dns": {"status": "ok"}, "ports": {"status": "partial"}}},
+    }
+    rel = _collector_reliability(meta)
+    assert rel["total"] == 5 and rel["ok"] == 3 and rel["pct"] == 60
+    assert rel["has_error"] is True
+    # tls (error) vem antes de ports (partial) na lista de degradados
+    assert rel["degraded"][0] == "tls" and "ports" in rel["degraded"]
+
+
+def test_collector_reliability_none_sem_saude():
+    from padme.webpanel import _collector_reliability
+    assert _collector_reliability({"a.com": {}}) is None
+    assert _collector_reliability({}) is None
+
+
+def test_render_mostra_kpi_de_collectors():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("alvo.com", [Record(Kind.SUBDOMAIN, "api.alvo.com", "live")])
+    s.update_health("alvo.com", error_count=0, partial=False, duration_ms=10,
+                    collectors={"dns": {"status": "ok"}, "http": {"status": "ok"}})
+    s.close()
+    out = _render(Config(targets=["alvo.com"], db_path=db))
+    os.remove(db)
+    assert "collectors confiáveis" in out
+
+
 def test_trend_svg_vazio_nao_quebra():
     serie = [{"day": "2026-09-20", "added": 0, "removed": 0, "changed": 0, "total": 0}]
     out = _trend_svg(serie, days=1)

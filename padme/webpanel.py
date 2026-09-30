@@ -425,6 +425,36 @@ def _explainability(events_by_target: dict) -> dict | None:
             "pct": round(100 * explained / high), "missing": missing}
 
 
+_HEALTH_RANK = {"ok": 0, "partial": 1, "error": 2}
+
+
+def _collector_reliability(meta: dict) -> dict | None:
+    """Confiabilidade dos collectors (§27) consolidada entre os alvos. Cada
+    (alvo, collector) do último scan conta como uma observação; a cobertura é a
+    fração `ok`. Aponta os collectors degradados (o pior status visto) — um
+    collector em erro significa cegueira parcial da superfície, não 'tudo limpo'.
+    Reusa `collectors_health` já gravado por scan; sem query nova."""
+    total = ok = 0
+    degraded: dict[str, str] = {}  # collector -> pior status visto
+    for m in meta.values():
+        ch = (m or {}).get("collectors_health") or {}
+        for name, v in ch.items():
+            st = (v or {}).get("status")
+            if st not in _HEALTH_RANK:
+                continue
+            total += 1
+            if st == "ok":
+                ok += 1
+            elif _HEALTH_RANK[st] > _HEALTH_RANK.get(degraded.get(name, "ok"), 0):
+                degraded[name] = st
+    if total == 0:
+        return None
+    worst = sorted(degraded, key=lambda n: -_HEALTH_RANK[degraded[n]])
+    has_error = any(s == "error" for s in degraded.values())
+    return {"total": total, "ok": ok, "pct": round(100 * ok / total),
+            "degraded": worst, "has_error": has_error}
+
+
 def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: int,
                  explain: dict | None = None) -> str:
     assets = sum(len(v) for kinds in by_target.values() for v in kinds.values())
@@ -441,6 +471,14 @@ def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: i
              f"{partial} parcial(is)" if partial else "sem coleta parcial",
              cls=("warn" if partial else "ok")),
     ]
+    rel = _collector_reliability(meta)
+    if rel:  # §27: confiabilidade dos collectors (só quando há saúde registrada)
+        pct = rel["pct"]
+        cls = "crit" if rel["has_error"] else ("warn" if rel["degraded"] else "ok")
+        sub = (f"{rel['ok']}/{rel['total']} observações ok"
+               if not rel["degraded"] else
+               f"{rel['ok']}/{rel['total']} ok · degradado: " + ", ".join(rel["degraded"]))
+        tiles.append(_kpi(f"{pct}%", "collectors confiáveis", sub, cls=cls))
     if explain:  # §27: só aparece quando há evento HIGH/CRITICAL recente p/ medir
         pct = explain["pct"]
         cls = "ok" if pct == 100 else ("warn" if pct >= 50 else "crit")
