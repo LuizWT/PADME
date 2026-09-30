@@ -215,6 +215,12 @@ pip install -r requirements.txt         # ou: pip install -e .
 cp config.example.yaml config.yaml      # e edite
 ```
 
+> [!NOTE]
+> O `requirements.txt` é um **lock com versões fixas** (inclusive dependências
+> transitivas), o mesmo que a imagem Docker e o CI instalam — build reproduzível.
+> O `pyproject.toml` mantém faixas compatíveis para quem instala como pacote.
+> O CI roda `pip-audit` sobre o lock a cada push.
+
 Ou instale como comando isolado, sem mexer no seu Python, com **pipx**:
 
 ```bash
@@ -256,6 +262,12 @@ mkdir -p data && cp config.example.yaml data/config.yaml   # edite
 docker compose up -d
 docker compose logs -f
 ```
+
+> [!NOTE]
+> A imagem traz um `HEALTHCHECK` (`padme health`): o container fica `unhealthy`
+> se o último scan passou de `2*interval_seconds + 10min` (loop travado, banco
+> inacessível). `docker stop` manda SIGTERM, tratado como o Ctrl+C: o monitor
+> avisa "monitoramento encerrado" nos canais e fecha o banco antes de sair.
 
 > [!TIP]
 > `--user "$(id -u):$(id -g)"` faz o `padme.db` sair com o dono certo no host.
@@ -317,6 +329,10 @@ python -m padme test-notify
 
 # Diagnóstico: integridade do banco, saúde dos scans por alvo e avisos de config
 python -m padme doctor
+
+# Liveness (exit 0/1, sem rede): o último scan é recente? Para HEALTHCHECK/cron
+python -m padme health                 # limite padrão: 2*interval_seconds + 10min
+python -m padme health --max-age 7200
 
 # Multi-vantage: consolidar exports de várias máquinas/IPs e ver divergências
 python -m padme merge casa.json vps-eu.json --out consolidado.json
@@ -477,9 +493,10 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 ## Testes
 
 ```bash
-pip install pytest ruff
+pip install -r requirements-dev.txt   # lock + pytest/ruff/pip-audit fixos
 ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
-pytest -q                        # 212 testes
+pytest -q
+pip-audit -r requirements.txt    # CVEs conhecidas nas dependências fixas
 ```
 
 ## Estrutura
@@ -487,7 +504,7 @@ pytest -q                        # 212 testes
 ```
 padme/
 ├── padme/
-│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor / backup / merge
+│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor / health / backup / merge
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── risk.py           # motor de risco: severidade base + assess() (severity+confidence+reason codes)
@@ -521,6 +538,7 @@ padme/
 ├── .dockerignore
 ├── config.example.yaml
 ├── requirements.txt
+├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
 └── tests/                # 329 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração

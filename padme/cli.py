@@ -9,6 +9,7 @@ Comandos:
   padme web          -> painel só-leitura
   padme doctor       -> integridade do banco, saúde dos scans e avisos de config
   padme backup       -> backup online consistente do SQLite
+  padme health       -> o monitor está varrendo? (exit 0/1, p/ HEALTHCHECK/cron)
   padme test-notify  -> testa todos os canais configurados
 
 Uso responsável: monitore apenas ativos que você é dono ou tem autorização
@@ -41,7 +42,7 @@ from .logredact import install_secret_redaction
 from .models import Event
 from .risk import Level
 from .scheduler import run_monitor
-from .storage import Storage
+from .storage import Storage, StorageOutdated
 
 _LEVEL_CHOICES = [lv.name.lower() for lv in Level]
 
@@ -324,6 +325,32 @@ async def _cmd_backup(cfg: Config, args) -> int:
     return 0
 
 
+async def _cmd_health(cfg: Config, args) -> int:
+    """Liveness do sentinela, SEM rede e sem escrita: o último scan de algum alvo
+    é recente? Serve de HEALTHCHECK do Docker / check de cron. Exit 0 = saudável,
+    1 = parado/atrasado/sem banco. Coleta parcial NÃO derruba (isso é o doctor)."""
+    max_age = args.max_age if args.max_age is not None else 2 * cfg.interval_seconds + 600
+    try:
+        storage = Storage(cfg.db_path, readonly=True)
+    except (FileNotFoundError, StorageOutdated) as exc:
+        print(f"unhealthy: {exc}")
+        return 1
+    try:
+        last = [m.get("last_scan_at") for t in cfg.targets
+                if (m := storage.target_meta(t)) and m.get("last_scan_at")]
+    finally:
+        storage.close()
+    if not last:
+        print("unhealthy: nenhum scan registrado ainda")
+        return 1
+    age = datetime.now().timestamp() - max(last)
+    if age > max_age:
+        print(f"unhealthy: último scan há {int(age)}s (limite {max_age}s)")
+        return 1
+    print(f"healthy: último scan há {int(age)}s")
+    return 0
+
+
 async def _cmd_test_notify(cfg: Config, args) -> int:
     notifiers = build_notifiers(cfg)
     if not notifiers:
@@ -355,7 +382,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="limiar de severidade de TODOS os canais (sobrescreve o config)")
     sp.set_defaults(func=_cmd_scan)
 
-    mp = sub.add_parser("monitor", help="modo sentinela: varre em loop e alerta no Telegram")
+    mp = sub.add_parser("monitor", help="modo sentinela: varre em loop e alerta nos canais configurados")
     mp.add_argument("--interval", type=int, default=None, help="sobrescreve interval_seconds")
     mp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
                     help="limiar de severidade de TODOS os canais (sobrescreve o config)")
@@ -392,6 +419,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="destino do backup (padrão: padme-backup-<timestamp>.db)")
     bk.set_defaults(func=_cmd_backup)
 
+    hp = sub.add_parser("health", help="liveness do monitor pelo banco (exit 0/1; HEALTHCHECK/cron)")
+    hp.add_argument("--max-age", type=int, default=None, metavar="SEG",
+                    help="idade máxima do último scan (padrão: 2*interval_seconds + 600)")
+    hp.set_defaults(func=_cmd_health)
+
     mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
     mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
     mg.add_argument("--out", default=None, help="grava a consolidação em JSON (padrão: resumo no stdout)")
@@ -422,7 +454,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"aviso de config: {w}", file=sys.stderr)
 
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-notify", "web", "doctor", "merge", "backup")
+    read_only = args.command in ("events", "export", "test-notify", "web", "doctor", "merge", "backup",
+                                 "health")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"

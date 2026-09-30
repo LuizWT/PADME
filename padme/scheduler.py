@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -168,7 +169,22 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
     return scan_ok
 
 
+def _cancel_on_sigterm() -> bool:
+    """`docker stop` / `systemctl stop` mandam SIGTERM, e o padrão do Python é
+    morrer ali mesmo — sem `finally` (banco aberto no meio de um ciclo) e sem
+    avisar que parou. Aqui o SIGTERM cancela a task principal: mesmo caminho do
+    Ctrl+C (avisa o encerramento, fecha o banco). Devolve se instalou."""
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    try:
+        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+    except (NotImplementedError, RuntimeError, ValueError):  # Windows / thread não-principal
+        return False
+    return True
+
+
 async def run_monitor(cfg: Config, once: bool = False) -> None:
+    sigterm = _cancel_on_sigterm()
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
     notifier = NotificationManager(build_notifiers(cfg))
@@ -214,7 +230,12 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
                      next_run.strftime("%H:%M:%S"))
             await asyncio.sleep(interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
+        task = asyncio.current_task()
+        if task is not None and hasattr(task, "uncancel"):
+            task.uncancel()  # cancelamento já tratado: o aviso abaixo pode usar rede
         log.info("Encerrando sentinela.")
         await notifier.announce("monitoramento encerrado.")
     finally:
         storage.close()
+        if sigterm:
+            asyncio.get_running_loop().remove_signal_handler(signal.SIGTERM)

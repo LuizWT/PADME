@@ -15,16 +15,23 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Instala o pacote (o pyproject já traz as dependências e o entrypoint `padme`).
+# Dependências nas versões FIXAS do lock (build reproduzível), depois o pacote
+# sem resolver dependências de novo (o entrypoint `padme` vem do pyproject).
 COPY pyproject.toml requirements.txt README.md ./
 COPY padme ./padme
-RUN pip install --no-cache-dir . \
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --no-deps . \
     && useradd --system --uid 1000 --create-home --home-dir /data padme
 
 # /data guarda config.yaml, .env e padme.db — monte um volume aqui.
 WORKDIR /data
 USER padme
 VOLUME ["/data"]
+
+# Liveness pelo banco (sem rede): unhealthy se o último scan passou de
+# 2*interval_seconds + 10min. start-period cobre a baseline do primeiro ciclo.
+HEALTHCHECK --interval=5m --timeout=30s --start-period=30m --retries=3 \
+    CMD ["padme", "-c", "/data/config.yaml", "health"]
 
 # `padme -c /data/config.yaml <comando>`; padrão: modo sentinela.
 ENTRYPOINT ["padme", "-c", "/data/config.yaml"]
