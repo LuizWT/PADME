@@ -173,9 +173,15 @@ superfície nova servida ali). Os SANs também vão na evidência (`tls_handshak
 - **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
   lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
 - **Pacing responsável (`network.rate_limit_rps` / `per_host_interval_ms` /
-  `jitter_ms`, padrão desligado).** Teto global de requisições/segundo com jitter
-  e intervalo mínimo por host — o monitor 24/7 não martela o alvo nem dispara
-  WAF/rate-limit. Não aumenta agressividade; só torna o scan previsível e educado.
+  `jitter_ms`, padrão desligado).** Teto global de sondas/segundo com jitter e
+  intervalo mínimo por host, aplicado a **toda sondagem ativa**: requisições
+  HTTP, connects de porta, handshakes TLS e consultas do bruteforce — o monitor
+  24/7 não martela o alvo nem dispara WAF/rate-limit. Não aumenta agressividade;
+  só torna o scan previsível e educado.
+- **Teto de connects de porta (`network.max_parallel_connects`, padrão `256`).**
+  Limita quantas conexões TCP do scan de portas ficam abertas ao mesmo tempo,
+  somando todos os hosts — uma lista grande de portas não esgota os file
+  descriptors da máquina nem vira rajada contra o alvo.
 - **Retry educado (`network.max_retries`, padrão `2`).** Requisições HTTP do scan
   recuam com backoff exponencial + jitter em `429`/`5xx` transitório (respeitando
   `Retry-After`) e em hiccup de conexão/timeout. `4xx` permanente nunca repete.

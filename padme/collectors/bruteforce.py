@@ -86,7 +86,7 @@ async def _resolve_ips(resolver, host: str) -> set[str]:
 
 async def collect(target: str, words: list[str], timeout: float,
                   concurrency: int = 50,
-                  wildcard: Wildcard | None = None) -> CollectionResult:
+                  wildcard: Wildcard | None = None, pace=None) -> CollectionResult:
     if not _HAS_DNS:
         return CollectionResult(records=[], ok=False)
     resolver = dns.asyncresolver.Resolver()
@@ -98,6 +98,8 @@ async def collect(target: str, words: list[str], timeout: float,
 
     async def check(host: str) -> None:
         async with sem:
+            if pace is not None:  # rate-limit: as consultas chegam ao NS do alvo
+                await pace(host)
             ips = await _resolve_ips(resolver, host)
             if not ips:
                 return

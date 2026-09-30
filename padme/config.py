@@ -156,6 +156,7 @@ class NetworkConfig:
     jitter_ms: int = 0                 # jitter somado ao espaçamento global
     per_host_interval_ms: int = 0      # intervalo mínimo entre requisições ao mesmo host
     max_retries: int = 2               # nº de retries HTTP em 429/5xx transitório (0 = off)
+    max_parallel_connects: int = 256   # teto de connects de porta simultâneos (todos os hosts)
 
 
 @dataclass
@@ -334,6 +335,8 @@ class Config:
                 jitter_ms=_as_int(net.get("jitter_ms"), "network.jitter_ms", 0),
                 per_host_interval_ms=_as_int(net.get("per_host_interval_ms"), "network.per_host_interval_ms", 0),
                 max_retries=_as_int(net.get("max_retries"), "network.max_retries", 2),
+                max_parallel_connects=_as_int(net.get("max_parallel_connects"),
+                                              "network.max_parallel_connects", 256),
             ),
             storage=StorageConfig(
                 event_retention_days=_as_int(stg.get("event_retention_days"), "storage.event_retention_days", 0),
@@ -453,6 +456,8 @@ def _validate(cfg: "Config") -> None:
     for p in c.ports_list:
         if not (1 <= p <= 65535):
             errs.append(f"collectors.ports_list: porta fora de 1..65535: {p}")
+    if cfg.network.max_parallel_connects <= 0:
+        errs.append("network.max_parallel_connects deve ser > 0")
     if cfg.storage.event_retention_days < 0:
         errs.append("storage.event_retention_days deve ser >= 0")
     if cfg.alerts.flap_threshold < 0:

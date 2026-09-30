@@ -79,6 +79,8 @@ class Engine:
         # prova de DNS (ver carry_forward_subdomains).
         known_subs = {key: value for (kind, key), value in self.storage.load_state(target).items()
                       if kind == Kind.SUBDOMAIN.value}
+        # teto de connects de porta simultâneos no scan inteiro (todos os hosts)
+        self._connect_limit = asyncio.Semaphore(self.cfg.network.max_parallel_connects)
         limits = httpx.Limits(max_connections=self.cfg.concurrency)
         headers = {"User-Agent": _USER_AGENT}
 
@@ -146,7 +148,8 @@ class Engine:
                 try:
                     words = bruteforce.load_words(self.cfg.collectors.wordlist)
                     cr = await bruteforce.collect(
-                        target, words, self.cfg.timeout, self.cfg.concurrency, wildcard=wc)
+                        target, words, self.cfg.timeout, self.cfg.concurrency, wildcard=wc,
+                        pace=self._rate.acquire)
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
                     result.mark_collector("bruteforce", cr.ok)
@@ -226,7 +229,8 @@ class Engine:
                 _absorb(cr, result, "favicon", host)
             if col.tls:
                 cr = await _safe(
-                    tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days),
+                    tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days,
+                                     pace=self._rate.acquire),
                     host, "tls", result)
                 _absorb(cr, result, "tls", host)
             if col.takeover:
@@ -238,7 +242,8 @@ class Engine:
                 _absorb(cr, result, "takeover", host)
             if col.ports:
                 cr = await _safe(
-                    ports.collect_host(host, col.ports_list, self.cfg.timeout, col.ports_banner),
+                    ports.collect_host(host, col.ports_list, self.cfg.timeout, col.ports_banner,
+                                       pace=self._rate.acquire, limit=self._connect_limit),
                     host, "ports", result)
                 _absorb(cr, result, "ports", host)
 
