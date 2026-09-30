@@ -143,12 +143,6 @@ class Event:
     detected_at: str | None = None
     metadata: dict = field(default_factory=dict)  # snapshot do metadata do Record
 
-    @property
-    def is_noteworthy(self) -> bool:
-        # Toda mudança é digna de nota; ponto único de ajuste caso queira
-        # silenciar categorias no futuro.
-        return True
-
 
 @dataclass
 class CollectionResult:

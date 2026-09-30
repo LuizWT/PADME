@@ -16,11 +16,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Instalar dependências
-        run: pip install -r requirements.txt pytest ruff
+      - name: Instalar dependências (versões fixas)
+        run: pip install -r requirements-dev.txt
       - name: Lint (ruff)
         run: ruff check padme tests
       - name: Compileall
         run: python -m compileall -q padme
       - name: Testes
         run: pytest -q
+
+  audit:
+    # Uma ferramenta de segurança audita as próprias dependências: falha se o
+    # lock (requirements.txt) tiver vulnerabilidade conhecida.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar pip-audit
+        run: pip install pip-audit==2.10.1
+      - name: Auditar dependências
+        run: pip-audit -r requirements.txt

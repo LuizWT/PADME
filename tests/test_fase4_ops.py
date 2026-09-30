@@ -83,13 +83,17 @@ def test_doctor(capsys):
 
 # ── §33/§35/§36 avisos de config (via doctor) ───────────────────────────────
 def test_config_warnings():
-    from padme.cli import _config_warnings
-    from padme.config import Config, TelegramConfig
+    import pytest
 
-    cfg = Config(targets=["x.com"], interval_seconds=0)
+    from padme.cli import _config_warnings
+    from padme.config import Config, TelegramConfig, _validate
+
+    # limite numérico é erro de carregamento (config._validate), não aviso do doctor
+    with pytest.raises(ValueError, match="interval_seconds"):
+        _validate(Config(targets=["x.com"], interval_seconds=0))
+    cfg = Config(targets=["x.com"])
     cfg.telegram = TelegramConfig(enabled=True, bot_token="SEU_BOT_TOKEN_AQUI", chat_id="")
     w = _config_warnings(cfg)
-    assert any("interval_seconds" in x for x in w)
     assert any("telegram" in x for x in w)
 
 

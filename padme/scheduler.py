@@ -15,16 +15,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from .alerts import damp_flapping
 from .config import Config
 from .engine import Engine, build_notifiers, summarize_health
 from .heartbeat import from_config as heartbeat_from_config
-from .levels import Level, filter_events, severity
-from .models import Event
+from .models import Event, ScanResult
 from .notify import NotificationManager
+from .risk import Level, filter_events, severity
 from .storage import Storage
 
 log = logging.getLogger("padme")
@@ -90,6 +92,47 @@ async def retry_pending(storage: Storage, notifier: NotificationManager) -> None
                 storage.bump_notifications(n.name, sent)
 
 
+@dataclass
+class TargetOutcome:
+    """O que aconteceu com um alvo num ciclo (para o monitor logar e o `scan`
+    imprimir — o mesmo caminho, sem duas cópias do ciclo)."""
+    result: ScanResult
+    events: list[Event]
+    first: bool              # era a baseline deste alvo
+    provisional: bool        # baseline ficou provisória (coleta incompleta)
+    flapped: int = 0         # eventos suprimidos da notificação por flapping
+    failed_channels: list[str] = field(default_factory=list)
+    queued: int = 0          # alertas graves que foram para a fila de reenvio
+
+
+async def scan_one(cfg: Config, engine: Engine, storage: Storage,
+                   notifier: NotificationManager | None, target: str) -> TargetOutcome:
+    """Um alvo, de ponta a ponta: scan -> diff -> saúde -> flapping ->
+    notificação por canal -> fila de reenvio do que falhou. Exceção FATAL de
+    scan propaga (quem chama decide: o monitor loga e segue, o `scan` aborta)."""
+    first = not storage.is_known_target(target)
+    t0 = time.monotonic()
+    result = await engine.scan_target(target)
+    events = engine.apply(result)
+    storage.update_health(target, error_count=len(result.errors),
+                          partial=bool(result.errors),
+                          duration_ms=int((time.monotonic() - t0) * 1000),
+                          collectors=summarize_health(result),
+                          inconclusive=result.inconclusive)
+    out = TargetOutcome(result, events, first,
+                        provisional=first and not storage.is_known_target(target))
+    if first or not events:
+        return out
+    to_notify, out.flapped = damp_flapping(
+        storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
+    if notifier and to_notify:
+        results = await notifier.dispatch(target, to_notify)
+        out.failed_channels = [r.channel for r in results if not r.ok]
+        if out.failed_channels:
+            out.queued = queue_failed(storage, notifier.notifiers, results, target, to_notify)
+    return out
+
+
 async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
                      notifier: NotificationManager, cycle: int) -> bool:
     """Roda um ciclo (todos os alvos). Devolve `scan_ok`: o dead-man's switch
@@ -99,50 +142,49 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
     ≠ heartbeat), mas NÃO viram ping de falha."""
     scan_ok = True
     for target in cfg.targets:
-        first = not storage.is_known_target(target)
-        t0 = time.monotonic()
         try:
-            result = await engine.scan_target(target)
-            events = engine.apply(result)
+            o = await scan_one(cfg, engine, storage, notifier, target)
         except Exception as exc:  # noqa: BLE001
             log.error("[%s] scan falhou: %s", target, exc)
             scan_ok = False
             continue
-
-        errs = len(result.errors)
-        storage.update_health(target, error_count=errs, partial=errs > 0,
-                              duration_ms=int((time.monotonic() - t0) * 1000),
-                              collectors=summarize_health(result),
-                              inconclusive=result.inconclusive)
-        if errs:
+        if o.result.errors:
             log.warning("[%s] coleta PARCIAL: %d erro(s) de collector (estado preservado).",
-                        target, errs)
-
-        if first and not storage.is_known_target(target):
+                        target, len(o.result.errors))
+        if o.provisional:
             log.info("[%s] baseline PROVISÓRIA (coleta incompleta): consolida no próximo "
                      "ciclo, sem gerar eventos.", target)
-        elif first:
-            log.info("[%s] baseline gravado (%d itens no estado).", target, len(result.records))
-        elif events:
-            to_notify, flapped = damp_flapping(
-                storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
-            log.info("[%s] %d mudança(s)%s.", target, len(events),
-                     f"; {flapped} suprimida(s) por flapping" if flapped else "")
-            if notifier and to_notify:
-                results = await notifier.dispatch(target, to_notify)
-                failed = [r for r in results if not r.ok]
-                if failed:
-                    queued = queue_failed(storage, notifier.notifiers, results, target, to_notify)
-                    log.warning("[%s] notificação falhou em %d canal(is): %s%s", target,
-                                len(failed), ", ".join(r.channel for r in failed),
-                                f" — {queued} alerta(s) grave(s) na fila de reenvio"
-                                if queued else "")
+        elif o.first:
+            log.info("[%s] baseline gravado (%d itens no estado).", target, len(o.result.records))
+        elif o.events:
+            log.info("[%s] %d mudança(s)%s.", target, len(o.events),
+                     f"; {o.flapped} suprimida(s) por flapping" if o.flapped else "")
+            if o.failed_channels:
+                log.warning("[%s] notificação falhou em %d canal(is): %s%s", target,
+                            len(o.failed_channels), ", ".join(o.failed_channels),
+                            f" — {o.queued} alerta(s) grave(s) na fila de reenvio"
+                            if o.queued else "")
         else:
             log.info("[%s] sem mudanças.", target)
     return scan_ok
 
 
+def _cancel_on_sigterm() -> bool:
+    """`docker stop` / `systemctl stop` mandam SIGTERM, e o padrão do Python é
+    morrer ali mesmo — sem `finally` (banco aberto no meio de um ciclo) e sem
+    avisar que parou. Aqui o SIGTERM cancela a task principal: mesmo caminho do
+    Ctrl+C (avisa o encerramento, fecha o banco). Devolve se instalou."""
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    try:
+        loop.add_signal_handler(signal.SIGTERM, task.cancel)
+    except (NotImplementedError, RuntimeError, ValueError):  # Windows / thread não-principal
+        return False
+    return True
+
+
 async def run_monitor(cfg: Config, once: bool = False) -> None:
+    sigterm = _cancel_on_sigterm()
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
     notifier = NotificationManager(build_notifiers(cfg))
@@ -188,7 +230,12 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
                      next_run.strftime("%H:%M:%S"))
             await asyncio.sleep(interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
+        task = asyncio.current_task()
+        if task is not None and hasattr(task, "uncancel"):
+            task.uncancel()  # cancelamento já tratado: o aviso abaixo pode usar rede
         log.info("Encerrando sentinela.")
         await notifier.announce("monitoramento encerrado.")
     finally:
         storage.close()
+        if sigterm:
+            asyncio.get_running_loop().remove_signal_handler(signal.SIGTERM)

@@ -14,6 +14,7 @@ marca `ok=False` e preserva o estado anterior (não apaga por falha transitória
 
 from __future__ import annotations
 
+from ..mailpolicy import dmarc_tag, spf_all_qualifier
 from ..models import CollectionResult, Kind, Record
 
 try:
@@ -51,15 +52,6 @@ async def _txt_find(resolver, name: str, prefix: str) -> tuple[str | None, bool]
     return None, True  # respondeu, mas não há o registro procurado
 
 
-def _dmarc_policy(txt: str) -> str:
-    """Extrai o p= do DMARC (none/quarantine/reject)."""
-    for part in txt.split(";"):
-        part = part.strip()
-        if part.lower().startswith("p="):
-            return part[2:].strip().lower()
-    return ""
-
-
 async def collect(apex: str, timeout: float) -> CollectionResult:
     if not _HAS_DNS:
         return CollectionResult(records=[], ok=False)
@@ -82,14 +74,17 @@ async def collect(apex: str, timeout: float) -> CollectionResult:
     spf, spf_ok = await _txt_find(resolver, apex, "v=spf1")
     ok = ok and spf_ok
     if spf:
-        records.append(Record(Kind.MAILSEC, f"{apex}|SPF", spf, metadata={"type": "spf", "policy": spf}))
+        records.append(Record(Kind.MAILSEC, f"{apex}|SPF", spf,
+                              metadata={"type": "spf", "policy": spf,
+                                        "all": spf_all_qualifier(spf)}))
 
     # DMARC (TXT em _dmarc.apex)
     dmarc, dmarc_ok = await _txt_find(resolver, f"_dmarc.{apex}", "v=DMARC1")
     ok = ok and dmarc_ok
     if dmarc:
-        p = _dmarc_policy(dmarc)
+        p = dmarc_tag(dmarc, "p")
         records.append(Record(Kind.MAILSEC, f"{apex}|DMARC", dmarc,
-                              metadata={"type": "dmarc", "policy": dmarc, "p": p}))
+                              metadata={"type": "dmarc", "policy": dmarc, "p": p,
+                                        "sp": dmarc_tag(dmarc, "sp")}))
 
     return CollectionResult(records=records, ok=ok)

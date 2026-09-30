@@ -1,7 +1,7 @@
 """Testes dos níveis de notificação."""
 
-from padme.levels import Level, filter_events, parse_level, severity
 from padme.models import Event, EventType, Kind
+from padme.risk import Level, filter_events, parse_level, severity
 
 
 def _ev(kind, etype):

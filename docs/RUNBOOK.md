@@ -92,6 +92,11 @@ journalctl -u padme -f            # logs (sem segredos — são mascarados)
 > SQLite em WAL escreve `padme.db`, `padme.db-wal` e `padme.db-shm` — todos no
 > diretório de dados, que é o único gravável.
 
+> `systemctl stop` manda SIGTERM: o monitor trata como Ctrl+C (avisa
+> "monitoramento encerrado" nos canais e fecha o banco). Para checar liveness de
+> fora (cron, Nagios, uptime-kuma), `padme -c /var/lib/padme/config.yaml health`
+> sai com 1 se o último scan passou de `2*interval_seconds + 10min`.
+
 ### Variante cron-like (sem processo vivo)
 
 Se preferir um ciclo por vez em vez de processo residente, use um `.timer` com

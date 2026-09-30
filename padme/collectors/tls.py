@@ -83,7 +83,12 @@ def _blocking_cert(host: str, port: int, timeout: float) -> dict | None:
 
 async def collect_host(
     host: str, timeout: float, port: int = 443, cert_expiry_days: int = 14, pace=None,
+    handshake_fail_ok: bool = False,
 ) -> CollectionResult:
+    """`handshake_fail_ok=True` (portas extras de TLS implícito, já vistas
+    abertas no connect-scan): handshake recusado vira observação definitiva de
+    "não fala TLS aqui" — senão um serviço em texto puro numa porta dessas
+    travaria para sempre a remoção de TLS do host."""
     if pace is not None:  # rate-limit do scan também no handshake
         await pace(host)
     loop = asyncio.get_running_loop()
@@ -98,7 +103,8 @@ async def collect_host(
     except (asyncio.TimeoutError, TimeoutError):
         return CollectionResult(records=[], ok=False)  # transitório: preserva
     except ssl.SSLError:
-        return CollectionResult(records=[], ok=False)  # handshake falhou: preserva
+        # 443: handshake falhou -> preserva; porta extra aberta: não é TLS
+        return CollectionResult(records=[], ok=handshake_fail_ok)
     except Exception:
         return CollectionResult(records=[], ok=False)  # rede/erro: preserva
     if not data:

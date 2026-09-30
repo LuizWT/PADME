@@ -38,17 +38,19 @@ from .collectors import (
     wildcard,
 )
 from .config import Config
-from .levels import Level, parse_level
 from .models import CollectionResult, Event, Kind, Record, ScanResult
 from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNotifier
+from .portmap import IMPLICIT_TLS_PORTS
+from .risk import Level, parse_level
 from .storage import Storage
 
 log = logging.getLogger("padme")
 
 _USER_AGENT = "Padme-ASM/0.1 (+attack-surface-monitor)"
 
-# collector -> Kind do escopo (a "célula" onde ausência = remoção real)
-_SCOPE_KIND = {
+# collector -> Kind do escopo que ele observa (a "célula" onde ausência = remoção real).
+# Não confundir com models._SCOPE_KIND (kind de um RECORD -> kind do escopo).
+_COLLECTOR_SCOPE = {
     "dns": Kind.DNS,
     "http": Kind.HTTP,      # cobre HTTP e HTTPSEC (postura vem da mesma resposta)
     "favicon": Kind.FAVICON,
@@ -227,12 +229,12 @@ class Engine:
                                          allow_private=net.allow_private_ips),
                     host, "favicon", result)
                 _absorb(cr, result, "favicon", host)
+            tls_cr = None
             if col.tls:
-                cr = await _safe(
+                tls_cr = await _safe(
                     tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days,
                                      pace=self._rate.acquire),
                     host, "tls", result)
-                _absorb(cr, result, "tls", host)
             if col.takeover:
                 cr = await _safe(
                     takeover.collect_host(host, client, self.cfg.timeout, body_cache,
@@ -246,6 +248,33 @@ class Engine:
                                        pace=self._rate.acquire, limit=self._connect_limit),
                     host, "ports", result)
                 _absorb(cr, result, "ports", host)
+                if tls_cr is not None:
+                    tls_cr = await self._tls_extra_ports(host, tls_cr, cr, result)
+            if tls_cr is not None:  # depois das portas: pode incluir TLS de 8443, 993...
+                _absorb(tls_cr, result, "tls", host)
+
+    async def _tls_extra_ports(self, host: str, base: CollectionResult,
+                               ports_cr: CollectionResult,
+                               result: ScanResult) -> CollectionResult:
+        """TLS também nas portas ABERTAS de TLS implícito (8443, 993, 465...),
+        não só na 443. O escopo TLS do host vira um só: só é autoritativo (pode
+        gerar REMOVED) se a 443, cada porta extra E o próprio port-scan foram
+        observados — com o port-scan inconclusivo não dá para saber se o TLS de
+        uma porta sumiu ou só não foi sondado."""
+        col = self.cfg.collectors
+        extra = sorted({r.metadata.get("port") for r in ports_cr.records
+                        if r.kind == Kind.PORT} & (IMPLICIT_TLS_PORTS - {443}))
+        records, ok, error = list(base.records), base.ok and ports_cr.ok, base.error
+        for p in extra:
+            cr = await _safe(
+                tls.collect_host(host, self.cfg.timeout, port=p,
+                                 cert_expiry_days=col.cert_expiry_days,
+                                 pace=self._rate.acquire, handshake_fail_ok=True),
+                host, "tls", result)
+            records += cr.records
+            ok = ok and cr.ok
+            error = error or cr.error
+        return CollectionResult(records=records, ok=ok, error=error)
 
     def _live_kinds(self) -> tuple[Kind, ...]:
         """Escopos ativos ligados que sustentam 'live' (HTTP/TLS/portas)."""
@@ -280,7 +309,7 @@ def _absorb(cr: CollectionResult, result: ScanResult, name: str, host: str) -> N
     if not cr.ok and not cr.error:
         result.inconclusive += 1
     if cr.ok:
-        scope_kind = _SCOPE_KIND[name]
+        scope_kind = _COLLECTOR_SCOPE[name]
         result.observed_scopes.add((scope_kind.value, host))
 
 

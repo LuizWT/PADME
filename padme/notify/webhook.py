@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 import httpx
 
 from ..evidence import evidence_of
-from ..levels import Level, assess
 from ..models import Event, EventType, Kind
+from ..risk import Level, assess
 from .base import NotificationResult, chunk_text, post_with_retry
 from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL

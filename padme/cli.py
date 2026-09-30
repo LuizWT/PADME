@@ -1,10 +1,16 @@
 """CLI do Padmé.
 
 Comandos:
-  padme scan     -> roda um scan único e imprime as mudanças (grava baseline)
-  padme monitor  -> loop contínuo; alerta no Telegram a cada mudança
-  padme events   -> mostra os últimos eventos gravados de um alvo
-  padme test-telegram -> envia uma mensagem de teste
+  padme scan         -> um ciclo avulso (grava/atualiza baseline) e imprime as mudanças
+  padme monitor      -> modo sentinela: varre em loop e notifica (--once p/ cron)
+  padme events       -> últimos eventos gravados de cada alvo
+  padme export       -> estado atual em JSON/CSV
+  padme merge        -> consolida exports de várias fontes (multi-vantage)
+  padme web          -> painel só-leitura
+  padme doctor       -> integridade do banco, saúde dos scans e avisos de config
+  padme backup       -> backup online consistente do SQLite
+  padme health       -> o monitor está varrendo? (exit 0/1, p/ HEALTHCHECK/cron)
+  padme test-notify  -> testa todos os canais configurados
 
 Uso responsável: monitore apenas ativos que você é dono ou tem autorização
 explícita para testar.
@@ -20,7 +26,6 @@ import json
 import logging
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -31,15 +36,13 @@ try:
 except ImportError:
     load_dotenv = None
 
-from .alerts import damp_flapping
 from .config import Config
-from .engine import Engine, build_notifiers, summarize_health
-from .levels import Level
+from .engine import Engine, build_notifiers
 from .logredact import install_secret_redaction
 from .models import Event
-from .notify import TelegramNotifier, send_all
+from .risk import Level
 from .scheduler import run_monitor
-from .storage import Storage
+from .storage import Storage, StorageOutdated
 
 _LEVEL_CHOICES = [lv.name.lower() for lv in Level]
 
@@ -65,38 +68,40 @@ def _print_events(target: str, events: list[Event], baseline: bool,
         print(f"  {arrow} [{e.kind.value}] {e.key}  {val or ''}".rstrip())
 
 
+def _override_levels(cfg: Config, level: str | None) -> None:
+    """`--level` vale para TODOS os canais (antes só mexia no Telegram)."""
+    if level:
+        for channel in (cfg.telegram, cfg.discord, cfg.webhook, cfg.email):
+            channel.level = level
+
+
 async def _cmd_scan(cfg: Config, args) -> int:
-    if args.level:
-        cfg.telegram.level = args.level
+    """Um ciclo avulso, pelo MESMO caminho do monitor (scheduler.scan_one), só
+    que imprimindo as mudanças. Com --notify, notifica e usa a fila de reenvio."""
+    from .notify import NotificationManager
+    from .scheduler import retry_pending, scan_one
+
+    _override_levels(cfg, args.level)
     storage = Storage(cfg.db_path)
     engine = Engine(cfg, storage)
-    notifiers = build_notifiers(cfg) if args.notify else []
+    notifier = NotificationManager(build_notifiers(cfg) if args.notify else [])
     try:
+        if notifier:
+            await retry_pending(storage, notifier)
         for target in cfg.targets:
-            first = not storage.is_known_target(target)
-            t0 = time.monotonic()
-            result = await engine.scan_target(target)
-            events = engine.apply(result)
-            errs = len(result.errors)
-            storage.update_health(target, error_count=errs, partial=errs > 0,
-                                  duration_ms=int((time.monotonic() - t0) * 1000),
-                                  collectors=summarize_health(result),
-                                  inconclusive=result.inconclusive)
-            _print_events(target, events, baseline=first, total=len(result.records),
-                          provisional=first and not storage.is_known_target(target))
-            if errs:
-                print(f"[{target}] coleta parcial: {errs} erro(s) de collector "
+            o = await scan_one(cfg, engine, storage, notifier, target)
+            _print_events(target, o.events, baseline=o.first, total=len(o.result.records),
+                          provisional=o.provisional)
+            if o.result.errors:
+                print(f"[{target}] coleta parcial: {len(o.result.errors)} erro(s) de collector "
                       f"(estado preservado; veja -v).")
-            for err in result.errors:
+            for err in o.result.errors:
                 log.debug("erro: %s", err)
-            # amortece flapping e cada canal filtra pelo próprio nível; envio concorrente
-            if notifiers and not first and events:
-                to_notify, flapped = damp_flapping(
-                    storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
-                if flapped:
-                    print(f"[{target}] {flapped} evento(s) suprimido(s) da notificação (flapping).")
-                if to_notify:
-                    await send_all(notifiers, target, to_notify)
+            if o.flapped:
+                print(f"[{target}] {o.flapped} evento(s) suprimido(s) da notificação (flapping).")
+            if o.failed_channels:
+                print(f"[{target}] notificação falhou em: {', '.join(o.failed_channels)}"
+                      + (f" ({o.queued} alerta(s) grave(s) na fila de reenvio)" if o.queued else ""))
     finally:
         storage.close()
     return 0
@@ -105,8 +110,7 @@ async def _cmd_scan(cfg: Config, args) -> int:
 async def _cmd_monitor(cfg: Config, args) -> int:
     if args.interval:
         cfg.interval_seconds = args.interval
-    if args.level:
-        cfg.telegram.level = args.level
+    _override_levels(cfg, args.level)
     if args.lock:
         from .singleton import AlreadyRunning, single_instance
         try:
@@ -210,17 +214,6 @@ async def _cmd_merge(cfg: Config, args) -> int:
     return 0
 
 
-async def _cmd_test_telegram(cfg: Config, args) -> int:
-    tg = cfg.telegram
-    notifier = TelegramNotifier(tg.bot_token, tg.chat_id)
-    if not notifier.configured:
-        print("Telegram não configurado (bot_token/chat_id ausentes).")
-        return 1
-    res = await notifier.send("🛰️ <b>Padmé</b> online. Teste de conexão OK.")
-    print("Mensagem enviada." if res.ok else "Falha ao enviar — confira token/chat_id.")
-    return 0 if res.ok else 1
-
-
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -259,14 +252,9 @@ async def _cmd_web(cfg: Config, args) -> int:
 
 def _config_warnings(cfg: Config) -> list[str]:
     """Sanidade de configuração (não bloqueia; só diagnostica em `doctor`)."""
-    w: list[str] = []
+    w: list[str] = list(cfg.warnings)
+    # (limites numéricos já são garantidos por config._validate no carregamento)
     _PLACEHOLDERS = {"SEU_BOT_TOKEN_AQUI", "SEU_CHAT_ID_AQUI", ""}
-    if cfg.interval_seconds <= 0:
-        w.append("interval_seconds deve ser > 0")
-    if cfg.concurrency <= 0:
-        w.append("concurrency deve ser > 0")
-    if cfg.timeout <= 0:
-        w.append("timeout deve ser > 0")
     if cfg.telegram.enabled and (cfg.telegram.bot_token in _PLACEHOLDERS
                                  or cfg.telegram.chat_id in _PLACEHOLDERS):
         w.append("telegram habilitado mas bot_token/chat_id ausentes ou de exemplo")
@@ -276,7 +264,22 @@ def _config_warnings(cfg: Config) -> list[str]:
         w.append("webhook habilitado mas url vazia (variável de ambiente definida?)")
     if cfg.email.enabled and not (cfg.email.smtp_host and cfg.email.from_addr and cfg.email.to):
         w.append("email habilitado mas smtp_host/from/to incompletos")
+    if cfg.collectors.takeover:
+        stale = _fingerprints_stale_days()
+        if stale:
+            w.append(f"base de fingerprints de takeover sem revisão há {stale} dias "
+                     "(padme/data/takeover_fingerprints.json — compare com can-i-take-over-xyz)")
     return w
+
+
+def _fingerprints_stale_days(max_days: int = 180) -> int:
+    """Dias desde a última revisão da base de takeover, se passou de `max_days`."""
+    from .collectors.takeover import FINGERPRINTS_REVIEWED
+    try:
+        days = (datetime.now() - datetime.fromisoformat(FINGERPRINTS_REVIEWED)).days
+    except ValueError:
+        return max_days + 1  # sem data válida = nunca revisada
+    return days if days > max_days else 0
 
 
 async def _cmd_doctor(cfg: Config, args) -> int:
@@ -337,6 +340,32 @@ async def _cmd_backup(cfg: Config, args) -> int:
     return 0
 
 
+async def _cmd_health(cfg: Config, args) -> int:
+    """Liveness do sentinela, SEM rede e sem escrita: o último scan de algum alvo
+    é recente? Serve de HEALTHCHECK do Docker / check de cron. Exit 0 = saudável,
+    1 = parado/atrasado/sem banco. Coleta parcial NÃO derruba (isso é o doctor)."""
+    max_age = args.max_age if args.max_age is not None else 2 * cfg.interval_seconds + 600
+    try:
+        storage = Storage(cfg.db_path, readonly=True)
+    except (FileNotFoundError, StorageOutdated) as exc:
+        print(f"unhealthy: {exc}")
+        return 1
+    try:
+        last = [m.get("last_scan_at") for t in cfg.targets
+                if (m := storage.target_meta(t)) and m.get("last_scan_at")]
+    finally:
+        storage.close()
+    if not last:
+        print("unhealthy: nenhum scan registrado ainda")
+        return 1
+    age = datetime.now().timestamp() - max(last)
+    if age > max_age:
+        print(f"unhealthy: último scan há {int(age)}s (limite {max_age}s)")
+        return 1
+    print(f"healthy: último scan há {int(age)}s")
+    return 0
+
+
 async def _cmd_test_notify(cfg: Config, args) -> int:
     notifiers = build_notifiers(cfg)
     if not notifiers:
@@ -354,7 +383,7 @@ async def _cmd_test_notify(cfg: Config, args) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="padme",
-        description="Padmé — Attack Surface Monitoring com alerta no Telegram.",
+        description="Padmé — Attack Surface Monitoring com alertas multi-canal.",
     )
     p.add_argument("--version", action="version", version=f"padme {__version__}")
     p.add_argument("-c", "--config", default="config.yaml", help="caminho do config YAML")
@@ -365,13 +394,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("scan", help="scan único (grava/atualiza baseline)")
     sp.add_argument("--notify", action="store_true", help="também envia mudanças aos canais de notificação configurados")
     sp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
-                    help="limiar de severidade enviado ao Telegram (sobrescreve o config)")
+                    help="limiar de severidade de TODOS os canais (sobrescreve o config)")
     sp.set_defaults(func=_cmd_scan)
 
-    mp = sub.add_parser("monitor", help="modo sentinela: varre em loop e alerta no Telegram")
+    mp = sub.add_parser("monitor", help="modo sentinela: varre em loop e alerta nos canais configurados")
     mp.add_argument("--interval", type=int, default=None, help="sobrescreve interval_seconds")
     mp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
-                    help="limiar de severidade enviado ao Telegram (sobrescreve o config)")
+                    help="limiar de severidade de TODOS os canais (sobrescreve o config)")
     mp.add_argument("--once", action="store_true",
                     help="roda um único ciclo e sai (ideal p/ cron)")
     mp.add_argument("--lock", default=None, metavar="PATH",
@@ -386,9 +415,6 @@ def build_parser() -> argparse.ArgumentParser:
     xp.add_argument("--format", choices=["json", "csv"], default="json")
     xp.add_argument("--out", default=None, help="arquivo de saída (padrão: stdout)")
     xp.set_defaults(func=_cmd_export)
-
-    tp = sub.add_parser("test-telegram", help="envia mensagem de teste no Telegram")
-    tp.set_defaults(func=_cmd_test_telegram)
 
     tn = sub.add_parser("test-notify", help="testa TODOS os canais configurados")
     tn.set_defaults(func=_cmd_test_notify)
@@ -407,6 +433,11 @@ def build_parser() -> argparse.ArgumentParser:
     bk.add_argument("--out", default=None, metavar="ARQUIVO",
                     help="destino do backup (padrão: padme-backup-<timestamp>.db)")
     bk.set_defaults(func=_cmd_backup)
+
+    hp = sub.add_parser("health", help="liveness do monitor pelo banco (exit 0/1; HEALTHCHECK/cron)")
+    hp.add_argument("--max-age", type=int, default=None, metavar="SEG",
+                    help="idade máxima do último scan (padrão: 2*interval_seconds + 600)")
+    hp.set_defaults(func=_cmd_health)
 
     mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
     mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
@@ -434,8 +465,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Erro de config: {exc}", file=sys.stderr)
         return 2
 
+    for w in cfg.warnings:  # typo no YAML: avisa em vez de ignorar calado
+        print(f"aviso de config: {w}", file=sys.stderr)
+
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor", "merge", "backup")
+    read_only = args.command in ("events", "export", "test-notify", "web", "doctor", "merge", "backup",
+                                 "health")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"

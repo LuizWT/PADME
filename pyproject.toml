@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "padme-asm"
 version = "0.1.0"
-description = "Padmé — Attack Surface Monitoring com alerta no Telegram"
+description = "Padmé — Attack Surface Monitoring com alertas multi-canal"
 requires-python = ">=3.10"
 dependencies = [
     "httpx>=0.27",
@@ -20,6 +20,9 @@ padme = "padme.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["padme*"]
+
+[tool.setuptools.package-data]
+padme = ["data/*.json"]   # base de fingerprints de takeover
 
 [tool.pytest.ini_options]
 # Garante que a raiz do repositório entre no sys.path ao rodar `pytest`
