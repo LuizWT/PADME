@@ -50,7 +50,10 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
             log.warning("[%s] coleta PARCIAL: %d erro(s) de collector (estado preservado).",
                         target, errs)
 
-        if first:
+        if first and not storage.is_known_target(target):
+            log.info("[%s] baseline PROVISÓRIA (coleta incompleta): consolida no próximo "
+                     "ciclo, sem gerar eventos.", target)
+        elif first:
             log.info("[%s] baseline gravado (%d itens no estado).", target, len(result.records))
         elif events:
             to_notify, flapped = damp_flapping(

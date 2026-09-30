@@ -184,3 +184,9 @@ class ScanResult:
     def mark_collector(self, name: str, ok: bool) -> None:
         s = self.collector_stats.setdefault(name, {"ok": 0, "fail": 0})
         s["ok" if ok else "fail"] += 1
+
+    @property
+    def complete(self) -> bool:
+        """Coleta sem nenhuma falha: nem exceção (`errors`) nem collector que
+        voltou inconclusivo (`ok=False`, ex.: timeout — que não gera exceção)."""
+        return not self.errors and not any(s.get("fail") for s in self.collector_stats.values())

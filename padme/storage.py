@@ -260,11 +260,18 @@ class Storage:
         *,
         source: str | None = None,
         context_rules: list | None = None,
+        complete: bool = True,
     ) -> list[Event]:
         """Aplica um scan.
 
         1º scan (sem baseline) -> grava o estado como BASELINE e devolve []
         (nada de "tudo é novo" no histórico). Depois disso, faz o diff normal.
+
+        `complete=False` (algum collector falhou): a baseline fica PROVISÓRIA —
+        o próximo scan também é tratado como baseline (soma o que faltou, sem
+        gerar eventos) e aí consolida. Sem isso, o que a coleta parcial deixou de
+        ver viraria uma enxurrada de ADDED no primeiro scan limpo. Só uma
+        repetição: um alvo com falha crônica não fica sem baseline para sempre.
 
         `observed_scopes` (de engine): só os escopos aí presentes podem gerar
         REMOVED; ausência em escopo NÃO observado preserva o estado (erro de
@@ -283,8 +290,12 @@ class Storage:
         cur = self._conn.cursor()
 
         if baseline:
-            self._write_state(cur, target, records, now, prior={})
-            self._mark_scan(cur, target, now, baseline=True)
+            # já existe linha em `targets` sem baseline = houve baseline provisória
+            retry = self._conn.execute(
+                "SELECT 1 FROM targets WHERE target = ? LIMIT 1", (target,)).fetchone() is not None
+            # soma ao que a tentativa provisória gravou (não apaga nada na baseline)
+            self._write_state(cur, target, records, now, prior=self.load_state(target))
+            self._mark_scan(cur, target, now, initialized=complete or retry)
             self._conn.commit()
             return []
 
@@ -337,7 +348,7 @@ class Storage:
             )
 
         self._write_state(cur, target, records, now, prior=old, removable=removable_keys)
-        self._mark_scan(cur, target, now, baseline=False)
+        self._mark_scan(cur, target, now)
         self._conn.commit()
         return kept
 
@@ -370,18 +381,22 @@ class Storage:
                         (target, kind, key),
                     )
 
-    def _mark_scan(self, cur, target: str, now: float, baseline: bool) -> None:
+    def _mark_scan(self, cur, target: str, now: float, initialized: bool = True) -> None:
         """Registra/atualiza os metadados do alvo (baseline + last_scan_at).
+
+        `initialized=False` grava a baseline como provisória; uma baseline já
+        consolidada nunca volta a provisória (MAX).
 
         `last_success_at` NÃO é tocado aqui — quem decide "sucesso" é
         `update_health` (só marca sucesso quando a coleta veio sem erros)."""
         cur.execute(
             "INSERT INTO targets (target, first_scan_at, last_scan_at, baseline_initialized)"
-            " VALUES (?,?,?,1)"
+            " VALUES (?,?,?,?)"
             " ON CONFLICT(target) DO UPDATE SET"
             "   last_scan_at=excluded.last_scan_at,"
-            "   baseline_initialized=1",
-            (target, now, now),
+            "   baseline_initialized=MAX(targets.baseline_initialized,"
+            "                            excluded.baseline_initialized)",
+            (target, now, now, int(initialized)),
         )
 
     def update_health(self, target: str, *, error_count: int, partial: bool,

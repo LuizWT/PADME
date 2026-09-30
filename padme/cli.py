@@ -46,9 +46,14 @@ _LEVEL_CHOICES = [lv.name.lower() for lv in Level]
 log = logging.getLogger("padme")
 
 
-def _print_events(target: str, events: list[Event], baseline: bool) -> None:
+def _print_events(target: str, events: list[Event], baseline: bool,
+                  total: int = 0, provisional: bool = False) -> None:
     if baseline:
-        print(f"[{target}] baseline gravado: {len(events)} itens iniciais.")
+        if provisional:
+            print(f"[{target}] baseline PROVISÓRIA: {total} itens (coleta incompleta; "
+                  "consolida no próximo scan, sem gerar eventos).")
+        else:
+            print(f"[{target}] baseline gravado: {total} itens iniciais.")
         return
     if not events:
         print(f"[{target}] sem mudanças.")
@@ -76,7 +81,8 @@ async def _cmd_scan(cfg: Config, args) -> int:
             storage.update_health(target, error_count=errs, partial=errs > 0,
                                   duration_ms=int((time.monotonic() - t0) * 1000),
                                   collectors=summarize_health(result))
-            _print_events(target, events, baseline=first)
+            _print_events(target, events, baseline=first, total=len(result.records),
+                          provisional=first and not storage.is_known_target(target))
             if errs:
                 print(f"[{target}] coleta parcial: {errs} erro(s) de collector "
                       f"(estado preservado; veja -v).")
