@@ -8,6 +8,7 @@ serve) para ser testável e legível sozinho.
 from __future__ import annotations
 
 from .evidence import evidence_of
+from .mailpolicy import weaknesses
 from .models import Kind
 from .risk import Level, assess
 
@@ -52,6 +53,13 @@ def _collect_problems(by_target: dict, meta: dict) -> list[dict]:
             prob.append({"rank": 2, "cls": "s-warn", "sev": "atenção", "kind": "WILDCARD",
                          "who": it["key"], "det": f"catch-all {it['value']}", "tgt": target,
                          "evidence": _evidence_facts(Kind.WILDCARD, it["key"], it["value"], it.get("metadata"))})
+        for it in kinds.get("mailsec", []):  # política de e-mail publicada, mas fraca
+            md = it.get("metadata") or {}
+            mtype = md.get("type") or ("dmarc" if it["key"].endswith("|DMARC") else "spf")
+            for weak in weaknesses(mtype, it["value"]):
+                prob.append({"rank": 3, "cls": "s-serious", "sev": "fraco", "kind": "E-MAIL",
+                             "who": it["key"].split("|", 1)[0], "det": weak, "tgt": target,
+                             "evidence": _evidence_facts(Kind.MAILSEC, it["key"], it["value"], md)})
     # coleta parcial por alvo (não é da superfície, mas é um problema operacional)
     for target, m in meta.items():
         if m and m.get("last_partial"):

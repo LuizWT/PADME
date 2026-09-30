@@ -21,6 +21,9 @@ padme = "padme.cli:main"
 [tool.setuptools.packages.find]
 include = ["padme*"]
 
+[tool.setuptools.package-data]
+padme = ["data/*.json"]   # base de fingerprints de takeover
+
 [tool.pytest.ini_options]
 # Garante que a raiz do repositório entre no sys.path ao rodar `pytest`
 # diretamente (sem `python -m`), como faz o CI — sem isso os testes falham

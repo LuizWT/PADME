@@ -11,11 +11,19 @@ Fluxo por host (barato por padrão — só faz HTTP se o CNAME casar um serviço
   3. Serviço 'nxdomain': se o alvo do CNAME não resolve (NXDOMAIN) -> vulnerável.
      Serviço com 'fingerprint': busca o corpo HTTP e casa a assinatura de
      "recurso não reivindicado".
+  4. CNAME para serviço DESCONHECIDO: se o alvo não resolve (NXDOMAIN) E o
+     domínio registrável dele também não existe (NS -> NXDOMAIN), qualquer um
+     pode registrar esse domínio e passar a responder pelo host -> takeover
+     (domínio expirado/nunca registrado). Alvo inexistente dentro de um domínio
+     que EXISTE não é reivindicável por terceiro: não é achado.
 
 Só rode contra domínios que você é dono ou tem autorização para testar.
 """
 
 from __future__ import annotations
+
+import json
+from importlib import resources
 
 import httpx
 
@@ -31,24 +39,29 @@ except Exception:  # pragma: no cover
     _HAS_DNS = False
 
 
+def _load_fingerprints() -> tuple[list[dict], str]:
+    """Base de serviços (dado do pacote, não código): revisável e atualizável
+    sem mexer no collector. Devolve (serviços, data da última revisão)."""
+    raw = resources.files("padme").joinpath("data/takeover_fingerprints.json").read_text("utf-8")
+    doc = json.loads(raw)
+    return doc["services"], doc.get("reviewed", "")
+
+
 # nxdomain=True  -> vulnerável quando o alvo do CNAME não resolve
 # fingerprint    -> string que o serviço serve quando o recurso não existe
-FINGERPRINTS = [
-    {"service": "GitHub Pages", "cnames": ["github.io"], "fingerprint": "There isn't a GitHub Pages site here.", "nxdomain": False},
-    {"service": "AWS S3", "cnames": ["amazonaws.com"], "fingerprint": "NoSuchBucket", "nxdomain": False},
-    {"service": "Heroku", "cnames": ["herokuapp.com", "herokudns.com", "herokussl.com"], "fingerprint": "No such app", "nxdomain": False},
-    {"service": "Shopify", "cnames": ["myshopify.com"], "fingerprint": "Sorry, this shop is currently unavailable", "nxdomain": False},
-    {"service": "Fastly", "cnames": ["fastly.net"], "fingerprint": "Fastly error: unknown domain", "nxdomain": False},
-    {"service": "Pantheon", "cnames": ["pantheonsite.io"], "fingerprint": "The gods are wise, but do not know of the site which you seek", "nxdomain": False},
-    {"service": "Tumblr", "cnames": ["domains.tumblr.com"], "fingerprint": "Whatever you were looking for doesn't currently exist at this address", "nxdomain": False},
-    {"service": "WordPress", "cnames": ["wordpress.com"], "fingerprint": "Do you want to register", "nxdomain": False},
-    {"service": "Ghost", "cnames": ["ghost.io"], "fingerprint": "The thing you were looking for is no longer here", "nxdomain": False},
-    {"service": "Bitbucket", "cnames": ["bitbucket.io"], "fingerprint": "Repository not found", "nxdomain": False},
-    {"service": "Surge.sh", "cnames": ["surge.sh"], "fingerprint": "project not found", "nxdomain": False},
-    {"service": "Zendesk", "cnames": ["zendesk.com"], "fingerprint": "Help Center Closed", "nxdomain": False},
-    {"service": "Read the Docs", "cnames": ["readthedocs.io"], "fingerprint": "unknown to Read the Docs", "nxdomain": False},
-    {"service": "Azure", "cnames": ["azurewebsites.net", "cloudapp.net", "cloudapp.azure.com", "trafficmanager.net", "blob.core.windows.net", "azure-api.net", "azureedge.net", "azurecontainer.io", "azurefd.net"], "fingerprint": "", "nxdomain": True},
-]
+FINGERPRINTS, FINGERPRINTS_REVIEWED = _load_fingerprints()
+
+# sufixos públicos de DOIS níveis mais comuns (sem a PSL inteira). Serve para
+# achar o domínio registrável do alvo do CNAME; errar aqui só causa falso
+# NEGATIVO (consultaria NS de "co.uk", que existe), nunca falso positivo.
+_MULTI_SUFFIXES = {
+    "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "net.uk",
+    "com.br", "net.br", "org.br", "gov.br", "edu.br",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au",
+    "co.jp", "ne.jp", "or.jp", "co.nz", "org.nz", "co.za", "org.za",
+    "com.ar", "com.mx", "com.co", "com.pe", "com.tr", "com.cn", "com.tw",
+    "com.hk", "com.sg", "com.my", "co.in", "co.id", "co.kr", "com.pt",
+}
 
 
 def match_service(cname: str) -> dict | None:
@@ -65,6 +78,30 @@ def match_service(cname: str) -> dict | None:
             if c == pat or c.endswith("." + pat):
                 return fp
     return None
+
+
+def registrable_domain(name: str) -> str:
+    """Domínio registrável aproximado: últimos 2 rótulos, ou 3 quando o sufixo
+    é de dois níveis conhecido (co.uk, com.br...)."""
+    labels = name.lower().rstrip(".").split(".")
+    n = 3 if len(labels) >= 3 and ".".join(labels[-2:]) in _MULTI_SUFFIXES else 2
+    return ".".join(labels[-n:])
+
+
+async def _domain_unregistered(domain: str, timeout: float) -> bool | None:
+    """True = domínio não existe (NXDOMAIN no NS); False = existe; None =
+    inconclusivo (timeout/SERVFAIL) — nunca vira achado."""
+    resolver = dns.asyncresolver.Resolver()
+    resolver.lifetime = timeout
+    try:
+        await resolver.resolve(domain, "NS")
+        return False
+    except dns.resolver.NXDOMAIN:
+        return True
+    except dns.resolver.NoAnswer:
+        return False  # nome existe (sem NS próprio: subzona de outro domínio)
+    except Exception:
+        return None
 
 
 async def _cname_target(host: str, timeout: float) -> tuple[str | None, bool, bool]:
@@ -147,9 +184,24 @@ async def collect_host(
         return CollectionResult(records=[], ok=cname_ok)
     fp = match_service(target)
     if not fp:
-        # aponta pra um CNAME, mas não é serviço takeover-able conhecido:
-        # observação definitiva de "não vulnerável".
-        return CollectionResult(records=[], ok=True)
+        # serviço desconhecido: só é achado se o alvo não existe E o domínio
+        # registrável dele está livre para registro (dangling genérico).
+        if not cname_ok:
+            return CollectionResult(records=[], ok=False)
+        if resolves:
+            return CollectionResult(records=[], ok=True)
+        domain = registrable_domain(target)
+        free = await _domain_unregistered(domain, timeout)
+        if free is None:
+            return CollectionResult(records=[], ok=False)
+        if not free:
+            return CollectionResult(records=[], ok=True)
+        reason = f"CNAME dangling: domínio {domain} não registrado (NXDOMAIN)"
+        service = "domínio não registrado"
+        return CollectionResult(records=[Record(
+            kind=Kind.TAKEOVER, key=host, value=f"{service} | {target} | {reason}",
+            metadata={"service": service, "cname": target, "reason": reason,
+                      "domain": domain})], ok=True)
 
     reason = ""
     ok = True

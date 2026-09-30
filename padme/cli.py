@@ -264,7 +264,22 @@ def _config_warnings(cfg: Config) -> list[str]:
         w.append("webhook habilitado mas url vazia (variável de ambiente definida?)")
     if cfg.email.enabled and not (cfg.email.smtp_host and cfg.email.from_addr and cfg.email.to):
         w.append("email habilitado mas smtp_host/from/to incompletos")
+    if cfg.collectors.takeover:
+        stale = _fingerprints_stale_days()
+        if stale:
+            w.append(f"base de fingerprints de takeover sem revisão há {stale} dias "
+                     "(padme/data/takeover_fingerprints.json — compare com can-i-take-over-xyz)")
     return w
+
+
+def _fingerprints_stale_days(max_days: int = 180) -> int:
+    """Dias desde a última revisão da base de takeover, se passou de `max_days`."""
+    from .collectors.takeover import FINGERPRINTS_REVIEWED
+    try:
+        days = (datetime.now() - datetime.fromisoformat(FINGERPRINTS_REVIEWED)).days
+    except ValueError:
+        return max_days + 1  # sem data válida = nunca revisada
+    return days if days > max_days else 0
 
 
 async def _cmd_doctor(cfg: Config, args) -> int:

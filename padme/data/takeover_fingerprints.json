@@ -1,0 +1,129 @@
+{
+  "_comment": "Assinaturas de subdomain takeover. Fonte: can-i-take-over-xyz (EdOverflow). Revise contra a fonte e atualize 'reviewed' (AAAA-MM-DD) a cada revisão; o doctor avisa quando a base passa de 180 dias sem revisão.",
+  "source": "https://github.com/EdOverflow/can-i-take-over-xyz",
+  "reviewed": "2026-09-30",
+  "services": [
+    {
+      "service": "GitHub Pages",
+      "cnames": [
+        "github.io"
+      ],
+      "fingerprint": "There isn't a GitHub Pages site here.",
+      "nxdomain": false
+    },
+    {
+      "service": "AWS S3",
+      "cnames": [
+        "amazonaws.com"
+      ],
+      "fingerprint": "NoSuchBucket",
+      "nxdomain": false
+    },
+    {
+      "service": "Heroku",
+      "cnames": [
+        "herokuapp.com",
+        "herokudns.com",
+        "herokussl.com"
+      ],
+      "fingerprint": "No such app",
+      "nxdomain": false
+    },
+    {
+      "service": "Shopify",
+      "cnames": [
+        "myshopify.com"
+      ],
+      "fingerprint": "Sorry, this shop is currently unavailable",
+      "nxdomain": false
+    },
+    {
+      "service": "Fastly",
+      "cnames": [
+        "fastly.net"
+      ],
+      "fingerprint": "Fastly error: unknown domain",
+      "nxdomain": false
+    },
+    {
+      "service": "Pantheon",
+      "cnames": [
+        "pantheonsite.io"
+      ],
+      "fingerprint": "The gods are wise, but do not know of the site which you seek",
+      "nxdomain": false
+    },
+    {
+      "service": "Tumblr",
+      "cnames": [
+        "domains.tumblr.com"
+      ],
+      "fingerprint": "Whatever you were looking for doesn't currently exist at this address",
+      "nxdomain": false
+    },
+    {
+      "service": "WordPress",
+      "cnames": [
+        "wordpress.com"
+      ],
+      "fingerprint": "Do you want to register",
+      "nxdomain": false
+    },
+    {
+      "service": "Ghost",
+      "cnames": [
+        "ghost.io"
+      ],
+      "fingerprint": "The thing you were looking for is no longer here",
+      "nxdomain": false
+    },
+    {
+      "service": "Bitbucket",
+      "cnames": [
+        "bitbucket.io"
+      ],
+      "fingerprint": "Repository not found",
+      "nxdomain": false
+    },
+    {
+      "service": "Surge.sh",
+      "cnames": [
+        "surge.sh"
+      ],
+      "fingerprint": "project not found",
+      "nxdomain": false
+    },
+    {
+      "service": "Zendesk",
+      "cnames": [
+        "zendesk.com"
+      ],
+      "fingerprint": "Help Center Closed",
+      "nxdomain": false
+    },
+    {
+      "service": "Read the Docs",
+      "cnames": [
+        "readthedocs.io"
+      ],
+      "fingerprint": "unknown to Read the Docs",
+      "nxdomain": false
+    },
+    {
+      "service": "Azure",
+      "cnames": [
+        "azurewebsites.net",
+        "cloudapp.net",
+        "cloudapp.azure.com",
+        "trafficmanager.net",
+        "blob.core.windows.net",
+        "azure-api.net",
+        "azureedge.net",
+        "azurecontainer.io",
+        "azurefd.net"
+      ],
+      "fingerprint": "",
+      "nxdomain": true
+    }
+  ]
+}

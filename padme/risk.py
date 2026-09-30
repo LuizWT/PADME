@@ -29,6 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import IntEnum
 
+from .mailpolicy import dmarc_tag, spf_all_qualifier
 from .models import Event, EventType, Kind
 from .portmap import DATA_PORTS, HIGH_RISK_PORTS
 
@@ -119,6 +120,8 @@ FORBIDDEN_PORT = "FORBIDDEN_PORT"
 UNEXPECTED_PORT = "UNEXPECTED_PORT"
 SUBDOMAIN_TAKEOVER = "SUBDOMAIN_TAKEOVER"
 DMARC_NOT_ENFORCED = "DMARC_NOT_ENFORCED"
+DMARC_SUBDOMAINS_NOT_ENFORCED = "DMARC_SUBDOMAINS_NOT_ENFORCED"
+SPF_PERMISSIVE = "SPF_PERMISSIVE"
 MAIL_PROTECTION_REMOVED = "MAIL_PROTECTION_REMOVED"
 NAMESERVER_CHANGED = "NAMESERVER_CHANGED"
 CERT_EXPIRING = "CERT_EXPIRING"
@@ -134,6 +137,8 @@ REASON_LABEL = {
     UNEXPECTED_PORT: "porta fora do estado esperado",
     SUBDOMAIN_TAKEOVER: "subdomain takeover",
     DMARC_NOT_ENFORCED: "DMARC não bloqueia spoofing (p=none)",
+    DMARC_SUBDOMAINS_NOT_ENFORCED: "DMARC não protege subdomínios (sp=none)",
+    SPF_PERMISSIVE: "SPF permissivo (+all/?all: qualquer servidor passa)",
     MAIL_PROTECTION_REMOVED: "proteção de e-mail removida",
     NAMESERVER_CHANGED: "nameserver alterado (delegação/hijack)",
     CERT_EXPIRING: "certificado expirando",
@@ -226,12 +231,21 @@ def assess(e: Event) -> RiskAssessment:
         if e.event_type == EventType.REMOVED:
             reasons.append(MAIL_PROTECTION_REMOVED)   # base já é HIGH
         else:
-            pol = ctx.get("_dmarc_p") or (e.metadata or {}).get("p")
-            if (pol is not None and str(pol).lower() == "none") \
-                    or "p=none" in str(e.new_value or "").lower():
-                reasons.append(DMARC_NOT_ENFORCED)
+            # política lida do TXT publicado (mesma interpretação do painel)
+            txt = str(e.new_value or "")
+            if e.key.endswith("|DMARC"):
+                p, sp = dmarc_tag(txt, "p"), dmarc_tag(txt, "sp")
+                if p == "none":
+                    reasons.append(DMARC_NOT_ENFORCED)
+                    rule_id = rule_id or "dmarc-p-none"
+                elif sp == "none":
+                    reasons.append(DMARC_SUBDOMAINS_NOT_ENFORCED)
+                    rule_id = rule_id or "dmarc-sp-none"
+            elif e.key.endswith("|SPF") and spf_all_qualifier(txt) in ("+", "?"):
+                reasons.append(SPF_PERMISSIVE)
+                rule_id = rule_id or "spf-permissive"
+            if reasons:
                 level = max(level, Level.HIGH)
-                rule_id = rule_id or "dmarc-p-none"
 
     # ── NS / CERT (anotação explicativa; não muda o nível base) ───────────
     if e.kind == Kind.NS:

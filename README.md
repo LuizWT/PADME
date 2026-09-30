@@ -23,9 +23,11 @@ te chama quando a paisagem muda.
   redirects e sem sondar IP privado/reservado por padrão (anti-SSRF/rede interna).
 - **`padme doctor`** (integridade do banco + saúde dos scans) e **retenção** de
   histórico configurável.
-- **Detecção de subdomain takeover** (CNAME dangling + fingerprints).
+- **Detecção de subdomain takeover** (CNAME dangling + fingerprints, e CNAME
+  para **domínio não registrado** mesmo fora da base de serviços).
 - **Sinais RED**: mudança de **NS** (delegação / hijack de zona), **SPF/DMARC**
-  (remoção = domínio spoofável) e **banner-grab** nas portas (mudança de banner
+  (remoção = domínio spoofável; SPF `+all`/`?all` e DMARC `p=none`/`sp=none`
+  viram `high` e aparecem nos problemas abertos do painel) e **banner-grab** nas portas (mudança de banner
   = versão de serviço mudou). Além do texto de saudação (SSH/SMTP/FTP…), o
   handshake binário do **MySQL/MariaDB** é decodificado para a versão exata do
   servidor — banco exposto com versão conhecida é sinal forte.
@@ -89,7 +91,8 @@ como dimensão **independente** (`severity` = impacto; `confidence` = quão conf
 usando o **contexto do ativo** (`context.assets`: `exposure`, `criticality`,
 `expected_ports`, `forbidden_ports`): porta administrativa/dados recém-exposta
 (RDP, VNC, Redis…) → `critical`; porta **proibida** pela política → `critical`;
-porta **fora do estado esperado** → `high`; DMARC `p=none` → `high`. Cada
+porta **fora do estado esperado** → `high`; DMARC `p=none`/`sp=none` e SPF
+`+all`/`?all` → `high`. Cada
 avaliação carrega **reason codes** estáveis (`NEW_OPEN_PORT`, `INTERNET_EXPOSED_ASSET`,
 `FORBIDDEN_PORT`…) e um `rule_id` — o painel e o webhook mostram o **porquê**.
 Um **CHANGED** ainda traz o diff **por campo** (`_changes`: `status: 200 → 403`),
@@ -141,6 +144,17 @@ Fastly, Zendesk, etc.) e confirma de dois jeitos:
 - **nxdomain** — para serviços tipo Azure, se o alvo do CNAME não resolve, o
   apontamento está *dangling* → vulnerável.
 
+CNAME para um serviço **fora da base** também é checado: se o alvo não resolve
+(NXDOMAIN) **e** o domínio registrável dele não existe (consulta NS → NXDOMAIN),
+qualquer um pode registrar esse domínio e responder pelo seu host — achado
+`critical` com confiança `high` (inferência por DNS, sem fingerprint). Alvo
+inexistente dentro de um domínio que **existe** não é reivindicável por
+terceiro e não gera alerta; resposta inconclusiva (timeout) nunca vira achado.
+
+A base de serviços é **dado**, não código: `padme/data/takeover_fingerprints.json`,
+com a data da última revisão (`reviewed`). O `padme doctor` avisa quando ela
+passa de 180 dias sem revisão contra o can-i-take-over-xyz.
+
 Host sem CNAME nem entra na checagem (custo zero). Um achado vira um evento
 `TAKEOVER`, que aparece no **topo** do alerta (severidade `critical`).
 
@@ -157,6 +171,12 @@ O TLS também captura os **SANs** do certificado (`subjectAltName`). Como o
 fingerprint entra no valor, toda reemissão dispara um `CHANGED` — e o diff por
 campo mostra **quais domínios entraram/saíram do cert** (um SAN novo costuma ser
 superfície nova servida ali). Os SANs também vão na evidência (`tls_handshake`).
+
+Com o scan de portas ligado, o certificado também é lido nas portas de **TLS
+implícito** que estiverem abertas (8443, 9443, 6443, 993, 995, 465, 636, 853,
+990, 2376, 5986) — painel de admin em 8443 e IMAPS/SMTPS têm cert próprio, com
+expiração própria. O escopo de TLS do host só gera `removed` quando a 443, cada
+porta extra **e** o próprio scan de portas foram observados.
 
 ### Segurança operacional
 
@@ -509,6 +529,7 @@ padme/
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── risk.py           # motor de risco: severidade base + assess() (severity+confidence+reason codes)
 │   ├── portmap.py        # tabela única de portas: serviço, risco (acesso remoto/dados), TLS implícito
+│   ├── mailpolicy.py     # leitura de SPF (qualificador do all) e DMARC (p/sp)
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
@@ -528,18 +549,19 @@ padme/
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
 │   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
 │   │                     #   takeover, ports (com banner-grab)
+│   ├── data/             # takeover_fingerprints.json (base revisável, com data)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
 ├── ideias.md             # evolução adiada por design (porquê/como/impacto)
-├── .github/workflows/    # CI: ruff + compileall + pytest (matriz 3.10/3.11/3.12)
+├── .github/workflows/    # CI: ruff + compileall + pytest (3.10/3.11/3.12) + pip-audit
 ├── scripts/release.sh    # release limpo via git archive
 ├── Dockerfile            # imagem do sentinela (roda `padme`)
 ├── docker-compose.yml    # sobe o monitor 24/7 com restart automático
 ├── .dockerignore
 ├── config.example.yaml
-├── requirements.txt
+├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 329 testes: unitários + reliability + netpolicy +
+└── tests/                # 356 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

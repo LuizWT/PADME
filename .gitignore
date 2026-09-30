@@ -9,7 +9,7 @@ build/
 dist/
 
 # Docker
-data/
+/data/
 
 # Padmé
 config.yaml
