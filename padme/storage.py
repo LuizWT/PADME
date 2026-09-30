@@ -47,6 +47,23 @@ def _jload(raw) -> dict:
     except Exception:
         return {}
 
+def _row_to_event(r) -> Event:
+    keys = r.keys()
+    return Event(
+        target=r["target"],
+        event_type=EventType(r["event_type"]),
+        kind=Kind(r["kind"]),
+        key=r["key"],
+        old_value=r["old_value"],
+        new_value=r["new_value"],
+        event_id=r["event_id"] if "event_id" in keys else None,
+        scan_id=r["scan_id"] if "scan_id" in keys else None,
+        detected_at=datetime.fromtimestamp(
+            r["ts"], tz=timezone.utc).isoformat(timespec="seconds"),
+        metadata=_jload(r["metadata"]) if "metadata" in keys else {},
+    )
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS state (
     target     TEXT NOT NULL,
@@ -75,9 +92,19 @@ CREATE TABLE IF NOT EXISTS targets (
     last_success_at      REAL,
     baseline_initialized INTEGER NOT NULL DEFAULT 0
 );
+-- alerta grave que um CANAL não conseguiu entregar: reenviado no próximo ciclo
+-- (e após reinício). Uma linha por (evento, canal) — cada canal tem seu destino.
+CREATE TABLE IF NOT EXISTS pending_notifications (
+    event_id   TEXT NOT NULL,
+    channel    TEXT NOT NULL,
+    target     TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (event_id, channel)
+);
 """
 
-_SCHEMA_VERSION = 6
+_SCHEMA_VERSION = 7  # v7: pending_notifications (criada pelo _SCHEMA)
 
 
 class Storage:
@@ -236,25 +263,53 @@ class Storage:
             "SELECT * FROM events WHERE target = ? ORDER BY ts DESC LIMIT ?",
             (target, limit),
         )
-        out = []
-        for r in cur.fetchall():
-            keys = r.keys()
-            out.append(
-                Event(
-                    target=r["target"],
-                    event_type=EventType(r["event_type"]),
-                    kind=Kind(r["kind"]),
-                    key=r["key"],
-                    old_value=r["old_value"],
-                    new_value=r["new_value"],
-                    event_id=r["event_id"] if "event_id" in keys else None,
-                    scan_id=r["scan_id"] if "scan_id" in keys else None,
-                    detected_at=datetime.fromtimestamp(
-                        r["ts"], tz=timezone.utc).isoformat(timespec="seconds"),
-                    metadata=_jload(r["metadata"]) if "metadata" in keys else {},
-                )
-            )
-        return out
+        return [_row_to_event(r) for r in cur.fetchall()]
+
+    def events_by_ids(self, event_ids: list[str]) -> list[Event]:
+        """Eventos pelos `event_id` (ordem cronológica). Ids que a retenção já
+        apagou simplesmente não voltam."""
+        if not event_ids:
+            return []
+        q = ("SELECT * FROM events WHERE event_id IN (" + ",".join("?" * len(event_ids))
+             + ") ORDER BY ts, id")
+        return [_row_to_event(r) for r in self._conn.execute(q, tuple(event_ids)).fetchall()]
+
+    # -- alertas não entregues (reenvio) ----------------------------------
+    def queue_notifications(self, channel: str, target: str, event_ids: list[str]) -> None:
+        """Marca eventos que `channel` falhou em entregar. Idempotente."""
+        now = time.time()
+        self._conn.executemany(
+            "INSERT OR IGNORE INTO pending_notifications (event_id, channel, target, created_at)"
+            " VALUES (?,?,?,?)",
+            [(eid, channel, target, now) for eid in event_ids if eid],
+        )
+        self._conn.commit()
+
+    def pending_notifications(self, channel: str) -> list[dict]:
+        cur = self._conn.execute(
+            "SELECT event_id, target, created_at, attempts FROM pending_notifications"
+            " WHERE channel = ? ORDER BY created_at", (channel,))
+        return [dict(r) for r in cur.fetchall()]
+
+    def pending_counts(self) -> dict[str, int]:
+        cur = self._conn.execute(
+            "SELECT channel, COUNT(*) AS n FROM pending_notifications GROUP BY channel")
+        return {r["channel"]: r["n"] for r in cur.fetchall()}
+
+    def resolve_notifications(self, channel: str, event_ids: list[str]) -> None:
+        """Entregues (ou abandonadas): saem da fila."""
+        self._conn.executemany(
+            "DELETE FROM pending_notifications WHERE channel = ? AND event_id = ?",
+            [(channel, eid) for eid in event_ids])
+        self._conn.commit()
+
+    def bump_notifications(self, channel: str, event_ids: list[str]) -> None:
+        """Mais uma tentativa falhou."""
+        self._conn.executemany(
+            "UPDATE pending_notifications SET attempts = attempts + 1"
+            " WHERE channel = ? AND event_id = ?",
+            [(channel, eid) for eid in event_ids])
+        self._conn.commit()
 
     # -- escrita (aplica diff e devolve eventos) ---------------------------
     def apply_scan(
