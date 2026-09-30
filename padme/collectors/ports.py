@@ -173,8 +173,22 @@ async def _check_port(host: str, port: int, timeout: float, grab: bool) -> tuple
 
 
 async def collect_host(host: str, ports: list[int], timeout: float,
-                       banner: bool = True) -> CollectionResult:
-    results = await asyncio.gather(*(_check_port(host, p, timeout, banner) for p in ports))
+                       banner: bool = True, pace=None,
+                       limit: asyncio.Semaphore | None = None) -> CollectionResult:
+    """`pace(host)`: rate-limit do scan (mesmo freio do HTTP), aplicado a CADA
+    connect. `limit`: teto de connects simultâneos compartilhado entre hosts —
+    sem ele, a lista inteira de portas de todos os hosts abria de uma vez."""
+    async def one(p: int) -> tuple[str, str]:
+        async def run() -> tuple[str, str]:
+            if pace is not None:
+                await pace(host)
+            return await _check_port(host, p, timeout, banner)
+        if limit is None:
+            return await run()
+        async with limit:
+            return await run()
+
+    results = await asyncio.gather(*(one(p) for p in ports))
     records = []
     for p, (state, ban) in zip(ports, results):
         if state != "open":

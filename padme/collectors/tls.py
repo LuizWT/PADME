@@ -82,8 +82,10 @@ def _blocking_cert(host: str, port: int, timeout: float) -> dict | None:
 
 
 async def collect_host(
-    host: str, timeout: float, port: int = 443, cert_expiry_days: int = 14
+    host: str, timeout: float, port: int = 443, cert_expiry_days: int = 14, pace=None,
 ) -> CollectionResult:
+    if pace is not None:  # rate-limit do scan também no handshake
+        await pace(host)
     loop = asyncio.get_running_loop()
     try:
         data = await asyncio.wait_for(

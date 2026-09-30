@@ -9,6 +9,10 @@ Reaproveita os mesmos rótulos e descrições do Telegram (fonte única).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -21,10 +25,34 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
-from .formatting import risk_suffix
+from .formatting import dns_parts, risk_suffix
 
 # Versão do contrato JSON do webhook genérico (consumidores tipo n8n).
 WEBHOOK_SCHEMA_VERSION = 1
+
+# Assinatura opcional (webhook.secret): o destino confere que a mensagem veio do
+# PADME e não foi alterada, e rejeita reenvio velho (replay) pelo timestamp.
+TIMESTAMP_HEADER = "X-Padme-Timestamp"
+SIGNATURE_HEADER = "X-Padme-Signature"
+
+
+def sign(secret: str, timestamp: str, body: bytes) -> str:
+    """`sha256=<hex>` do HMAC-SHA256 de `"<timestamp>.<corpo>"` com o segredo.
+    O timestamp entra no MAC: trocar o header invalida a assinatura."""
+    mac = hmac.new(secret.encode("utf-8"), timestamp.encode("ascii") + b"." + body,
+                   hashlib.sha256)
+    return "sha256=" + mac.hexdigest()
+
+
+def verify(secret: str, timestamp: str, body: bytes, signature: str,
+           tolerance: int = 300, now: float | None = None) -> bool:
+    """Lado do DESTINO (referência para o seu endpoint): assinatura confere em
+    tempo constante e o timestamp está dentro da janela (anti-replay)."""
+    try:
+        age = abs((time.time() if now is None else now) - int(timestamp))
+    except (TypeError, ValueError):
+        return False
+    return age <= tolerance and hmac.compare_digest(sign(secret, timestamp, body), signature)
 
 
 # ── formatação Markdown (Discord) ──────────────────────────────────────────
@@ -44,7 +72,7 @@ def _md_desc(e: Event) -> str:
 def _md_line(e: Event) -> str:
     mark = _MARK[e.event_type]
     if e.kind == Kind.DNS and "|" in e.key:
-        host, rtype, val = (e.key.split("|", 2) + ["", ""])[:3]
+        host, rtype, val = dns_parts(e)
         return f"{mark} `{host}` {rtype} `{val}`{_md_desc(e)}"
     if e.event_type == EventType.CHANGED:
         return f"{mark} {_md_key(e)}{_md_desc(e)}\n    {e.old_value} → {e.new_value}"
@@ -162,11 +190,12 @@ class WebhookNotifier:
     name = "webhook"
 
     def __init__(self, url: str, timeout: float = 15.0, level: Level = Level.DEBUG,
-                 headers: dict[str, str] | None = None):
+                 headers: dict[str, str] | None = None, secret: str = ""):
         self.url = url
         self.timeout = timeout
         self.level = level
         self.headers = headers or {}
+        self.secret = secret or ""
 
     @property
     def configured(self) -> bool:
@@ -175,9 +204,16 @@ class WebhookNotifier:
     async def _post(self, payload: dict) -> NotificationResult:
         if not self.configured:
             return NotificationResult(self.name, ok=False, error="não configurado")
+        # serializamos nós mesmos: a assinatura cobre EXATAMENTE os bytes enviados
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        headers = {"Content-Type": "application/json", **self.headers}
+        if self.secret:  # por último: header do usuário não sobrescreve a assinatura
+            ts = str(int(time.time()))
+            headers[TIMESTAMP_HEADER] = ts
+            headers[SIGNATURE_HEADER] = sign(self.secret, ts, body)
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            return await post_with_retry(client, self.url, self.name, json=payload,
-                                         headers=self.headers or None)
+            return await post_with_retry(client, self.url, self.name, content=body,
+                                         headers=headers)
 
     async def notify_events(self, target: str, events: list[Event]) -> NotificationResult:
         scan_id = next((e.scan_id for e in events if e.scan_id), None)

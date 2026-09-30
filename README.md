@@ -41,8 +41,12 @@ te chama quando a paisagem muda.
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
   (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
-- **Export** para JSON/CSV e **painel web** read-only, com **gráfico de
-  tendência** (eventos/dia nos últimos 30d) — enxerga a superfície crescer/encolher.
+  Registros DNS são **agregados por host e tipo** (`host|A` = conjunto de IPs):
+  a rotação de IP de uma CDN vira **um** `changed` com o diff do conjunto, em vez
+  de um par removido/adicionado por IP a cada ciclo.
+- **Export** para JSON/CSV e **painel web** só-leitura, com **gráfico de
+  tendência** (eventos/dia nos últimos 30d, sem registros DNS) — enxerga a
+  superfície crescer/encolher.
 - Modo **sentinela** (`monitor`) que roda sozinho, 24/7, com **heartbeat /
   dead-man's switch** (avisa que está vivo; silêncio = watchdog externo alerta).
 - `--once` + `--lock` (flock) para rodar via **cron** sem execuções sobrepostas.
@@ -173,19 +177,32 @@ superfície nova servida ali). Os SANs também vão na evidência (`tls_handshak
 - **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
   lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
 - **Pacing responsável (`network.rate_limit_rps` / `per_host_interval_ms` /
-  `jitter_ms`, padrão desligado).** Teto global de requisições/segundo com jitter
-  e intervalo mínimo por host — o monitor 24/7 não martela o alvo nem dispara
-  WAF/rate-limit. Não aumenta agressividade; só torna o scan previsível e educado.
+  `jitter_ms`, padrão desligado).** Teto global de sondas/segundo com jitter e
+  intervalo mínimo por host, aplicado a **toda sondagem ativa**: requisições
+  HTTP, connects de porta, handshakes TLS e consultas do bruteforce — o monitor
+  24/7 não martela o alvo nem dispara WAF/rate-limit. Não aumenta agressividade;
+  só torna o scan previsível e educado.
+- **Teto de connects de porta (`network.max_parallel_connects`, padrão `256`).**
+  Limita quantas conexões TCP do scan de portas ficam abertas ao mesmo tempo,
+  somando todos os hosts — uma lista grande de portas não esgota os file
+  descriptors da máquina nem vira rajada contra o alvo.
 - **Retry educado (`network.max_retries`, padrão `2`).** Requisições HTTP do scan
   recuam com backoff exponencial + jitter em `429`/`5xx` transitório (respeitando
   `Retry-After`) e em hiccup de conexão/timeout. `4xx` permanente nunca repete.
 - **Painel seguro por padrão.** Bind em `127.0.0.1`; um token opcional
-  (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
-  (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de
-  localhost **sem** token é **recusado** (a menos de `--allow-no-auth`) — expor a
-  superfície é decisão consciente. As respostas trazem headers de segurança
-  (`nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store`,
-  CSP). Ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para o painel atrás de proxy + TLS.
+  (`PADME_WEB_TOKEN`) protege **todas** as rotas (`/`, `/export`, `/vantage`),
+  validado em tempo constante. No **navegador**, o login aparece sozinho: qualquer
+  usuário, o token como senha (HTTP Basic). Em automação, `Authorization: Bearer`.
+  Servir fora de localhost **sem** token é **recusado** (a menos de
+  `--allow-no-auth`) — expor a superfície é decisão consciente. O painel abre o
+  banco **só para leitura** (nunca escreve nem migra; banco em versão antiga
+  responde 503 até o monitor migrar), cada conexão tem timeout e há um teto de
+  conexões simultâneas. As respostas trazem headers de segurança (`nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store`, CSP).
+
+  > [!WARNING]
+  > Token por HTTP puro trafega em claro (Basic e Bearer). Fora de localhost,
+  > sirva atrás de um proxy com TLS — ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 ---
 
@@ -291,7 +308,7 @@ python -m padme export --format csv --out superficie.csv
 # Painel web read-only (lê o padme.db; atualiza sozinho a cada 30s)
 python -m padme web            # http://127.0.0.1:8787 (localhost, sem token)
 
-# Painel com token (exige Authorization: Bearer em todas as rotas)
+# Painel com token (navegador: login com o token como senha; API: Bearer)
 export PADME_WEB_TOKEN="$(openssl rand -hex 32)"
 python -m padme web
 
@@ -308,6 +325,11 @@ python -m padme merge casa.json vps-eu.json --out consolidado.json
 > O painel aceita **filtro por domínio** (`?target=alvo.com` ou o dropdown no
 > topo) e uma visão **multi-vantage** em `/vantage` quando `web.vantage_dir`
 > aponta para exports de outras fontes (consolida com o `padme merge`).
+
+> [!TIP]
+> No multi-vantage, atualize todas as instâncias juntas: a partir desta versão o
+> DNS é exportado agregado (`host|A`), então comparar com export de versão
+> anterior (`host|A|ip`) aparece como divergência de presença até todas migrarem.
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
@@ -394,6 +416,24 @@ nunca em 4xx):
   > `tls_handshake`/`takeover_check`/`dns_record`…) e, em `CHANGED`, `changes`
   > (diff por campo) foram **acrescentados**.
 
+  **Assinatura (opcional, `webhook.secret`).** Com o segredo definido, cada POST
+  leva `X-Padme-Timestamp` (unix) e `X-Padme-Signature: sha256=<hex>` — o
+  HMAC-SHA256 de `"<timestamp>.<corpo>"`. O destino confere que a mensagem veio
+  do PADME, que não foi alterada, e recusa timestamp velho (replay). Valide sobre
+  os **bytes crus** do corpo, antes de parsear o JSON:
+
+  ```python
+  import hashlib, hmac, time
+
+  def veio_do_padme(secret: bytes, headers, body: bytes, janela=300) -> bool:
+      ts = headers["X-Padme-Timestamp"]
+      if abs(time.time() - int(ts)) > janela:
+          return False                      # reenvio velho (replay)
+      esperado = "sha256=" + hmac.new(secret, ts.encode() + b"." + body,
+                                      hashlib.sha256).hexdigest()
+      return hmac.compare_digest(esperado, headers["X-Padme-Signature"])
+  ```
+
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 Teste todos de uma vez com `python -m padme test-notify`.
 
@@ -464,7 +504,7 @@ padme/
 │   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat + retenção
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
-│   ├── webpanel.py       # painel read-only (auth Bearer) + tendência + /vantage (stdlib)
+│   ├── webpanel.py       # painel só-leitura (auth Basic/Bearer) + tendência + /vantage (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
 │   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
 │   │                     #   takeover, ports (com banner-grab)
@@ -479,6 +519,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 303 testes: unitários + reliability + netpolicy +
+└── tests/                # 329 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

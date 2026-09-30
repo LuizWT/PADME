@@ -19,6 +19,7 @@ _COMPARABLE_FIELDS = {
     Kind.PORT: ("banner", "service", "product", "version"),
     Kind.TLS: ("issuer", "fingerprint", "expires_at", "sans"),
     Kind.MAILSEC: ("p",),
+    Kind.DNS: ("values",),       # conjunto de respostas do host|tipo
 }
 
 

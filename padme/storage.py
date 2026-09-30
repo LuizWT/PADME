@@ -104,12 +104,37 @@ CREATE TABLE IF NOT EXISTS pending_notifications (
 );
 """
 
-_SCHEMA_VERSION = 7  # v7: pending_notifications (criada pelo _SCHEMA)
+_SCHEMA_VERSION = 8  # v7: pending_notifications (criada pelo _SCHEMA); v8: DNS agregado
+
+
+class StorageOutdated(RuntimeError):
+    """Banco em versão de schema anterior, aberto em modo somente leitura (que
+    não migra). Rode o `monitor`/`scan` ou `padme doctor` uma vez para migrar."""
 
 
 class Storage:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, readonly: bool = False):
+        """`readonly=True` (painel/export): abre com `mode=ro` — nenhuma escrita,
+        DDL ou migração; não disputa lock com o monitor e funciona em volume
+        montado só-leitura. Banco inexistente -> FileNotFoundError; schema
+        antigo -> StorageOutdated (quem migra é o processo de escrita)."""
         self.db_path = str(db_path)
+        self.readonly = readonly
+        if readonly:
+            path = Path(self.db_path)
+            if not path.is_file():
+                raise FileNotFoundError(f"banco não encontrado: {self.db_path}")
+            self._conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True,
+                                         timeout=5.0)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA busy_timeout=3000")  # configuração da conexão, não escrita
+            ver = self._conn.execute("PRAGMA user_version").fetchone()[0]
+            if ver < _SCHEMA_VERSION:
+                self._conn.close()
+                raise StorageOutdated(
+                    f"banco na versão {ver}, esta versão do PADME espera {_SCHEMA_VERSION}: "
+                    "rode o monitor/scan ou `padme doctor` uma vez para migrar.")
+            return
         self._conn = sqlite3.connect(self.db_path, timeout=5.0)
         self._conn.row_factory = sqlite3.Row
         # WAL + busy_timeout: leitura (web/export) e escrita (monitor) simultâneas
@@ -161,8 +186,40 @@ class Storage:
             # separadas dos erros — "coleta ok · N inconclusivos" no painel.
             if not self._has_column("targets", "last_inconclusive"):
                 self._conn.execute("ALTER TABLE targets ADD COLUMN last_inconclusive INTEGER")
+        if ver < 8:
+            self._migrate_dns_aggregate()
         if ver != _SCHEMA_VERSION:
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+
+    def _migrate_dns_aggregate(self) -> None:
+        """v7 -> v8: DNS passa de uma linha por resposta (`host|TIPO|valor`) para
+        uma por (host, tipo) com o conjunto (`host|TIPO`). Converte o ESTADO
+        existente no mesmo formato que o collector gera, então o 1º scan após o
+        upgrade não produz uma rajada de REMOVED+ADDED. O histórico de eventos
+        fica como está (a formatação lê os dois formatos)."""
+        rows = self._conn.execute(
+            "SELECT target, key, value, first_seen, last_seen FROM state WHERE kind = 'dns'"
+        ).fetchall()
+        groups: dict[tuple[str, str], dict] = {}
+        for r in rows:
+            parts = r["key"].split("|", 2)
+            if len(parts) != 3:
+                continue  # já agregado
+            g = groups.setdefault((r["target"], f"{parts[0]}|{parts[1]}"), {
+                "vals": set(), "old": [], "first": r["first_seen"], "last": r["last_seen"]})
+            g["vals"].add(parts[2] or r["value"])
+            g["old"].append(r["key"])
+            g["first"] = min(g["first"], r["first_seen"])
+            g["last"] = max(g["last"], r["last_seen"])
+        for (target, key), g in groups.items():
+            self._conn.executemany(
+                "DELETE FROM state WHERE target = ? AND kind = 'dns' AND key = ?",
+                [(target, k) for k in g["old"]])
+            vals = sorted(g["vals"])
+            self._conn.execute(
+                "INSERT OR REPLACE INTO state (target, kind, key, value, first_seen, last_seen, metadata)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (target, "dns", key, ", ".join(vals), g["first"], g["last"], _jdump({"values": vals})))
 
     def close(self) -> None:
         self._conn.close()
@@ -221,11 +278,14 @@ class Storage:
         """Série densa dos últimos `days` dias: contagem de eventos por tipo por
         dia (added/removed/changed). Dias sem evento vêm com zero, então o
         gráfico fica com espaçamento uniforme. Base pra 'a superfície está
-        crescendo ou estável?'."""
+        crescendo ou estável?'.
+
+        Registros DNS ficam FORA: rotação de IP de CDN não é a superfície
+        crescendo, e dominava o gráfico. Continuam na timeline e no histórico."""
         cur = self._conn.execute(
             "SELECT strftime('%Y-%m-%d', ts, 'unixepoch', 'localtime') AS day,"
             "       event_type, COUNT(*) AS n"
-            " FROM events WHERE target = ?"
+            " FROM events WHERE target = ? AND kind != 'dns'"
             "   AND ts >= strftime('%s', 'now', ?)"
             " GROUP BY day, event_type",
             (target, f"-{max(1, days) - 1} days"),
