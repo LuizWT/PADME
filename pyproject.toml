@@ -13,6 +13,7 @@ dependencies = [
     "PyYAML>=6.0",
     "cryptography>=42.0",
     "python-dotenv>=1.0",
+    "publicsuffixlist>=1.0",   # domínio registrável (dangling CNAME genérico)
 ]
 
 [project.scripts]

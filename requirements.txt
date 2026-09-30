@@ -1,7 +1,8 @@
 # Versões FIXAS (lock) do runtime — o que o CI testa e a imagem Docker instala.
 # As faixas compatíveis ficam no pyproject.toml (instalação como pacote).
-# Para atualizar: instale o pacote num venv limpo (`pip install .`), rode
-# `pip freeze --exclude padme-asm`, rode a suíte e o `pip-audit -r requirements.txt`.
+# O Dependabot abre PR semanal com as versões novas (o CI testa e audita cada
+# uma). Para regenerar à mão: instale o pacote num venv limpo (`pip install .`),
+# rode `pip freeze --exclude padme-asm`, a suíte e `pip-audit -r requirements.txt`.
 anyio==4.15.1
 certifi==2026.7.22
 cffi==2.1.1
@@ -12,6 +13,7 @@ h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
 idna==3.20
+publicsuffixlist==1.0.2.20260925
 pycparser==3.0
 python-dotenv==1.2.3
 PyYAML==6.0.3

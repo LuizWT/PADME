@@ -9,8 +9,9 @@ Fluxo por host (barato por padrão — só faz HTTP se o CNAME casar um serviço
   1. Resolve o CNAME do host. Sem CNAME -> não é candidato, sai.
   2. Casa o alvo do CNAME contra a base de serviços.
   3. Serviço 'nxdomain': se o alvo do CNAME não resolve (NXDOMAIN) -> vulnerável.
-     Serviço com 'fingerprint': busca o corpo HTTP e casa a assinatura de
-     "recurso não reivindicado".
+     Serviço com 'fingerprint': busca o corpo HTTP e casa a assinatura (regex)
+     de "recurso não reivindicado". `status` vem do upstream: "edge case"
+     (reivindicação depende do caso) baixa a confiança do achado.
   4. CNAME para serviço DESCONHECIDO: se o alvo não resolve (NXDOMAIN) E o
      domínio registrável dele também não existe (NS -> NXDOMAIN), qualquer um
      pode registrar esse domínio e passar a responder pelo host -> takeover
@@ -23,9 +24,12 @@ Só rode contra domínios que você é dono ou tem autorização para testar.
 from __future__ import annotations
 
 import json
+import re
+from functools import lru_cache
 from importlib import resources
 
 import httpx
+from publicsuffixlist import PublicSuffixList
 
 from ..models import CollectionResult, Kind, Record
 from .http import DEFAULT_MAX_BYTES, _fetch_limited
@@ -51,17 +55,13 @@ def _load_fingerprints() -> tuple[list[dict], str]:
 # fingerprint    -> string que o serviço serve quando o recurso não existe
 FINGERPRINTS, FINGERPRINTS_REVIEWED = _load_fingerprints()
 
-# sufixos públicos de DOIS níveis mais comuns (sem a PSL inteira). Serve para
-# achar o domínio registrável do alvo do CNAME; errar aqui só causa falso
-# NEGATIVO (consultaria NS de "co.uk", que existe), nunca falso positivo.
-_MULTI_SUFFIXES = {
-    "co.uk", "org.uk", "ac.uk", "gov.uk", "me.uk", "net.uk",
-    "com.br", "net.br", "org.br", "gov.br", "edu.br",
-    "com.au", "net.au", "org.au", "edu.au", "gov.au",
-    "co.jp", "ne.jp", "or.jp", "co.nz", "org.nz", "co.za", "org.za",
-    "com.ar", "com.mx", "com.co", "com.pe", "com.tr", "com.cn", "com.tw",
-    "com.hk", "com.sg", "com.my", "co.in", "co.id", "co.kr", "com.pt",
-}
+
+
+@lru_cache(maxsize=None)
+def _signature(pattern: str) -> re.Pattern:
+    """Assinatura de corpo = regex (a base vem do can-i-take-over-xyz, que usa
+    regex em parte delas), sem diferenciar maiúsculas."""
+    return re.compile(pattern, re.IGNORECASE)
 
 
 def match_service(cname: str) -> dict | None:
@@ -72,20 +72,33 @@ def match_service(cname: str) -> dict | None:
     `github.io.attacker.com` NÃO — evitando falso positivo por substring.
     """
     c = cname.lower().rstrip(".")
+    best, best_len = None, -1
     for fp in FINGERPRINTS:
         for pat in fp["cnames"]:
             pat = pat.lower().rstrip(".")
-            if c == pat or c.endswith("." + pat):
-                return fp
-    return None
+            # o sufixo MAIS ESPECÍFICO vence (um domínio amplo de um serviço não
+            # pode sombrear o subdomínio específico de outro na base)
+            if (c == pat or c.endswith("." + pat)) and len(pat) > best_len:
+                best, best_len = fp, len(pat)
+    return best
 
 
-def registrable_domain(name: str) -> str:
-    """Domínio registrável aproximado: últimos 2 rótulos, ou 3 quando o sufixo
-    é de dois níveis conhecido (co.uk, com.br...)."""
-    labels = name.lower().rstrip(".").split(".")
-    n = 3 if len(labels) >= 3 and ".".join(labels[-2:]) in _MULTI_SUFFIXES else 2
-    return ".".join(labels[-n:])
+@lru_cache(maxsize=1)
+def _psl() -> PublicSuffixList:
+    """Public Suffix List só com a seção ICANN: a pergunta é "dá para
+    REGISTRAR este domínio num registro público?". Sufixos privados
+    (herokuapp.com, github.io…) são recursos de plataforma, não registros —
+    esses ficam com a base de fingerprints. `accept_unknown=False`: TLD fora
+    da lista (.local, .internal, .test, .corp) não é registrável por ninguém."""
+    return PublicSuffixList(only_icann=True, accept_unknown=False)
+
+
+def registrable_domain(name: str) -> str | None:
+    """Domínio registrável (sufixo público ICANN + 1 rótulo), pela PSL.
+    None quando o nome não tem domínio registrável: TLD desconhecido/reservado
+    ou o próprio nome é um sufixo público (ex.: `co.uk`)."""
+    name = name.lower().rstrip(".")
+    return _psl().privatesuffix(name) if name else None
 
 
 async def _domain_unregistered(domain: str, timeout: float) -> bool | None:
@@ -191,13 +204,18 @@ async def collect_host(
         if resolves:
             return CollectionResult(records=[], ok=True)
         domain = registrable_domain(target)
+        if domain is None:  # TLD interno/reservado: ninguém registra -> não é achado
+            return CollectionResult(records=[], ok=True)
         free = await _domain_unregistered(domain, timeout)
         if free is None:
             return CollectionResult(records=[], ok=False)
         if not free:
             return CollectionResult(records=[], ok=True)
-        reason = f"CNAME dangling: domínio {domain} não registrado (NXDOMAIN)"
-        service = "domínio não registrado"
+        # NXDOMAIN no TLD = fora da zona: não registrado OU expirado/suspenso
+        # (hold/redemption). Os dois são risco; confirme no RDAP/WHOIS.
+        reason = (f"CNAME dangling: domínio {domain} fora da zona do TLD (NXDOMAIN) — "
+                  "não registrado ou expirado")
+        service = "domínio não registrado/expirado"
         return CollectionResult(records=[Record(
             kind=Kind.TAKEOVER, key=host, value=f"{service} | {target} | {reason}",
             metadata={"service": service, "cname": target, "reason": reason,
@@ -215,12 +233,13 @@ async def collect_host(
                                     allow_private)
         if not fetched:
             ok = False  # não conseguimos o corpo -> inconclusivo, preserva
-        elif fp["fingerprint"].lower() in body.lower():
+        elif _signature(fp["fingerprint"]).search(body):
             reason = "fingerprint de recurso não reivindicado"
 
     records = []
     if reason:
         records.append(Record(kind=Kind.TAKEOVER, key=host,
                               value=f"{fp['service']} | {target} | {reason}",
-                              metadata={"service": fp["service"], "cname": target, "reason": reason}))
+                              metadata={"service": fp["service"], "cname": target, "reason": reason,
+                                        "status": fp.get("status", "vulnerable")}))
     return CollectionResult(records=records, ok=ok)

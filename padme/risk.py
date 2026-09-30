@@ -29,7 +29,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import IntEnum
 
-from .mailpolicy import dmarc_tag, spf_all_qualifier
+from .mailpolicy import (
+    DMARC_NOT_ENFORCED,
+    DMARC_PARTIAL,
+    DMARC_SUBDOMAINS_NOT_ENFORCED,
+    SPF_EFFECTIVE_SUFFIX,
+    SPF_PERMERROR,
+    SPF_PERMISSIVE,
+)
+from .mailpolicy import findings as mail_findings
 from .models import Event, EventType, Kind
 from .portmap import DATA_PORTS, HIGH_RISK_PORTS
 
@@ -80,6 +88,8 @@ def _base_severity(e: Event) -> Level:
     if k == Kind.NS:  # mudança de nameserver do apex = delegação / possível hijack
         return Level.HIGH
     if k == Kind.MAILSEC:  # SPF/DMARC removido = domínio spoofável -> HIGH
+        if e.key.endswith(SPF_EFFECTIVE_SUFFIX) and t == EventType.REMOVED:
+            return Level.LOW   # sai junto com o |SPF, que já leva o alerta HIGH
         return Level.HIGH if t == EventType.REMOVED else Level.MEDIUM
     if t == EventType.ADDED and k in (Kind.PORT, Kind.SUBDOMAIN):
         return Level.HIGH
@@ -119,9 +129,7 @@ CRITICAL_ASSET = "CRITICAL_ASSET"
 FORBIDDEN_PORT = "FORBIDDEN_PORT"
 UNEXPECTED_PORT = "UNEXPECTED_PORT"
 SUBDOMAIN_TAKEOVER = "SUBDOMAIN_TAKEOVER"
-DMARC_NOT_ENFORCED = "DMARC_NOT_ENFORCED"
-DMARC_SUBDOMAINS_NOT_ENFORCED = "DMARC_SUBDOMAINS_NOT_ENFORCED"
-SPF_PERMISSIVE = "SPF_PERMISSIVE"
+# DMARC_*/SPF_* vêm de mailpolicy (mesma interpretação no collector e no painel)
 MAIL_PROTECTION_REMOVED = "MAIL_PROTECTION_REMOVED"
 NAMESERVER_CHANGED = "NAMESERVER_CHANGED"
 CERT_EXPIRING = "CERT_EXPIRING"
@@ -138,7 +146,9 @@ REASON_LABEL = {
     SUBDOMAIN_TAKEOVER: "subdomain takeover",
     DMARC_NOT_ENFORCED: "DMARC não bloqueia spoofing (p=none)",
     DMARC_SUBDOMAINS_NOT_ENFORCED: "DMARC não protege subdomínios (sp=none)",
-    SPF_PERMISSIVE: "SPF permissivo (+all/?all: qualquer servidor passa)",
+    DMARC_PARTIAL: "DMARC parcial (pct<100 ou t=y)",
+    SPF_PERMISSIVE: "SPF efetivo permissivo (qualquer servidor passa ou neutro)",
+    SPF_PERMERROR: "SPF quebrado (permerror: receptores ignoram)",
     MAIL_PROTECTION_REMOVED: "proteção de e-mail removida",
     NAMESERVER_CHANGED: "nameserver alterado (delegação/hijack)",
     CERT_EXPIRING: "certificado expirando",
@@ -178,9 +188,13 @@ def _port_of(e: Event) -> int | None:
 
 def _confidence(e: Event) -> Confidence:
     """Confiança na observação. Observação direta = CONFIRMED; takeover por
-    inferência (dangling via NXDOMAIN, sem fingerprint) = HIGH."""
+    inferência (dangling via NXDOMAIN, sem fingerprint) = HIGH; serviço que o
+    can-i-take-over-xyz marca como "edge case" = MEDIUM."""
     if e.kind == Kind.TAKEOVER:
-        reason = str((e.metadata or {}).get("reason", "")).lower()
+        md = e.metadata or {}
+        if str(md.get("status", "")).lower() == "edge case":
+            return Confidence.MEDIUM  # recurso livre, mas reivindicar depende do caso
+        reason = str(md.get("reason", "")).lower()
         return Confidence.CONFIRMED if "fingerprint" in reason else Confidence.HIGH
     return Confidence.CONFIRMED
 
@@ -228,24 +242,15 @@ def assess(e: Event) -> RiskAssessment:
 
     # ── E-MAIL (SPF/DMARC) ────────────────────────────────────────────────
     if e.kind == Kind.MAILSEC:
-        if e.event_type == EventType.REMOVED:
+        if e.event_type == EventType.REMOVED and not e.key.endswith(SPF_EFFECTIVE_SUFFIX):
             reasons.append(MAIL_PROTECTION_REMOVED)   # base já é HIGH
         else:
-            # política lida do TXT publicado (mesma interpretação do painel)
-            txt = str(e.new_value or "")
-            if e.key.endswith("|DMARC"):
-                p, sp = dmarc_tag(txt, "p"), dmarc_tag(txt, "sp")
-                if p == "none":
-                    reasons.append(DMARC_NOT_ENFORCED)
-                    rule_id = rule_id or "dmarc-p-none"
-                elif sp == "none":
-                    reasons.append(DMARC_SUBDOMAINS_NOT_ENFORCED)
-                    rule_id = rule_id or "dmarc-sp-none"
-            elif e.key.endswith("|SPF") and spf_all_qualifier(txt) in ("+", "?"):
-                reasons.append(SPF_PERMISSIVE)
-                rule_id = rule_id or "spf-permissive"
-            if reasons:
-                level = max(level, Level.HIGH)
+            # mesma interpretação do painel (mailpolicy); SPF julgado pelo efetivo
+            for f in mail_findings(e.key, str(e.new_value or ""), e.metadata):
+                reasons.append(f.code)
+                rule_id = rule_id or f.rule
+                if f.high:
+                    level = max(level, Level.HIGH)
 
     # ── NS / CERT (anotação explicativa; não muda o nível base) ───────────
     if e.kind == Kind.NS:
