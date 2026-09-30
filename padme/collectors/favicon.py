@@ -22,17 +22,19 @@ import hashlib
 import httpx
 
 from ..models import CollectionResult, Kind, Record
+from .http import open_stream
 
 # favicons são pequenos; teto próprio pra não baixar um "favicon" de 50 MB.
 FAVICON_MAX_BYTES = 1_048_576  # 1 MiB
 
 
 async def _fetch_bytes(
-    client: httpx.AsyncClient, url: str, follow_redirects: bool, max_bytes: int
+    client: httpx.AsyncClient, url: str, follow_redirects: bool, max_bytes: int,
+    allow_private: bool = False,
 ) -> tuple[int, bytes]:
     """GET dos BYTES crus (não decodifica — o hash precisa do binário), limitado
-    a `max_bytes`. Não lê corpo de redirect."""
-    async with client.stream("GET", url, follow_redirects=follow_redirects) as r:
+    a `max_bytes`. Não lê corpo de redirect. Redirects validados (open_stream)."""
+    async with open_stream(client, url, follow_redirects, allow_private) as r:
         if 300 <= r.status_code < 400:
             return r.status_code, b""
         total = 0
@@ -50,11 +52,13 @@ async def collect_host(
     client: httpx.AsyncClient,
     follow_redirects: bool = False,
     max_bytes: int = FAVICON_MAX_BYTES,
+    allow_private: bool = False,
 ) -> CollectionResult:
     for scheme in ("https", "http"):
         url = f"{scheme}://{host}/favicon.ico"
         try:
-            status, data = await _fetch_bytes(client, url, follow_redirects, max_bytes)
+            status, data = await _fetch_bytes(client, url, follow_redirects, max_bytes,
+                                              allow_private)
         except Exception:
             continue  # esse esquema não respondeu; tenta o outro
         if status == 200 and data:

@@ -17,7 +17,8 @@ def _run(host, cname, resolves, body, monkeypatch):
     async def fake_cname(h, t):
         return cname, resolves, True
 
-    async def fake_body(client, h, cache=None, follow_redirects=False, max_bytes=0):
+    async def fake_body(client, h, cache=None, follow_redirects=False, max_bytes=0,
+                        allow_private=False):
         return body, True
 
     monkeypatch.setattr(takeover, "_cname_target", fake_cname)

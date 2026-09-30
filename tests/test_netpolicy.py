@@ -1,6 +1,8 @@
 """P0.6/P0.9 — política de rede: IP privado/reservado e redirect."""
 
-from padme.netpolicy import any_disallowed, is_public_ip, redirect_allowed
+import asyncio
+
+from padme.netpolicy import any_disallowed, is_public_ip, redirect_target_allowed
 
 
 def test_is_public_ip_v4():
@@ -32,9 +34,12 @@ def test_any_disallowed_basta_um():
     assert not any_disallowed(set())                 # sem info -> não bloqueia
 
 
+def _hop(url, allow_private=False):
+    return asyncio.run(redirect_target_allowed(url, allow_private, timeout=1))
+
+
 def test_redirect_allowed():
-    assert not redirect_allowed("http://127.0.0.1/x", allow_private=False)  # SSRF loopback
-    assert not redirect_allowed("http://10.0.0.1/", allow_private=False)
-    assert not redirect_allowed("http://exemplo.com/", allow_private=False)  # host não-IP: não valida
-    assert redirect_allowed("http://8.8.8.8/", allow_private=False)
-    assert redirect_allowed("http://127.0.0.1/", allow_private=True)         # opt-in consciente
+    assert not _hop("http://127.0.0.1/x")          # SSRF loopback
+    assert not _hop("http://10.0.0.1/")
+    assert _hop("http://8.8.8.8/")
+    assert _hop("http://127.0.0.1/", allow_private=True)   # opt-in consciente

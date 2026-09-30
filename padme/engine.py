@@ -211,7 +211,8 @@ class Engine:
             if col.http:
                 cr = await _safe(
                     http.collect_host(host, client, body_cache, net.follow_redirects,
-                                      col.max_response_bytes, col.http_security),
+                                      col.max_response_bytes, col.http_security,
+                                      allow_private=net.allow_private_ips),
                     host, "http", result)
                 _absorb(cr, result, "http", host)
                 http_ok = cr.ok
@@ -219,7 +220,8 @@ class Engine:
             if col.favicon and http_ok:
                 cr = await _safe(
                     favicon.collect_host(host, client, net.follow_redirects,
-                                         col.max_response_bytes),
+                                         col.max_response_bytes,
+                                         allow_private=net.allow_private_ips),
                     host, "favicon", result)
                 _absorb(cr, result, "favicon", host)
             if col.tls:
@@ -230,7 +232,8 @@ class Engine:
             if col.takeover:
                 cr = await _safe(
                     takeover.collect_host(host, client, self.cfg.timeout, body_cache,
-                                          net.follow_redirects, col.max_response_bytes),
+                                          net.follow_redirects, col.max_response_bytes,
+                                          allow_private=net.allow_private_ips),
                     host, "takeover", result)
                 _absorb(cr, result, "takeover", host)
             if col.ports:

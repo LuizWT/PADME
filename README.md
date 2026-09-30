@@ -160,10 +160,15 @@ superfície nova servida ali). Os SANs também vão na evidência (`tls_handshak
   com o token do bot / secret do webhook não é logada) e um filtro mascara
   qualquer segredo conhecido que apareça em log — mesmo com `-v`.
 - **Anti-SSRF (`network.follow_redirects`, padrão `false`).** Um `Location:
-  http://127.0.0.1/` não é seguido; o destino é apenas registrado.
+  http://127.0.0.1/` não é seguido; o destino é apenas registrado. Ligando o
+  follow, cada salto é seguido manualmente (até 5) e validado **antes** da
+  requisição: só `http`/`https`, e o destino (IP literal ou nome resolvido)
+  precisa ser público. Salto bloqueado fica registrado como redirect.
 - **IP privado/reservado (`network.allow_private_ips`, padrão `false`).** Hosts
-  que resolvem para faixas internas (10/8, 192.168/16, 127/8, link-local, ULA
-  IPv6…) **não** são sondados ativamente (HTTP/TLS/portas). O DNS passivo segue.
+  que resolvem para faixas não-públicas (10/8, 192.168/16, 127/8, link-local,
+  CGNAT 100.64/10, ULA IPv6, IPv4 embutido em IPv6…) **não** são sondados
+  ativamente (HTTP/TLS/portas). O DNS passivo segue. Limite: a checagem resolve
+  antes da conexão, então não é defesa completa contra DNS rebinding.
   Ligue conscientemente só se for monitorar rede interna.
 - **Teto de corpo HTTP (`collectors.max_response_bytes`, 256 KiB).** O collector
   lê por streaming e descarta o resto — um endpoint de 500 MB não estoura memória.
@@ -467,6 +472,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 286 testes: unitários + reliability + netpolicy +
+└── tests/                # 295 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
