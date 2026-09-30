@@ -39,7 +39,6 @@ from .config import Config
 from .engine import Engine, build_notifiers
 from .logredact import install_secret_redaction
 from .models import Event
-from .notify import TelegramNotifier
 from .risk import Level
 from .scheduler import run_monitor
 from .storage import Storage
@@ -214,17 +213,6 @@ async def _cmd_merge(cfg: Config, args) -> int:
     return 0
 
 
-async def _cmd_test_telegram(cfg: Config, args) -> int:
-    tg = cfg.telegram
-    notifier = TelegramNotifier(tg.bot_token, tg.chat_id)
-    if not notifier.configured:
-        print("Telegram não configurado (bot_token/chat_id ausentes).")
-        return 1
-    res = await notifier.send("🛰️ <b>Padmé</b> online. Teste de conexão OK.")
-    print("Mensagem enviada." if res.ok else "Falha ao enviar — confira token/chat_id.")
-    return 0 if res.ok else 1
-
-
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
@@ -264,13 +252,8 @@ async def _cmd_web(cfg: Config, args) -> int:
 def _config_warnings(cfg: Config) -> list[str]:
     """Sanidade de configuração (não bloqueia; só diagnostica em `doctor`)."""
     w: list[str] = list(cfg.warnings)
+    # (limites numéricos já são garantidos por config._validate no carregamento)
     _PLACEHOLDERS = {"SEU_BOT_TOKEN_AQUI", "SEU_CHAT_ID_AQUI", ""}
-    if cfg.interval_seconds <= 0:
-        w.append("interval_seconds deve ser > 0")
-    if cfg.concurrency <= 0:
-        w.append("concurrency deve ser > 0")
-    if cfg.timeout <= 0:
-        w.append("timeout deve ser > 0")
     if cfg.telegram.enabled and (cfg.telegram.bot_token in _PLACEHOLDERS
                                  or cfg.telegram.chat_id in _PLACEHOLDERS):
         w.append("telegram habilitado mas bot_token/chat_id ausentes ou de exemplo")
@@ -391,9 +374,6 @@ def build_parser() -> argparse.ArgumentParser:
     xp.add_argument("--out", default=None, help="arquivo de saída (padrão: stdout)")
     xp.set_defaults(func=_cmd_export)
 
-    tp = sub.add_parser("test-telegram", help="envia mensagem de teste no Telegram")
-    tp.set_defaults(func=_cmd_test_telegram)
-
     tn = sub.add_parser("test-notify", help="testa TODOS os canais configurados")
     tn.set_defaults(func=_cmd_test_notify)
 
@@ -442,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"aviso de config: {w}", file=sys.stderr)
 
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-telegram", "test-notify", "web", "doctor", "merge", "backup")
+    read_only = args.command in ("events", "export", "test-notify", "web", "doctor", "merge", "backup")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"

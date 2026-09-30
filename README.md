@@ -274,10 +274,10 @@ docker compose logs -f
 > (via `python-dotenv`), então os `${PADME_TG_TOKEN}` / `${PADME_TG_CHAT}`
 > resolvem no terminal, no cron e no systemd — sem depender do editor.
 
-Teste:
+Teste (envia uma mensagem de teste para **todos** os canais configurados):
 
 ```bash
-python -m padme test-telegram
+python -m padme test-notify
 ```
 
 ## Uso
