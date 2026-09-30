@@ -26,8 +26,9 @@ te chama quando a paisagem muda.
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints, e CNAME
   para **domínio não registrado** mesmo fora da base de serviços).
 - **Sinais RED**: mudança de **NS** (delegação / hijack de zona), **SPF/DMARC**
-  (remoção = domínio spoofável; SPF `+all`/`?all` e DMARC `p=none`/`sp=none`
-  viram `high` e aparecem nos problemas abertos do painel) e **banner-grab** nas portas (mudança de banner
+  (remoção = domínio spoofável; SPF **efetivo** — seguindo `include:`/`redirect=` —
+  permissivo ou quebrado e DMARC `p=none`/`sp=none`/parcial viram `high` e
+  aparecem nos problemas abertos do painel) e **banner-grab** nas portas (mudança de banner
   = versão de serviço mudou). Além do texto de saudação (SSH/SMTP/FTP…), o
   handshake binário do **MySQL/MariaDB** é decodificado para a versão exata do
   servidor — banco exposto com versão conhecida é sinal forte.
@@ -91,8 +92,8 @@ como dimensão **independente** (`severity` = impacto; `confidence` = quão conf
 usando o **contexto do ativo** (`context.assets`: `exposure`, `criticality`,
 `expected_ports`, `forbidden_ports`): porta administrativa/dados recém-exposta
 (RDP, VNC, Redis…) → `critical`; porta **proibida** pela política → `critical`;
-porta **fora do estado esperado** → `high`; DMARC `p=none`/`sp=none` e SPF
-`+all`/`?all` → `high`. Cada
+porta **fora do estado esperado** → `high`; SPF efetivo permissivo/quebrado e
+DMARC que não protege → `high` (ver [Postura de e-mail](#postura-de-e-mail-spf--dmarc)). Cada
 avaliação carrega **reason codes** estáveis (`NEW_OPEN_PORT`, `INTERNET_EXPOSED_ASSET`,
 `FORBIDDEN_PORT`…) e um `rule_id` — o painel e o webhook mostram o **porquê**.
 Um **CHANGED** ainda traz o diff **por campo** (`_changes`: `status: 200 → 403`),
@@ -136,11 +137,11 @@ mesma stack. Tudo respeita o `ok`/escopo: coleta inconclusiva **não** vira
 ### Subdomain takeover
 
 Para cada host com **CNAME**, a Padmé casa o alvo contra uma base de serviços
-(baseada no **can-i-take-over-xyz**: GitHub Pages, S3, Heroku, Azure, Shopify,
-Fastly, Zendesk, etc.) e confirma de dois jeitos:
+gerada do **can-i-take-over-xyz** (S3, Azure, Elastic Beanstalk, GitHub Pages,
+Heroku, Ghost, Ngrok, WordPress… 29 serviços) e confirma de dois jeitos:
 
-- **fingerprint** — busca o corpo HTTP e casa a assinatura de "recurso não
-  reivindicado" (ex: *"There isn't a GitHub Pages site here."*);
+- **fingerprint** — busca o corpo HTTP e casa a assinatura (regex) de "recurso
+  não reivindicado" (ex: *"There isn't a GitHub Pages site here."*);
 - **nxdomain** — para serviços tipo Azure, se o alvo do CNAME não resolve, o
   apontamento está *dangling* → vulnerável.
 
@@ -151,12 +152,64 @@ qualquer um pode registrar esse domínio e responder pelo seu host — achado
 inexistente dentro de um domínio que **existe** não é reivindicável por
 terceiro e não gera alerta; resposta inconclusiva (timeout) nunca vira achado.
 
+O domínio registrável sai da **Public Suffix List** (seção ICANN, via
+`publicsuffixlist`): `x.site.co.uk` → `site.co.uk`, regras curinga/exceção
+inclusas. CNAME para TLD que não existe publicamente (`.local`, `.internal`,
+`.corp`, `.test`) **nunca** vira achado — ninguém registra esses nomes.
+
 A base de serviços é **dado**, não código: `padme/data/takeover_fingerprints.json`,
-com a data da última revisão (`reviewed`). O `padme doctor` avisa quando ela
-passa de 180 dias sem revisão contra o can-i-take-over-xyz.
+gerada por `scripts/update_takeover_fingerprints.py`:
+
+```bash
+python scripts/update_takeover_fingerprints.py --check   # mostra o que mudaria
+python scripts/update_takeover_fingerprints.py           # regrava e marca a revisão
+```
+
+Entra só o que o upstream marca como **Vulnerable** ou **Edge case** (serviço
+"Not vulnerable" sai: era alerta crítico falso); precisa de alvo de CNAME e de
+um sinal (NXDOMAIN ou assinatura de corpo; só-status HTTP é fraco demais).
+Serviço **edge case** (reivindicar depende do caso) gera o achado com confiança
+`medium`. O `padme doctor` avisa quando a base passa de 180 dias sem revisão.
 
 Host sem CNAME nem entra na checagem (custo zero). Um achado vira um evento
 `TAKEOVER`, que aparece no **topo** do alerta (severidade `critical`).
+
+### Postura de e-mail (SPF / DMARC)
+
+O TXT do apex sozinho não diz se o domínio é spoofável: `include:` e
+`redirect=` delegam a decisão a outros domínios. O Padmé calcula o **SPF
+efetivo** como um receptor faria para o IP de um atacante (RFC 7208) e grava o
+veredito num registro próprio, `apex|SPF-EFFECTIVE` (ex.: `+all · include:vendor.net → all`).
+Assim, se um fornecedor incluído passa a `+all`, sai um evento mesmo sem o seu
+TXT mudar.
+
+| SPF efetivo | Resultado |
+|---|---|
+| `+all` direto, `include:` de quem passa qualquer um, `ip4`/`ip6` com faixa de `/8` (`/16` no IPv6) ou maior | `SPF_PERMISSIVE` → `high` |
+| `?all`, ou sem `all` nem `redirect=` (padrão neutro) | `SPF_PERMISSIVE` → `high` |
+| mais de 10 consultas DNS, `include`/`redirect` sem SPF, dois registros SPF, termo inválido | `SPF_PERMERROR` → `high` (receptores ignoram o SPF) |
+| `~all` / `-all` | sem achado |
+
+| DMARC | Resultado |
+|---|---|
+| `p=none`, `p=` ausente/inválido, ou dois registros DMARC | `DMARC_NOT_ENFORCED` → `high` |
+| `sp=none` com `p` rígido | `DMARC_SUBDOMAINS_NOT_ENFORCED` → `high` |
+| `pct<100` ou `t=y` com `p=quarantine` (o resto passa **sem** política) | `DMARC_PARTIAL` → `high` |
+| `pct<100` ou `t=y` com `p=reject` (o resto vai para quarentena) | `DMARC_PARTIAL` (anotação, sem escalar) |
+
+Consulta sem resposta no meio da cadeia (timeout) deixa a coleta inconclusiva:
+a postura anterior é preservada, nunca vira `removed`. Macros (`%{i}`) não são
+avaliáveis estaticamente: contam no limite de consultas e não são seguidas.
+
+> [!NOTE]
+> Na primeira varredura depois de atualizar, cada alvo com SPF ganha um evento
+> `added` de `apex|SPF-EFFECTIVE` (uma vez só). Se a postura efetiva estiver
+> fraca, ele já chega como `high` — é a informação nova, não ruído.
+
+> [!IMPORTANT]
+> Respostas TXT grandes (domínios com muitas verificações) vêm truncadas por UDP
+> e exigem **TCP/53** até o resolvedor. Se a rede bloquear TCP/53, a coleta de
+> SPF desses domínios fica inconclusiva (estado preservado, `doctor` mostra).
 
 ### Expiração de certificado
 
@@ -239,7 +292,9 @@ cp config.example.yaml config.yaml      # e edite
 > O `requirements.txt` é um **lock com versões fixas** (inclusive dependências
 > transitivas), o mesmo que a imagem Docker e o CI instalam — build reproduzível.
 > O `pyproject.toml` mantém faixas compatíveis para quem instala como pacote.
-> O CI roda `pip-audit` sobre o lock a cada push.
+> O **Dependabot** abre PR semanal com versões novas (Python, GitHub Actions e o
+> digest da imagem base); o CI roda `pip-audit` sobre o lock a cada push **e toda
+> semana**, então CVE nova aparece mesmo sem commit.
 
 Ou instale como comando isolado, sem mexer no seu Python, com **pipx**:
 
@@ -288,6 +343,12 @@ docker compose logs -f
 > se o último scan passou de `2*interval_seconds + 10min` (loop travado, banco
 > inacessível). `docker stop` manda SIGTERM, tratado como o Ctrl+C: o monitor
 > avisa "monitoramento encerrado" nos canais e fecha o banco antes de sair.
+
+A base `python:3.12-slim` é fixada por **digest** (build reproduzível). O CI
+constrói a imagem a cada push e roda `scripts/docker-smoke.sh`, que prova no
+container de verdade: entrypoint, usuário sem privilégio, `HEALTHCHECK`,
+dados empacotados, `health` 1/0 e `docker stop` saindo com código 0 (e não 137
+por SIGKILL).
 
 > [!TIP]
 > `--user "$(id -u):$(id -g)"` faz o `padme.db` sair com o dono certo no host.
@@ -514,9 +575,10 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 
 ```bash
 pip install -r requirements-dev.txt   # lock + pytest/ruff/pip-audit fixos
-ruff check padme tests           # lint (o CI roda em Python 3.10/3.11/3.12)
+ruff check padme tests scripts   # lint (o CI roda em Python 3.10/3.11/3.12)
 pytest -q
 pip-audit -r requirements.txt    # CVEs conhecidas nas dependências fixas
+docker build -t padme:ci . && sh scripts/docker-smoke.sh padme:ci   # imagem
 ```
 
 ## Estrutura
@@ -529,7 +591,7 @@ padme/
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── risk.py           # motor de risco: severidade base + assess() (severity+confidence+reason codes)
 │   ├── portmap.py        # tabela única de portas: serviço, risco (acesso remoto/dados), TLS implícito
-│   ├── mailpolicy.py     # leitura de SPF (qualificador do all) e DMARC (p/sp)
+│   ├── mailpolicy.py     # SPF efetivo (include/redirect, RFC 7208) e DMARC (p/sp/pct/t)
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
@@ -549,12 +611,16 @@ padme/
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
 │   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
 │   │                     #   takeover, ports (com banner-grab)
-│   ├── data/             # takeover_fingerprints.json (base revisável, com data)
+│   ├── data/             # takeover_fingerprints.json (gerada do can-i-take-over-xyz)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
 ├── ideias.md             # evolução adiada por design (porquê/como/impacto)
-├── .github/workflows/    # CI: ruff + compileall + pytest (3.10/3.11/3.12) + pip-audit
-├── scripts/release.sh    # release limpo via git archive
+├── .github/workflows/    # CI: ruff + pytest (3.10-3.12) + pip-audit (+ semanal) + imagem
+├── .github/dependabot.yml # PR semanal: lock Python, Actions e digest da imagem
+├── scripts/
+│   ├── release.sh        # release limpo via git archive
+│   ├── docker-smoke.sh   # smoke test da imagem (usado pelo CI)
+│   └── update_takeover_fingerprints.py  # regenera a base de takeover
 ├── Dockerfile            # imagem do sentinela (roda `padme`)
 ├── docker-compose.yml    # sobe o monitor 24/7 com restart automático
 ├── .dockerignore
@@ -562,6 +628,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 356 testes: unitários + reliability + netpolicy +
+└── tests/                # 398 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
