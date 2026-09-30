@@ -260,7 +260,10 @@ def _changes_html(changes: dict | None) -> str:
     """Detalhe do diff semântico de um CHANGED: campo: old → new."""
     if not changes:
         return ""
-    bits = [f"{_esc(f)}: {_esc(ch.get('old'))} → {_esc(ch.get('new'))}"
+    def fmt(v):  # conjuntos (DNS, SANs do TLS) em texto, não repr de lista
+        return ", ".join(map(str, v)) if isinstance(v, list) else v
+
+    bits = [f"{_esc(f)}: {_esc(fmt(ch.get('old')))} → {_esc(fmt(ch.get('new')))}"
             for f, ch in changes.items()]
     return "<span class=chgdet>" + " · ".join(bits) + "</span>"
 
@@ -571,7 +574,7 @@ def _trend(serie: list[dict], days: int) -> str:
     net = added - removed
     net_s = f"+{net}" if net > 0 else str(net)
     out = [f'<div class=trend data-days="{days}"><div class=hd>'
-           f'<b>tendência · {days}d</b>']
+           f'<b>tendência · {days}d</b><span class=lghint>sem registros DNS</span>']
     if total:
         out.append(f'<span class=net>líquido <b2>{net_s}</b2> · +{added}/−{removed} · {total} evento(s)</span>')
     out.append('</div>')

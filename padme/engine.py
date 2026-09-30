@@ -306,8 +306,12 @@ def _ips_from_dns(records: list[Record]) -> set[str]:
     """Extrai os IPs (A/AAAA) já coletados pelo collector de DNS."""
     ips: set[str] = set()
     for r in records:
-        if r.kind == Kind.DNS and ("|A|" in r.key or "|AAAA|" in r.key):
-            ips.add(r.value)
+        if r.kind != Kind.DNS:
+            continue
+        parts = r.key.split("|")
+        if len(parts) >= 2 and parts[1] in ("A", "AAAA"):
+            vals = (r.metadata or {}).get("values") or [v.strip() for v in r.value.split(",")]
+            ips.update(v for v in vals if v)
     return ips
 
 

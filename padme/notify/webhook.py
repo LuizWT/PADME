@@ -25,7 +25,7 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
-from .formatting import risk_suffix
+from .formatting import dns_parts, risk_suffix
 
 # Versão do contrato JSON do webhook genérico (consumidores tipo n8n).
 WEBHOOK_SCHEMA_VERSION = 1
@@ -72,7 +72,7 @@ def _md_desc(e: Event) -> str:
 def _md_line(e: Event) -> str:
     mark = _MARK[e.event_type]
     if e.kind == Kind.DNS and "|" in e.key:
-        host, rtype, val = (e.key.split("|", 2) + ["", ""])[:3]
+        host, rtype, val = dns_parts(e)
         return f"{mark} `{host}` {rtype} `{val}`{_md_desc(e)}"
     if e.event_type == EventType.CHANGED:
         return f"{mark} {_md_key(e)}{_md_desc(e)}\n    {e.old_value} → {e.new_value}"

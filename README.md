@@ -41,8 +41,12 @@ te chama quando a paisagem muda.
 - **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
   (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
-- **Export** para JSON/CSV e **painel web** read-only, com **gráfico de
-  tendência** (eventos/dia nos últimos 30d) — enxerga a superfície crescer/encolher.
+  Registros DNS são **agregados por host e tipo** (`host|A` = conjunto de IPs):
+  a rotação de IP de uma CDN vira **um** `changed` com o diff do conjunto, em vez
+  de um par removido/adicionado por IP a cada ciclo.
+- **Export** para JSON/CSV e **painel web** só-leitura, com **gráfico de
+  tendência** (eventos/dia nos últimos 30d, sem registros DNS) — enxerga a
+  superfície crescer/encolher.
 - Modo **sentinela** (`monitor`) que roda sozinho, 24/7, com **heartbeat /
   dead-man's switch** (avisa que está vivo; silêncio = watchdog externo alerta).
 - `--once` + `--lock` (flock) para rodar via **cron** sem execuções sobrepostas.
@@ -322,6 +326,11 @@ python -m padme merge casa.json vps-eu.json --out consolidado.json
 > topo) e uma visão **multi-vantage** em `/vantage` quando `web.vantage_dir`
 > aponta para exports de outras fontes (consolida com o `padme merge`).
 
+> [!TIP]
+> No multi-vantage, atualize todas as instâncias juntas: a partir desta versão o
+> DNS é exportado agregado (`host|A`), então comparar com export de versão
+> anterior (`host|A|ip`) aparece como divergência de presença até todas migrarem.
+
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
 
@@ -510,6 +519,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 303 testes: unitários + reliability + netpolicy +
+└── tests/                # 329 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

@@ -4,6 +4,11 @@ Usa dnspython se disponível (para CNAME/MX); caso contrário cai para
 getaddrinfo (apenas A/AAAA). Um CNAME/registro novo costuma ser o primeiro
 sinal de um serviço subindo ou de um takeover em potencial.
 
+Um Record por (host, tipo): key `host|TIPO`, valor = o CONJUNTO de respostas
+ordenado ("1.1.1.1, 2.2.2.2"), lista em `metadata.values`. Assim a rotação de IP
+de uma CDN vira UM `CHANGED` (com o diff do conjunto), e não um par
+ADDED+REMOVED por IP a cada ciclo — que era ruído e distorcia a tendência.
+
 Confiabilidade: distingue resposta DEFINITIVA (respondeu, ou NXDOMAIN/NoAnswer)
 de FALHA TRANSITÓRIA (timeout, SERVFAIL). Timeout em qualquer consulta marca o
 resultado como `ok=False` — o estado DNS anterior do host é preservado em vez de
@@ -49,10 +54,17 @@ async def _collect_dnspython(host: str, timeout: float) -> CollectionResult:
         except Exception:
             ok = False  # timeout / SERVFAIL / resolver quebrou -> desconhecido
             continue
-        values = sorted(r.to_text().rstrip(".") for r in answer)
-        for v in values:
-            records.append(Record(kind=Kind.DNS, key=f"{host}|{rtype}|{v}", value=v))
+        values = sorted({r.to_text().rstrip(".") for r in answer})
+        if values:
+            records.append(dns_record(host, rtype, values))
     return CollectionResult(records=records, ok=ok)
+
+
+def dns_record(host: str, rtype: str, values: list[str]) -> Record:
+    """Record agregado de um (host, tipo)."""
+    vals = sorted(set(values))
+    return Record(kind=Kind.DNS, key=f"{host}|{rtype}", value=", ".join(vals),
+                  metadata={"values": vals})
 
 
 async def _collect_getaddrinfo(host: str, timeout: float) -> CollectionResult:
@@ -68,8 +80,8 @@ async def _collect_getaddrinfo(host: str, timeout: float) -> CollectionResult:
         return CollectionResult(records=[], ok=definitive)
     except Exception:
         return CollectionResult(records=[], ok=False)  # timeout etc.
-    ips = sorted({info[4][0] for info in infos})
-    return CollectionResult(
-        records=[Record(kind=Kind.DNS, key=f"{host}|A|{ip}", value=ip) for ip in ips],
-        ok=True,
-    )
+    ips = {info[4][0] for info in infos}
+    v4 = [ip for ip in ips if ":" not in ip]
+    v6 = [ip for ip in ips if ":" in ip]
+    records = [dns_record(host, t, vals) for t, vals in (("A", v4), ("AAAA", v6)) if vals]
+    return CollectionResult(records=records, ok=True)

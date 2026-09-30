@@ -92,3 +92,18 @@ def risk_suffix(e: Event) -> str:
     if r.confidence != Confidence.CONFIRMED:
         parts.append(f"confiança {r.confidence.name.lower()}")
     return (" · " + " · ".join(parts)) if parts else ""
+
+
+def dns_parts(e: Event) -> tuple[str, str, str]:
+    """(host, tipo, valor exibido) de um evento DNS. Key atual `host|TIPO` (o
+    valor é o conjunto; CHANGED mostra antigo → novo). Key antiga
+    `host|TIPO|valor` (histórico, fila de reenvio) continua legível."""
+    parts = e.key.split("|", 2)
+    host = parts[0]
+    rtype = parts[1] if len(parts) > 1 else ""
+    if len(parts) == 3:
+        return host, rtype, parts[2]
+    if e.event_type == EventType.CHANGED:
+        return host, rtype, f"{e.old_value} → {e.new_value}"
+    val = e.old_value if e.event_type == EventType.REMOVED else e.new_value
+    return host, rtype, val or ""
