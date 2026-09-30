@@ -138,6 +138,9 @@ Avaliar evolução por qualidade, não por número de features:
   Exposta no painel como KPI ("alertas explicáveis"): mede, sobre os eventos
   HIGH/CRITICAL recentes, quantos trazem os três pilares juntos e aponta qual
   falta quando não é 100% — número baixo = pipeline que grita sem sustentar.
-- **Collector reliability** — success/partial/latency por collector.
+- **Collector reliability** — success/partial/latency por collector. Consolidada
+  no painel como KPI ("collectors confiáveis"): fração de observações
+  (alvo × collector) `ok` no último scan e quais collectors estão degradados —
+  collector em erro é cegueira parcial da superfície, não "tudo limpo".
 - **Alert quality** — alertas relevantes vs. total notificado.
 - **Test stability** — pytest + ruff + CI verdes, sem verde artificial.
