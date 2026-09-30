@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS targets (
 );
 """
 
-_SCHEMA_VERSION = 5
+_SCHEMA_VERSION = 6
 
 
 class Storage:
@@ -129,6 +129,11 @@ class Storage:
             # v4 -> v5: saúde POR COLLECTOR do último scan (JSON em targets).
             if not self._has_column("targets", "collectors_health"):
                 self._conn.execute("ALTER TABLE targets ADD COLUMN collectors_health TEXT")
+        if ver < 6:
+            # v5 -> v6: coletas INCONCLUSIVAS do último scan (timeout sem exceção),
+            # separadas dos erros — "coleta ok · N inconclusivos" no painel.
+            if not self._has_column("targets", "last_inconclusive"):
+                self._conn.execute("ALTER TABLE targets ADD COLUMN last_inconclusive INTEGER")
         if ver != _SCHEMA_VERSION:
             self._conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
 
@@ -401,11 +406,14 @@ class Storage:
 
     def update_health(self, target: str, *, error_count: int, partial: bool,
                       duration_ms: int, collectors: dict | None = None,
-                      when: float | None = None) -> None:
+                      when: float | None = None, inconclusive: int = 0) -> None:
         """Grava a saúde da última coleta do alvo. `last_success_at` só avança
         quando a coleta veio limpa (error_count == 0) — assim o painel distingue
         'último scan' de 'último scan confiável'. `collectors`: status por
-        collector do último scan (JSON)."""
+        collector do último scan (JSON).
+
+        `inconclusive`: coletas sem resposta (timeout) que NÃO quebraram — estado
+        preservado. São mostradas à parte; parcial de verdade continua sendo erro."""
         now = time.time() if when is None else when
         if error_count == 0:
             self._conn.execute(
@@ -419,6 +427,8 @@ class Storage:
                 " last_partial=?, last_duration_ms=? WHERE target=?",
                 (now, error_count, int(partial), duration_ms, target),
             )
+        self._conn.execute("UPDATE targets SET last_inconclusive=? WHERE target=?",
+                           (int(inconclusive), target))
         if collectors is not None:
             self._conn.execute("UPDATE targets SET collectors_health=? WHERE target=?",
                                (_jdump(collectors), target))

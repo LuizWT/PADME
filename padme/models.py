@@ -180,6 +180,9 @@ class ScanResult:
     # saúde por collector neste scan: {nome: {"ok": n, "fail": n}}. Vira
     # "DNS OK / PORTS PARTIAL / CT ERROR" no doctor e no painel (§7 do roadmap).
     collector_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+    # coletas INCONCLUSIVAS: collector respondeu ok=False sem exceção (timeout,
+    # fonte sem resposta) — estado preservado. Diferente de `errors` (quebrou).
+    inconclusive: int = 0
 
     def mark_collector(self, name: str, ok: bool) -> None:
         s = self.collector_stats.setdefault(name, {"ok": 0, "fail": 0})

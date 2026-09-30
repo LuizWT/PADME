@@ -17,9 +17,9 @@ Severidade de cada evento (kind + tipo):
     http/tls (add/changed)    -> MEDIUM
     http/tls REMOVED,
       port/subdomain removido -> LOW
-    RESOLUÇÃO (takeover/cert
-      REMOVED, wildcard some
-      ou troca de IP)         -> LOW   (boa notícia não é alerta)
+    takeover corrigido        -> MEDIUM (aviso de resolução, não alerta crítico)
+    cert renovado, wildcard
+      some ou troca de IP     -> LOW
     dns                       -> DEBUG
 """
 
@@ -74,10 +74,12 @@ def parse_level(value: object, default: Level = Level.MEDIUM) -> Level:
 def _base_severity(e: Event) -> Level:
     """Severidade BASE por (categoria, tipo) — a régua histórica, estável."""
     k, t = e.kind, e.event_type
-    # REMOVED de um PROBLEMA = o problema foi resolvido (takeover corrigido,
-    # cert renovado): registra, mas não dispara alerta com a gravidade do problema.
+    # REMOVED de um PROBLEMA = o problema foi resolvido: não herda a gravidade.
+    # Takeover corrigido vira MEDIUM (chega aos canais padrão como aviso de
+    # resolução — fecha o ciclo do achado mais grave, e é raro); cert renovado
+    # fica LOW (acontece em todo ciclo de renovação).
     if k == Kind.TAKEOVER:
-        return Level.LOW if t == EventType.REMOVED else Level.CRITICAL
+        return Level.MEDIUM if t == EventType.REMOVED else Level.CRITICAL
     if k == Kind.CERT_EXPIRY:
         return Level.LOW if t == EventType.REMOVED else Level.HIGH
     if k == Kind.WILDCARD:

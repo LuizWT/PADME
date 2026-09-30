@@ -190,9 +190,10 @@ def _ev(kind, etype, key="x.com", old="a", new="b", md=None):
     return Event("x.com", etype, kind, key, old, new, metadata=md or {})
 
 
-def test_takeover_resolvido_e_baixo_com_razao():
+def test_takeover_corrigido_e_aviso_medio_com_razao():
+    # chega aos canais padrão (medium) como aviso de resolução, não como crítico
     r = assess(_ev(Kind.TAKEOVER, EventType.REMOVED, "blog.x.com", new=None))
-    assert r.level == Level.LOW and ISSUE_RESOLVED in r.reasons
+    assert r.level == Level.MEDIUM and ISSUE_RESOLVED in r.reasons
     assert assess(_ev(Kind.TAKEOVER, EventType.ADDED, "blog.x.com", old=None)).level == Level.CRITICAL
     assert assess(_ev(Kind.TAKEOVER, EventType.CHANGED, "blog.x.com")).level == Level.CRITICAL
 
@@ -217,3 +218,52 @@ def test_resolucao_nao_derruba_kpi_de_explicabilidade():
 def test_mailsec_removido_tem_evidencia():
     ev = evidence_of(Kind.MAILSEC, "x.com|SPF", "v=spf1 -all", {})
     assert ev == {"type": "dns_txt", "record": "spf", "policy": "v=spf1 -all"}
+
+
+# ── coleta parcial x inconclusiva (decisão: separar os dois casos) ──────────
+def test_inconclusivo_conta_separado_do_erro():
+    from padme.engine import _absorb
+    r = ScanResult(target="x.com")
+    _absorb(CollectionResult([], ok=False), r, "http", "a.x.com")              # timeout
+    _absorb(CollectionResult([], ok=False, error="boom"), r, "tls", "a.x.com")  # exceção (_safe)
+    _absorb(CollectionResult([], ok=True), r, "dns", "a.x.com")
+    assert r.inconclusive == 1       # só o timeout; a exceção é erro, não inconclusivo
+
+
+def test_saude_persiste_inconclusivos_e_migra_para_v6():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    try:
+        assert s._conn.execute("PRAGMA user_version").fetchone()[0] == 6
+        s.apply_scan("x.com", [])
+        s.update_health("x.com", error_count=0, partial=False, duration_ms=5, inconclusive=3)
+        m = s.target_meta("x.com")
+        assert m["last_inconclusive"] == 3 and m["last_partial"] == 0
+    finally:
+        s.close()
+        os.remove(db)
+
+
+def test_painel_mostra_coleta_ok_com_inconclusivos():
+    from padme.webpanel import _health
+    base = {"last_error_count": 0, "last_partial": 0, "last_scan_at": 0, "last_success_at": 0}
+    assert "coleta ok · 3 inconclusivos" in _health({**base, "last_inconclusive": 3})
+    assert "coleta ok · 1 inconclusivo<" in _health({**base, "last_inconclusive": 1})
+    assert "dados completos" in _health({**base, "last_inconclusive": 0})
+    # parcial de verdade continua sendo só erro (exceção)
+    parcial = _health({**base, "last_error_count": 2, "last_partial": 1, "last_inconclusive": 3})
+    assert "dados parciais" in parcial and "coleta ok" not in parcial
+
+
+def test_doctor_mostra_inconclusivos(capsys):
+    from padme.cli import _cmd_doctor
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("x.com", [])
+    s.update_health("x.com", error_count=0, partial=False, duration_ms=5, inconclusive=2)
+    s.close()
+    try:
+        asyncio.run(_cmd_doctor(Config(targets=["x.com"], db_path=db), None))
+        assert "inconclusivos=2" in capsys.readouterr().out
+    finally:
+        os.remove(db)

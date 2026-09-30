@@ -105,6 +105,10 @@ e cada evento carrega **proveniência** (`_source`/vantage, `_collector`).
 > Um subdomínio conhecido continua sendo inspecionado e só sai do estado quando
 > o **DNS dele** é observado e o nome não resolve mais. O rótulo `live`/`quiet`
 > também só muda com prova — um timeout de HTTP não rebaixa o host para `quiet`.
+>
+> A saúde da coleta separa os dois casos: **erro** (um collector quebrou) marca o
+> alvo como *dados parciais*; **inconclusivo** (sem resposta, estado preservado)
+> não, mas aparece no painel e no `doctor` — ex.: *coleta ok · 3 inconclusivos*.
 
 Fontes de subdomínio (passivas, Certificate Transparency):
 `crt.name` e `crt.sh`. O parser é defensivo — extrai hostnames válidos sob o
@@ -312,15 +316,15 @@ mínimo de severidade — não existe mais um "nível global do Telegram":
 |---|---|
 | `critical` | só **takeover** |
 | `high` | takeover + **porta/subdomínio novo** + cert expirando + **wildcard DNS** |
-| `medium` *(padrão)* | acima + **HTTP/TLS mudou**, serviço novo |
-| `low` | acima + remoções, mudanças menores e **resoluções** |
+| `medium` *(padrão)* | acima + **HTTP/TLS mudou**, serviço novo, **takeover corrigido** |
+| `low` | acima + remoções, mudanças menores, cert renovado |
 | `debug` | **tudo**, inclusive registros DNS |
 
 > [!NOTE]
-> Resolução não é alerta: takeover corrigido, certificado renovado e troca de IP
-> do catch-all de wildcard entram como `low` (com a razão `ISSUE_RESOLVED` quando
-> se aplica). Continuam no painel e no webhook; só não chegam com a gravidade do
-> problema original.
+> Resolução não herda a gravidade do problema. **Takeover corrigido** entra como
+> `medium`: chega aos canais padrão como aviso de resolução (razão
+> `ISSUE_RESOLVED`), não como alerta crítico. **Certificado renovado** e troca de
+> IP do catch-all de wildcard entram como `low`.
 
 ```yaml
 telegram: { level: medium }   # padrão
@@ -463,6 +467,6 @@ padme/
 ├── config.example.yaml
 ├── requirements.txt
 ├── pyproject.toml
-└── tests/                # 282 testes: unitários + reliability + netpolicy +
+└── tests/                # 286 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

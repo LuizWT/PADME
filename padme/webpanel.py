@@ -597,8 +597,17 @@ def _health(meta: dict | None) -> str:
     errs = meta.get("last_error_count")
     partial = bool(meta.get("last_partial"))
     dur = meta.get("last_duration_ms")
+    inc = meta.get("last_inconclusive") or 0
     ok = not partial and (errs == 0 or errs is None)
-    chip = _chip("s-ok", "dados completos") if ok else _chip("s-warn", "dados parciais")
+    # parcial = algum collector QUEBROU (erro). Sem resposta (timeout) é outra
+    # coisa: o estado foi preservado, então a coleta segue ok, mas o número
+    # aparece — não esconde a incerteza nem pinta o alvo de amarelo à toa.
+    if not ok:
+        chip = _chip("s-warn", "dados parciais")
+    elif inc:
+        chip = _chip("s-ok", f"coleta ok · {inc} inconclusivo{'s' if inc != 1 else ''}")
+    else:
+        chip = _chip("s-ok", "dados completos")
     bits = [chip,
             f"último scan: <b>{_ts_human(meta.get('last_scan_at'))}</b>",
             f"scan OK: <b>{_ts_human(meta.get('last_success_at'))}</b>"]

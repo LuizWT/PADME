@@ -120,6 +120,7 @@ class Engine:
                     cr = await dnsrecon.collect(target, self.cfg.timeout)
                     result.records.extend(cr.records)
                     result.mark_collector("dnsrecon", cr.ok)
+                    result.inconclusive += not cr.ok
                     if cr.ok:  # observação autoritativa -> escopos podem gerar REMOVED
                         result.observed_scopes.add((Kind.NS.value, target))
                         result.observed_scopes.add((Kind.MAILSEC.value, target))
@@ -135,6 +136,7 @@ class Engine:
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
                     result.mark_collector("subdomains", cr.ok)
+                    result.inconclusive += not cr.ok
                     if cr.ok:  # alguma fonte CT respondeu -> escopo observado
                         result.observed_scopes.add((Kind.SUBDOMAIN.value, target))
                 except Exception as exc:  # noqa: BLE001
@@ -148,6 +150,7 @@ class Engine:
                     result.records.extend(cr.records)
                     hosts |= cr.hosts
                     result.mark_collector("bruteforce", cr.ok)
+                    result.inconclusive += not cr.ok
                     # bruteforce é suplementar: NÃO marca o escopo de subdomínio
                 except FileNotFoundError as exc:
                     # wordlist configurada e ausente: sinal claro, não silêncio
@@ -261,9 +264,13 @@ async def _safe(coro, host: str, name: str, result: ScanResult) -> CollectionRes
 
 
 def _absorb(cr: CollectionResult, result: ScanResult, name: str, host: str) -> None:
-    """Junta os records e, se a coleta foi autoritativa, marca o escopo observado."""
+    """Junta os records e, se a coleta foi autoritativa, marca o escopo observado.
+    `ok=False` sem `error` é coleta INCONCLUSIVA (timeout, sem resposta); com
+    `error` veio de exceção (`_safe`) e já está em `result.errors`."""
     result.records.extend(cr.records)
     result.mark_collector(name, cr.ok)
+    if not cr.ok and not cr.error:
+        result.inconclusive += 1
     if cr.ok:
         scope_kind = _SCOPE_KIND[name]
         result.observed_scopes.add((scope_kind.value, host))
