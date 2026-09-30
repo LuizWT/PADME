@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from padme import risk as L
 from padme.collectors import takeover, tls
 from padme.engine import Engine
-from padme.mailpolicy import dmarc_tag, spf_all_qualifier, weaknesses
+from padme.mailpolicy import dmarc_tag, spf_all_qualifier
 from padme.models import CollectionResult, Event, EventType, Kind, Record, ScanResult
 from padme.panel_metrics import _collect_problems
 from padme.risk import Confidence, Level, assess
@@ -27,10 +27,30 @@ def test_fingerprints_vem_do_json_empacotado():
 
 
 # ── dangling CNAME genérico ─────────────────────────────────────────────────
-def test_registrable_domain():
+def test_registrable_domain_pela_psl():
     assert takeover.registrable_domain("a.b.exemplo.com.") == "exemplo.com"
     assert takeover.registrable_domain("cdn.loja.com.br") == "loja.com.br"
     assert takeover.registrable_domain("x.site.co.uk") == "site.co.uk"
+    # regra curinga/exceção da PSL (*.kawasaki.jp / !city.kawasaki.jp)
+    assert takeover.registrable_domain("x.city.kawasaki.jp") == "city.kawasaki.jp"
+    # só ICANN: sufixo PRIVADO é recurso de plataforma, não registro público
+    assert takeover.registrable_domain("app.herokuapp.com") == "herokuapp.com"
+    # TLD interno/reservado ou o próprio sufixo: nada registrável
+    for name in ("svc.corp.local", "api.internal", "x.test", "co.uk", ""):
+        assert takeover.registrable_domain(name) is None
+
+
+def test_cname_para_tld_interno_nunca_vira_achado(monkeypatch):
+    async def fake_cname(h, t):
+        return "svc.corp.local", False, True   # NXDOMAIN, como todo nome interno
+
+    async def nao_consulta(domain, timeout):
+        raise AssertionError("não deveria consultar NS de TLD inexistente")
+
+    monkeypatch.setattr(takeover, "_cname_target", fake_cname)
+    monkeypatch.setattr(takeover, "_domain_unregistered", nao_consulta)
+    cr = asyncio.run(takeover.collect_host("intranet.alvo.com", client=None, timeout=5))
+    assert cr.ok and cr.records == []
 
 
 def _dangling(monkeypatch, resolves, free, cname_ok=True):
@@ -72,7 +92,7 @@ def test_cname_que_resolve_nao_consulta_registro(monkeypatch):
     assert cr.ok and cr.records == []
 
 
-# ── postura de e-mail ───────────────────────────────────────────────────────
+# ── postura de e-mail (detalhes do SPF efetivo em test_mailpolicy.py) ──────
 def test_spf_qualificador_all():
     assert spf_all_qualifier("v=spf1 include:_spf.google.com -all") == "-"
     assert spf_all_qualifier("v=spf1 a mx all") == "+"
@@ -82,15 +102,18 @@ def test_spf_qualificador_all():
     assert dmarc_tag("v=DMARC1; p=reject; sp=none", "sp") == "none"
 
 
-def _mail(key, value, etype=EventType.ADDED):
-    return Event("x.com", etype, Kind.MAILSEC, key, new_value=value)
+def _mail(key, value, etype=EventType.ADDED, md=None):
+    return Event("x.com", etype, Kind.MAILSEC, key, new_value=value, metadata=md or {})
 
 
-def test_spf_permissivo_eleva_high():
-    a = assess(_mail("x.com|SPF", "v=spf1 +all"))
+def test_spf_permissivo_julgado_pelo_efetivo():
+    a = assess(_mail("x.com|SPF-EFFECTIVE", "+all · all", md={"result": "+", "via": "all"}))
     assert a.level == Level.HIGH and L.SPF_PERMISSIVE in a.reasons
-    ok = assess(_mail("x.com|SPF", "v=spf1 mx -all"))
+    ok = assess(_mail("x.com|SPF-EFFECTIVE", "-all · all", md={"result": "-", "via": "all"}))
     assert L.SPF_PERMISSIVE not in ok.reasons and ok.level == ok.base
+    # o TXT bruto não é julgado (evita alerta duplo; quem decide é o efetivo)
+    raw = assess(_mail("x.com|SPF", "v=spf1 +all"))
+    assert L.SPF_PERMISSIVE not in raw.reasons
 
 
 def test_dmarc_sp_none_eleva_high():
@@ -103,13 +126,15 @@ def test_dmarc_sp_none_eleva_high():
 
 def test_painel_lista_postura_fraca():
     by_target = {"x.com": {"mailsec": [
-        {"key": "x.com|SPF", "value": "v=spf1 ?all", "metadata": {"type": "spf"}},
+        {"key": "x.com|SPF", "value": "v=spf1 include:x.net", "metadata": {"type": "spf"}},
+        {"key": "x.com|SPF-EFFECTIVE", "value": "?all · sem all (padrão neutro)",
+         "metadata": {"type": "spf-effective", "result": "?",
+                      "via": "sem all (padrão neutro)"}},
         {"key": "x.com|DMARC", "value": "v=DMARC1; p=reject", "metadata": {"type": "dmarc"}},
     ]}}
     probs = _collect_problems(by_target, {})
     assert [p["kind"] for p in probs] == ["E-MAIL"]
-    assert "?all" in probs[0]["det"]
-    assert weaknesses("dmarc", "v=DMARC1; p=quarantine") == []
+    assert "?all" in probs[0]["det"] and "sem all" in probs[0]["det"]
 
 
 # ── TLS nas portas de TLS implícito ─────────────────────────────────────────

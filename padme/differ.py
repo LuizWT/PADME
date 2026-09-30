@@ -18,7 +18,7 @@ _COMPARABLE_FIELDS = {
     Kind.HTTPSEC: ("missing",),
     Kind.PORT: ("banner", "service", "product", "version"),
     Kind.TLS: ("issuer", "fingerprint", "expires_at", "sans"),
-    Kind.MAILSEC: ("p",),
+    Kind.MAILSEC: ("p", "sp", "pct", "t", "result", "via"),  # DMARC tags / SPF efetivo
     Kind.DNS: ("values",),       # conjunto de respostas do host|tipo
 }
 

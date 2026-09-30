@@ -3,6 +3,10 @@ name: tests
 on:
   push:
   pull_request:
+  schedule:
+    # semanal: CVE nova numa dependência aparece sem ninguém dar push
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -19,7 +23,7 @@ jobs:
       - name: Instalar dependências (versões fixas)
         run: pip install -r requirements-dev.txt
       - name: Lint (ruff)
-        run: ruff check padme tests
+        run: ruff check padme tests scripts
       - name: Compileall
         run: python -m compileall -q padme
       - name: Testes
@@ -38,3 +42,17 @@ jobs:
         run: pip install pip-audit==2.10.1
       - name: Auditar dependências
         run: pip-audit -r requirements.txt
+
+  docker:
+    # A imagem é o modo de uso principal (sentinela 24/7): build de verdade +
+    # smoke test do que só aparece num container (entrypoint, usuário sem
+    # privilégio, HEALTHCHECK, dados empacotados, SIGTERM no PID 1).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar docker-compose.yml
+        run: docker compose config -q
+      - name: Build da imagem
+        run: docker build -t padme:ci .
+      - name: Smoke test da imagem
+        run: sh scripts/docker-smoke.sh padme:ci

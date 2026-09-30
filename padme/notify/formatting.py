@@ -8,6 +8,7 @@ mas os DADOS (marcador, rótulo, ordem, descrição) vêm de um lugar só.
 
 from __future__ import annotations
 
+from ..mailpolicy import SPF_EFFECTIVE_SUFFIX
 from ..models import Event, EventType, Kind
 from ..risk import Confidence, assess
 
@@ -74,8 +75,16 @@ def group_by_kind(events: list[Event]) -> list[tuple[Kind, list[Event]]]:
     return out
 
 
+# o registro de SPF EFETIVO é um veredito, não uma proteção: "adicionada" num
+# "+all · include:x" leria como boa notícia.
+_SPF_EFFECTIVE_DESC = {"added": "SPF efetivo avaliado", "removed": "SPF efetivo não avaliado",
+                       "changed": "SPF efetivo mudou (include/redirect/all)"}
+
+
 def desc(e: Event) -> str:
     """Descrição técnica curta do evento (ou '' se não houver)."""
+    if e.kind == Kind.MAILSEC and e.key.endswith(SPF_EFFECTIVE_SUFFIX):
+        return _SPF_EFFECTIVE_DESC[e.event_type.value]
     return DESC.get(e.kind, {}).get(e.event_type.value, "")
 
 

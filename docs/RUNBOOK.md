@@ -272,3 +272,28 @@ Authorization` acima repassa isso sem mudança. Em automação, use `Bearer`.
 
 - **Corrupção:** se o `doctor` não retornar `ok`, restaure o último backup bom
   (seção 2) — não tente reparar o arquivo em produção.
+
+---
+
+## 6. Manutenção periódica (dependências e base de detecção)
+
+- **PRs do Dependabot (semanal):** lock Python (`requirements*.txt`), GitHub
+  Actions e digest da imagem `python:3.12-slim`. Só faça merge com o CI verde —
+  ele roda a suíte, o `pip-audit` e o build + smoke test da imagem. O
+  `publicsuffixlist` sai com versão nova a cada atualização da Public Suffix
+  List; entra no mesmo grupo semanal.
+- **Auditoria semanal:** o workflow roda sozinho toda segunda (cron). Se o job
+  `audit` ficar vermelho sem ninguém ter mexido no código, é CVE nova numa
+  dependência: atualize a versão no lock (ou aceite o PR do Dependabot).
+- **Base de takeover:** quando o `padme doctor` avisar que passou de 180 dias,
+
+  ```bash
+  python scripts/update_takeover_fingerprints.py --check   # revise o diff
+  python scripts/update_takeover_fingerprints.py           # grava + marca revisão
+  pytest -q tests/test_takeover_base.py
+  ```
+
+  Serviço que o upstream rebaixar para "Not vulnerable" sai da base (menos
+  falso positivo); serviço novo sem alvo de CNAME no upstream é listado como
+  "(fora)" — só entra se você souber o domínio da plataforma (edite `_CURATED`
+  no script).

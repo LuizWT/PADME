@@ -1,26 +1,154 @@
 {
-  "_comment": "Assinaturas de subdomain takeover. Fonte: can-i-take-over-xyz (EdOverflow). Revise contra a fonte e atualize 'reviewed' (AAAA-MM-DD) a cada revisão; o doctor avisa quando a base passa de 180 dias sem revisão.",
-  "source": "https://github.com/EdOverflow/can-i-take-over-xyz",
+  "_comment": "Gerado por scripts/update_takeover_fingerprints.py a partir do can-i-take-over-xyz. 'fingerprint' é REGEX (case-insensitive) buscada no corpo HTTP; vazio + nxdomain=true = vulnerável quando o alvo do CNAME não existe. 'status' edge case = reivindicação depende do caso (confiança menor). Rode o script de novo para revisar; o doctor avisa após 180 dias.",
+  "source": "https://raw.githubusercontent.com/EdOverflow/can-i-take-over-xyz/master/fingerprints.json",
   "reviewed": "2026-09-30",
   "services": [
     {
-      "service": "GitHub Pages",
+      "service": "Agile CRM",
+      "status": "vulnerable",
       "cnames": [
-        "github.io"
+        "agilecrm.com"
       ],
-      "fingerprint": "There isn't a GitHub Pages site here.",
+      "fingerprint": "Sorry, this page is no longer available\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Airee.ru",
+      "status": "vulnerable",
+      "cnames": [
+        "airee.ru"
+      ],
+      "fingerprint": "Ошибка 402\\. Сервис Айри\\.рф не оплачен",
+      "nxdomain": false
+    },
+    {
+      "service": "Anima",
+      "status": "vulnerable",
+      "cnames": [
+        "animaapp.io"
+      ],
+      "fingerprint": "The page you were looking for does not exist\\.",
       "nxdomain": false
     },
     {
       "service": "AWS S3",
+      "status": "vulnerable",
       "cnames": [
-        "amazonaws.com"
+        "amazonaws.com",
+        "s3.amazonaws.com"
       ],
-      "fingerprint": "NoSuchBucket",
+      "fingerprint": "The specified bucket does not exist|NoSuchBucket",
+      "nxdomain": false
+    },
+    {
+      "service": "AWS/Elastic Beanstalk",
+      "status": "vulnerable",
+      "cnames": [
+        "elasticbeanstalk.com"
+      ],
+      "fingerprint": "",
+      "nxdomain": true
+    },
+    {
+      "service": "Azure",
+      "status": "vulnerable",
+      "cnames": [
+        "azure-api.net",
+        "azurecontainer.io",
+        "azurecr.io",
+        "azuredatalakestore.net",
+        "azureedge.net",
+        "azurefd.net",
+        "azurehdinsight.net",
+        "azurewebsites.net",
+        "blob.core.windows.net",
+        "cloudapp.azure.com",
+        "cloudapp.net",
+        "database.windows.net",
+        "redis.cache.windows.net",
+        "search.windows.net",
+        "servicebus.windows.net",
+        "trafficmanager.net",
+        "visualstudio.com"
+      ],
+      "fingerprint": "",
+      "nxdomain": true
+    },
+    {
+      "service": "Bitbucket",
+      "status": "vulnerable",
+      "cnames": [
+        "bitbucket.io"
+      ],
+      "fingerprint": "Repository not found",
+      "nxdomain": false
+    },
+    {
+      "service": "Discourse",
+      "status": "vulnerable",
+      "cnames": [
+        "trydiscourse.com"
+      ],
+      "fingerprint": "",
+      "nxdomain": true
+    },
+    {
+      "service": "Gemfury",
+      "status": "vulnerable",
+      "cnames": [
+        "furyns.com"
+      ],
+      "fingerprint": "404: This page could not be found\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Ghost",
+      "status": "vulnerable",
+      "cnames": [
+        "ghost.io"
+      ],
+      "fingerprint": "Site unavailable\\.|Failed to resolve DNS path for this host|The thing you were looking for is no longer here",
+      "nxdomain": false
+    },
+    {
+      "service": "GitHub Pages",
+      "status": "edge case",
+      "cnames": [
+        "github.io"
+      ],
+      "fingerprint": "There isn't a GitHub Pages site here\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "HatenaBlog",
+      "status": "vulnerable",
+      "cnames": [
+        "hatenablog.com"
+      ],
+      "fingerprint": "404 Blog is not found",
+      "nxdomain": false
+    },
+    {
+      "service": "Help Juice",
+      "status": "vulnerable",
+      "cnames": [
+        "helpjuice.com"
+      ],
+      "fingerprint": "We could not find what you're looking for\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Help Scout",
+      "status": "vulnerable",
+      "cnames": [
+        "helpscoutdocs.com"
+      ],
+      "fingerprint": "No settings were found for this company:",
       "nxdomain": false
     },
     {
       "service": "Heroku",
+      "status": "edge case",
       "cnames": [
         "herokuapp.com",
         "herokudns.com",
@@ -30,31 +158,90 @@
       "nxdomain": false
     },
     {
-      "service": "Shopify",
+      "service": "JetBrains",
+      "status": "vulnerable",
       "cnames": [
-        "myshopify.com"
+        "youtrack.cloud"
       ],
-      "fingerprint": "Sorry, this shop is currently unavailable",
+      "fingerprint": "is not a registered InCloud YouTrack",
       "nxdomain": false
     },
     {
-      "service": "Fastly",
+      "service": "Ngrok",
+      "status": "vulnerable",
       "cnames": [
-        "fastly.net"
+        "ngrok.io"
       ],
-      "fingerprint": "Fastly error: unknown domain",
+      "fingerprint": "Tunnel .*.ngrok.io not found",
       "nxdomain": false
     },
     {
       "service": "Pantheon",
+      "status": "vulnerable",
       "cnames": [
         "pantheonsite.io"
       ],
-      "fingerprint": "The gods are wise, but do not know of the site which you seek",
+      "fingerprint": "404 error unknown site!|The gods are wise, but do not know of the site which you seek",
+      "nxdomain": false
+    },
+    {
+      "service": "Read the Docs",
+      "status": "vulnerable",
+      "cnames": [
+        "readthedocs.io"
+      ],
+      "fingerprint": "The link you have followed or the URL that you entered does not exist\\.|unknown to Read the Docs",
+      "nxdomain": false
+    },
+    {
+      "service": "Readme.io",
+      "status": "vulnerable",
+      "cnames": [
+        "readme.io"
+      ],
+      "fingerprint": "The creators of this project are still working on making everything perfect!",
+      "nxdomain": false
+    },
+    {
+      "service": "Shopify",
+      "status": "edge case",
+      "cnames": [
+        "myshopify.com"
+      ],
+      "fingerprint": "Sorry, this shop is currently unavailable\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Strikingly",
+      "status": "vulnerable",
+      "cnames": [
+        "s.strikinglydns.com"
+      ],
+      "fingerprint": "PAGE NOT FOUND\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Surge.sh",
+      "status": "vulnerable",
+      "cnames": [
+        "na-west1.surge.sh",
+        "surge.sh"
+      ],
+      "fingerprint": "project not found",
+      "nxdomain": false
+    },
+    {
+      "service": "SurveySparrow",
+      "status": "vulnerable",
+      "cnames": [
+        "surveysparrow.com"
+      ],
+      "fingerprint": "Account not found\\.",
       "nxdomain": false
     },
     {
       "service": "Tumblr",
+      "status": "edge case",
       "cnames": [
         "domains.tumblr.com"
       ],
@@ -62,68 +249,40 @@
       "nxdomain": false
     },
     {
+      "service": "Uberflip",
+      "status": "vulnerable",
+      "cnames": [
+        "read.uberflip.com"
+      ],
+      "fingerprint": "The URL you've accessed does not provide a hub\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Uptimerobot",
+      "status": "vulnerable",
+      "cnames": [
+        "stats.uptimerobot.com"
+      ],
+      "fingerprint": "page not found",
+      "nxdomain": false
+    },
+    {
       "service": "WordPress",
+      "status": "vulnerable",
       "cnames": [
         "wordpress.com"
       ],
-      "fingerprint": "Do you want to register",
+      "fingerprint": "Do you want to register .*.wordpress.com?",
       "nxdomain": false
     },
     {
-      "service": "Ghost",
+      "service": "Worksites",
+      "status": "vulnerable",
       "cnames": [
-        "ghost.io"
+        "worksites.net"
       ],
-      "fingerprint": "The thing you were looking for is no longer here",
+      "fingerprint": "Hello! Sorry, but the website you’re looking for doesn’t exist\\.",
       "nxdomain": false
-    },
-    {
-      "service": "Bitbucket",
-      "cnames": [
-        "bitbucket.io"
-      ],
-      "fingerprint": "Repository not found",
-      "nxdomain": false
-    },
-    {
-      "service": "Surge.sh",
-      "cnames": [
-        "surge.sh"
-      ],
-      "fingerprint": "project not found",
-      "nxdomain": false
-    },
-    {
-      "service": "Zendesk",
-      "cnames": [
-        "zendesk.com"
-      ],
-      "fingerprint": "Help Center Closed",
-      "nxdomain": false
-    },
-    {
-      "service": "Read the Docs",
-      "cnames": [
-        "readthedocs.io"
-      ],
-      "fingerprint": "unknown to Read the Docs",
-      "nxdomain": false
-    },
-    {
-      "service": "Azure",
-      "cnames": [
-        "azurewebsites.net",
-        "cloudapp.net",
-        "cloudapp.azure.com",
-        "trafficmanager.net",
-        "blob.core.windows.net",
-        "azure-api.net",
-        "azureedge.net",
-        "azurecontainer.io",
-        "azurefd.net"
-      ],
-      "fingerprint": "",
-      "nxdomain": true
     }
   ]
 }
