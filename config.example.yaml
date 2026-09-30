@@ -136,6 +136,10 @@ webhook:
   url: ${PADME_WEBHOOK_URL}
   level: debug          # sink de automação: por padrão recebe o fluxo completo
   headers: {}           # opcional — auth do seu endpoint, ex.: {X-Padme-Token: "${PADME_WEBHOOK_TOKEN}"}
+  # opcional — assina cada POST: X-Padme-Timestamp + X-Padme-Signature
+  # (sha256=HMAC-SHA256 de "<timestamp>.<corpo>"). O destino confere origem e
+  # integridade e recusa timestamp velho (replay). Ver README.
+  secret: ${PADME_WEBHOOK_SECRET}
 
 # Heartbeat / dead-man's switch — a Padmé avisa que está viva a cada N ciclos.
 # Um processo morto não avisa que morreu, então o sinal vai pra um watchdog

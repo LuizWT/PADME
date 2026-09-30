@@ -421,7 +421,7 @@ def build_notifiers(cfg: Config) -> list:
     if wh.enabled:
         if wh.url:
             out.append(WebhookNotifier(wh.url, level=parse_level(wh.level, Level.DEBUG),
-                                       headers=wh.headers))
+                                       headers=wh.headers, secret=wh.secret))
         else:
             log.warning("Webhook habilitado mas url ausente — ignorado.")
 

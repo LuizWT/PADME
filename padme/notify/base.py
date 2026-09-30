@@ -118,7 +118,7 @@ async def post_with_retry(
     channel: str,
     *,
     json: dict | None = None,
-    content: str | None = None,
+    content: str | bytes | None = None,
     headers: dict[str, str] | None = None,
     max_attempts: int = _MAX_ATTEMPTS,
 ) -> NotificationResult:

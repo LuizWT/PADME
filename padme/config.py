@@ -110,10 +110,14 @@ class WebhookConfig:
     # webhook é sink de automação (n8n): por padrão recebe o fluxo completo.
     level: str = "debug"
     headers: dict[str, str] = field(default_factory=dict)  # ex.: token de auth
+    # segredo HMAC (opcional): assina cada POST (X-Padme-Timestamp/Signature).
+    # Fora do repositório: `secret: ${PADME_WEBHOOK_SECRET}`.
+    secret: str = ""
 
     def resolved(self) -> "WebhookConfig":
         return WebhookConfig(enabled=self.enabled, url=_expand(self.url), level=self.level,
-                             headers={k: _expand(str(v)) for k, v in self.headers.items()})
+                             headers={k: _expand(str(v)) for k, v in self.headers.items()},
+                             secret=_expand(self.secret))
 
 
 @dataclass
@@ -368,6 +372,7 @@ class Config:
                 url=str(wh.get("url", "")),
                 level=str(wh.get("level", "debug")),
                 headers={str(k): str(v) for k, v in wh_headers.items()},
+                secret=str(wh.get("secret", "") or ""),
             ).resolved(),
             email=EmailConfig(
                 enabled=_as_bool(em.get("enabled"), False),

@@ -407,6 +407,24 @@ nunca em 4xx):
   > `tls_handshake`/`takeover_check`/`dns_record`…) e, em `CHANGED`, `changes`
   > (diff por campo) foram **acrescentados**.
 
+  **Assinatura (opcional, `webhook.secret`).** Com o segredo definido, cada POST
+  leva `X-Padme-Timestamp` (unix) e `X-Padme-Signature: sha256=<hex>` — o
+  HMAC-SHA256 de `"<timestamp>.<corpo>"`. O destino confere que a mensagem veio
+  do PADME, que não foi alterada, e recusa timestamp velho (replay). Valide sobre
+  os **bytes crus** do corpo, antes de parsear o JSON:
+
+  ```python
+  import hashlib, hmac, time
+
+  def veio_do_padme(secret: bytes, headers, body: bytes, janela=300) -> bool:
+      ts = headers["X-Padme-Timestamp"]
+      if abs(time.time() - int(ts)) > janela:
+          return False                      # reenvio velho (replay)
+      esperado = "sha256=" + hmac.new(secret, ts.encode() + b"." + body,
+                                      hashlib.sha256).hexdigest()
+      return hmac.compare_digest(esperado, headers["X-Padme-Signature"])
+  ```
+
 Todos aceitam `${VAR}` do `.env` (ex: `webhook_url: ${PADME_DISCORD_WEBHOOK}`).
 Teste todos de uma vez com `python -m padme test-notify`.
 
