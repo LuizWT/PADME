@@ -441,7 +441,7 @@ padme/
 │   │                     #   takeover, ports (com banner-grab)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
-├── ROADMAP.md            # status da evolução (feito/parcial/pendente/adiado)
+├── ideias.md             # evolução adiada por design (porquê/como/impacto)
 ├── .github/workflows/    # CI: ruff + compileall + pytest (matriz 3.10/3.11/3.12)
 ├── scripts/release.sh    # release limpo via git archive
 ├── Dockerfile            # imagem do sentinela (roda `padme`)
