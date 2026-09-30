@@ -180,12 +180,19 @@ superfície nova servida ali). Os SANs também vão na evidência (`tls_handshak
   recuam com backoff exponencial + jitter em `429`/`5xx` transitório (respeitando
   `Retry-After`) e em hiccup de conexão/timeout. `4xx` permanente nunca repete.
 - **Painel seguro por padrão.** Bind em `127.0.0.1`; um token opcional
-  (`PADME_WEB_TOKEN`) exige `Authorization: Bearer` em **todas** as rotas
-  (`/`, `/export`, `/vantage`), validado em tempo constante. Servir fora de
-  localhost **sem** token é **recusado** (a menos de `--allow-no-auth`) — expor a
-  superfície é decisão consciente. As respostas trazem headers de segurança
-  (`nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store`,
-  CSP). Ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md) para o painel atrás de proxy + TLS.
+  (`PADME_WEB_TOKEN`) protege **todas** as rotas (`/`, `/export`, `/vantage`),
+  validado em tempo constante. No **navegador**, o login aparece sozinho: qualquer
+  usuário, o token como senha (HTTP Basic). Em automação, `Authorization: Bearer`.
+  Servir fora de localhost **sem** token é **recusado** (a menos de
+  `--allow-no-auth`) — expor a superfície é decisão consciente. O painel abre o
+  banco **só para leitura** (nunca escreve nem migra; banco em versão antiga
+  responde 503 até o monitor migrar), cada conexão tem timeout e há um teto de
+  conexões simultâneas. As respostas trazem headers de segurança (`nosniff`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Cache-Control: no-store`, CSP).
+
+  > [!WARNING]
+  > Token por HTTP puro trafega em claro (Basic e Bearer). Fora de localhost,
+  > sirva atrás de um proxy com TLS — ver [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 ---
 
@@ -291,7 +298,7 @@ python -m padme export --format csv --out superficie.csv
 # Painel web read-only (lê o padme.db; atualiza sozinho a cada 30s)
 python -m padme web            # http://127.0.0.1:8787 (localhost, sem token)
 
-# Painel com token (exige Authorization: Bearer em todas as rotas)
+# Painel com token (navegador: login com o token como senha; API: Bearer)
 export PADME_WEB_TOKEN="$(openssl rand -hex 32)"
 python -m padme web
 
@@ -464,7 +471,7 @@ padme/
 │   ├── scheduler.py      # loop do modo sentinela (monitor) + heartbeat + retenção
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
-│   ├── webpanel.py       # painel read-only (auth Bearer) + tendência + /vantage (stdlib)
+│   ├── webpanel.py       # painel só-leitura (auth Basic/Bearer) + tendência + /vantage (stdlib)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
 │   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
 │   │                     #   takeover, ports (com banner-grab)

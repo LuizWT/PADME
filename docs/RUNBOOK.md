@@ -241,9 +241,10 @@ painel.seu-dominio.com {
 }
 ```
 
-Assim: o Padmé nunca fica exposto direto, o TLS é do proxy, e o `Bearer` do
-Padmé segue exigido ponta a ponta. (Você pode deixar o proxy adicionar o header
-para os clientes, ou exigir que cada cliente mande o seu.)
+Assim: o Padmé nunca fica exposto direto, o TLS é do proxy, e o token do
+Padmé segue exigido ponta a ponta. No navegador, o próprio Padmé pede login
+(HTTP Basic: qualquer usuário, o token como senha) — o `proxy_set_header
+Authorization` acima repassa isso sem mudança. Em automação, use `Bearer`.
 
 ---
 

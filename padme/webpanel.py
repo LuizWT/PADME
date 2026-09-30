@@ -14,6 +14,7 @@ chip = ponto + rótulo, nunca cor sozinha), tipografia de sistema, hairlines,
 
 from __future__ import annotations
 
+import base64
 import csv
 import hmac
 import html
@@ -21,6 +22,7 @@ import http.server
 import io
 import json
 import socketserver
+import threading
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +31,7 @@ from .evidence import evidence_of
 from .levels import Level, assess
 from .merge import merge_exports
 from .models import Kind
-from .storage import Storage
+from .storage import Storage, StorageOutdated
 
 _KIND_ORDER = ["takeover", "cert_expiry", "ns", "mailsec", "wildcard",
                "subdomain", "port", "http", "httpsec", "favicon", "tls", "dns"]
@@ -723,8 +725,19 @@ def _export_actions(only: str | None) -> str:
     )
 
 
+def _open_ro(cfg) -> Storage | None:
+    """Abre o banco SÓ PARA LEITURA (o painel nunca escreve/migra). Banco que
+    ainda não existe -> None (página vazia, sem criar arquivo)."""
+    try:
+        return Storage(cfg.db_path, readonly=True)
+    except FileNotFoundError:
+        return None
+
+
 def _export_rows(cfg, only: str | None) -> list[dict]:
-    storage = Storage(cfg.db_path)
+    storage = _open_ro(cfg)
+    if storage is None:
+        return []
     try:
         rows = storage.all_state()
     finally:
@@ -865,9 +878,9 @@ def render_vantage(cfg) -> str:
 def _render(cfg, exposed: bool = False, only: str | None = None,
             authed: bool = False) -> str:
     trend_days = 30
-    storage = Storage(cfg.db_path)
+    storage = _open_ro(cfg)
     try:
-        rows = storage.all_state()  # TODOS os alvos do banco (não esconde dados)
+        rows = storage.all_state() if storage else []  # TODOS os alvos do banco
         db_targets = sorted({r["target"] for r in rows})
         all_targets = sorted(set(cfg.targets) | set(db_targets))
         # filtro por domínio (?target=): exato, com fallback p/ substring
@@ -875,11 +888,16 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
             shown = [t for t in all_targets if t == only] or [t for t in all_targets if only in t]
         else:
             shown = all_targets
-        events = {t: storage.recent_events(t, 20) for t in shown}
-        trend = {t: storage.events_per_day(t, trend_days) for t in shown}
-        meta = {t: storage.target_meta(t) for t in shown}
+        if storage:
+            events = {t: storage.recent_events(t, 20) for t in shown}
+            trend = {t: storage.events_per_day(t, trend_days) for t in shown}
+            meta = {t: storage.target_meta(t) for t in shown}
+        else:  # sem banco ainda: página vazia, nada é criado
+            events, meta = {t: [] for t in shown}, {t: None for t in shown}
+            trend = {t: [] for t in shown}
     finally:
-        storage.close()
+        if storage:
+            storage.close()
 
     by_target: dict[str, dict[str, list]] = {t: {} for t in shown}
     for r in rows:
@@ -908,7 +926,8 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
                      "defina <code>PADME_WEB_TOKEN</code> ou sirva atrás de um proxy autenticado.</div>")
     elif exposed and authed:
         parts.append("<div class=note>🔒 Painel exposto fora de localhost, protegido por token "
-                     "(<code>Authorization: Bearer</code>).</div>")
+                     "(navegador: login com qualquer usuário e o token como senha; "
+                     "automação: <code>Authorization: Bearer</code>).</div>")
     toolbar = "<div class=toolbar>"
     if len(all_targets) > 1:
         toolbar += _filter_form(all_targets, only)
@@ -958,6 +977,30 @@ def _bearer_ok(header: str | None, token: str) -> bool:
     return hmac.compare_digest(parts[1].strip().encode("utf-8"), token.encode("utf-8"))
 
 
+def _auth_ok(header: str | None, token: str) -> bool:
+    """Aceita `Bearer <token>` (curl/automação) OU `Basic` — o que o NAVEGADOR
+    envia sozinho depois do prompt de login (usuário qualquer, senha = token).
+    Tempo constante nos dois; qualquer coisa malformada -> False (nunca 500)."""
+    if not header:
+        return False
+    parts = header.split(None, 1)
+    if len(parts) != 2:
+        return False
+    scheme = parts[0].lower()
+    if scheme == "bearer":
+        return _bearer_ok(header, token)
+    if scheme != "basic":
+        return False
+    try:
+        raw = base64.b64decode(parts[1].strip(), validate=True).decode("utf-8")
+    except Exception:  # noqa: BLE001 — base64/utf-8 inválido
+        return False
+    _user, sep, password = raw.partition(":")
+    if not sep:
+        return False
+    return hmac.compare_digest(password.encode("utf-8"), token.encode("utf-8"))
+
+
 _ROUTES = ("/", "/export", "/vantage")  # rotas conhecidas (após auth)
 
 # CSP compatível com o HTML real do painel: <style>/<script> e style="" inline
@@ -975,8 +1018,33 @@ _SEC_RESPONSE_HEADERS = {
 
 
 class PanelServer(socketserver.ThreadingTCPServer):
+    """Servidor com TETO de conexões simultâneas: acima de `max_connections`,
+    a conexão nova é fechada na hora em vez de abrir mais uma thread — conexões
+    lentas (slowloris) não esgotam a máquina. Cada conexão ainda tem timeout
+    próprio no handler."""
     allow_reuse_address = True
     daemon_threads = True
+    max_connections = 32
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._slots = threading.BoundedSemaphore(self.max_connections)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)  # lotado: recusa sem abrir thread
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 def make_handler(page_cfg, exposed: bool, auth_token: str | None):
@@ -986,6 +1054,7 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
     class Handler(http.server.BaseHTTPRequestHandler):
         server_version = "padme"  # não anuncia versão do Python/BaseHTTPServer
         sys_version = ""
+        timeout = 10  # s por operação de socket: conexão lenta não prende a thread
 
         def _write(self, code: int, ctype: str, body: bytes, extra: dict | None = None):
             """Escreve a resposta SEMPRE com os headers de segurança do painel."""
@@ -994,20 +1063,23 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             self.send_header("Content-Length", str(len(body)))
             for k, v in _SEC_RESPONSE_HEADERS.items():
                 self.send_header(k, v)
-            for k, v in (extra or {}).items():
+            pairs = extra.items() if isinstance(extra, dict) else (extra or [])
+            for k, v in pairs:
                 self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
         def _deny(self):
             # 401 mínimo: não revela quais rotas existem nem detalhes internos.
+            # Basic primeiro: é o que faz o navegador abrir o prompt de login.
             self._write(401, "text/plain; charset=utf-8", b"401 Unauthorized\n",
-                        {"WWW-Authenticate": 'Bearer realm="padme"'})
+                        [("WWW-Authenticate", 'Basic realm="padme", charset="UTF-8"'),
+                         ("WWW-Authenticate", 'Bearer realm="padme"')])
 
         def do_GET(self):
             # auth ANTES do roteamento: cobre /, /export, /vantage e qualquer
             # rota futura de uma vez. Sem token configurado, não exige nada.
-            if auth_token is not None and not _bearer_ok(
+            if auth_token is not None and not _auth_ok(
                     self.headers.get("Authorization"), auth_token):
                 self._deny()
                 return
@@ -1016,7 +1088,13 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             if route not in _ROUTES:
                 self._write(404, "text/plain; charset=utf-8", b"404 Not Found\n")
                 return
-            params = urllib.parse.parse_qs(parsed.query)
+            try:
+                self._route(route, urllib.parse.parse_qs(parsed.query))
+            except StorageOutdated as exc:
+                # o painel só LÊ: quem migra o schema é o monitor/scan/doctor
+                self._write(503, "text/plain; charset=utf-8", f"503 {exc}\n".encode("utf-8"))
+
+        def _route(self, route: str, params: dict) -> None:
             only = params.get("target", [None])[0]
             if route == "/export":
                 fmt = (params.get("fmt", ["json"])[0] or "json").lower()

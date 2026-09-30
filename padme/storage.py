@@ -107,9 +107,34 @@ CREATE TABLE IF NOT EXISTS pending_notifications (
 _SCHEMA_VERSION = 7  # v7: pending_notifications (criada pelo _SCHEMA)
 
 
+class StorageOutdated(RuntimeError):
+    """Banco em versão de schema anterior, aberto em modo somente leitura (que
+    não migra). Rode o `monitor`/`scan` ou `padme doctor` uma vez para migrar."""
+
+
 class Storage:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, readonly: bool = False):
+        """`readonly=True` (painel/export): abre com `mode=ro` — nenhuma escrita,
+        DDL ou migração; não disputa lock com o monitor e funciona em volume
+        montado só-leitura. Banco inexistente -> FileNotFoundError; schema
+        antigo -> StorageOutdated (quem migra é o processo de escrita)."""
         self.db_path = str(db_path)
+        self.readonly = readonly
+        if readonly:
+            path = Path(self.db_path)
+            if not path.is_file():
+                raise FileNotFoundError(f"banco não encontrado: {self.db_path}")
+            self._conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True,
+                                         timeout=5.0)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA busy_timeout=3000")  # configuração da conexão, não escrita
+            ver = self._conn.execute("PRAGMA user_version").fetchone()[0]
+            if ver < _SCHEMA_VERSION:
+                self._conn.close()
+                raise StorageOutdated(
+                    f"banco na versão {ver}, esta versão do PADME espera {_SCHEMA_VERSION}: "
+                    "rode o monitor/scan ou `padme doctor` uma vez para migrar.")
+            return
         self._conn = sqlite3.connect(self.db_path, timeout=5.0)
         self._conn.row_factory = sqlite3.Row
         # WAL + busy_timeout: leitura (web/export) e escrita (monitor) simultâneas
