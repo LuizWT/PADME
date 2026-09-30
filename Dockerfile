@@ -7,7 +7,9 @@
 #
 # Espera a config em /data/config.yaml e grava o estado em /data/padme.db,
 # então monte um volume em /data (o .env em /data também é lido sozinho).
-FROM python:3.12-slim
+# Base fixada por DIGEST (build reproduzível: a tag 3.12-slim anda sozinha).
+# O Dependabot (ecossistema docker) abre PR quando a tag ganha digest novo.
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
 
 # stdout sem buffer (log aparece na hora) e sem .pyc no container.
 ENV PYTHONUNBUFFERED=1 \

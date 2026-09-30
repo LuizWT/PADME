@@ -1,0 +1,38 @@
+# Atualização automática das dependências fixadas. O CI (testes + pip-audit +
+# build/smoke da imagem) roda em cada PR do Dependabot antes do merge.
+version: 2
+updates:
+  # requirements.txt / requirements-dev.txt (lock) e pyproject.toml (faixas)
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    # pin (==) do lock sobe; faixa do pyproject só muda se a versão nova sair dela
+    versioning-strategy: increase-if-necessary
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  # digest da base python:3.12-slim (patch de segurança do Debian/CPython)
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    ignore:
+      # 3.13+ fica fora do que o CI testa (matriz 3.10-3.12): troca manual
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    commit-message:
+      prefix: "docker"
