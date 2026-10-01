@@ -25,7 +25,8 @@ echo "3) roda sem privilégio"
 
 echo "4) dados do pacote presentes (base de takeover + Public Suffix List offline)"
 docker run --rm --network none --entrypoint python "$IMG" -c \
-    "from padme.collectors.takeover import FINGERPRINTS, registrable_domain as r; \
+    "from padme.collectors.takeover import FINGERPRINTS; \
+from padme.domains import registrable_domain as r; \
 assert FINGERPRINTS and r('a.b.co.uk') == 'b.co.uk' and r('x.local') is None"
 
 cat > "$DATA/config.yaml" <<'YAML'
