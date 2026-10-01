@@ -232,6 +232,7 @@ class CollectorsConfig:
     cert_expiry_days: int = 14  # avisa quando o cert está a <= N dias de expirar
     max_response_bytes: int = 262144  # teto de corpo HTTP lido por host (256 KiB)
     takeover: bool = True     # CNAME dangling + fingerprint de serviços
+    rdap: bool = True         # consulta RDAP p/ confirmar domínio livre vs expirado
     ports: bool = False       # ativo — desligado por padrão
     ports_banner: bool = True # banner-grab leve nas portas abertas
     ports_list: list[int] = field(
@@ -330,6 +331,7 @@ class Config:
                 cert_expiry_days=_as_int(col.get("cert_expiry_days"), "collectors.cert_expiry_days", 14),
                 max_response_bytes=_as_int(col.get("max_response_bytes"), "collectors.max_response_bytes", 262144),
                 takeover=_as_bool(col.get("takeover"), True),
+                rdap=_as_bool(col.get("rdap"), True),
                 ports=_as_bool(col.get("ports"), False),
                 ports_banner=_as_bool(col.get("ports_banner"), True),
                 ports_list=[_as_int(p, "collectors.ports_list", 0)

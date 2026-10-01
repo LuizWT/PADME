@@ -38,6 +38,7 @@ from .collectors import (
     wildcard,
 )
 from .config import Config
+from .domains import make_rdap
 from .models import CollectionResult, Event, Kind, Record, ScanResult
 from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNotifier
 from .portmap import IMPLICIT_TLS_PORTS
@@ -66,6 +67,9 @@ class Engine:
         self.storage = storage
         self._sem = asyncio.Semaphore(config.concurrency)
         self._rate = ratelimit.from_config(config)  # pacing responsável (§12)
+        # RDAP confirma domínio livre vs expirado (takeover genérico + SPF órfão);
+        # só dispara em domínio já suspeito. Desligado -> cai no sinal do DNS.
+        self._rdap = make_rdap(timeout=config.timeout) if config.collectors.rdap else None
 
     async def _pace(self, request: "httpx.Request") -> None:
         """Hook de requisição do httpx: aplica o rate-limit antes de cada envio
@@ -121,7 +125,7 @@ class Engine:
             # 0b. sinais RED no apex: NS (delegação/hijack) + SPF/DMARC (spoofing)
             if self.cfg.collectors.dns_records:
                 try:
-                    cr = await dnsrecon.collect(target, self.cfg.timeout)
+                    cr = await dnsrecon.collect(target, self.cfg.timeout, rdap=self._rdap)
                     result.records.extend(cr.records)
                     result.mark_collector("dnsrecon", cr.ok)
                     result.inconclusive += not cr.ok
@@ -239,7 +243,8 @@ class Engine:
                 cr = await _safe(
                     takeover.collect_host(host, client, self.cfg.timeout, body_cache,
                                           net.follow_redirects, col.max_response_bytes,
-                                          allow_private=net.allow_private_ips),
+                                          allow_private=net.allow_private_ips,
+                                          rdap=self._rdap),
                     host, "takeover", result)
                 _absorb(cr, result, "takeover", host)
             if col.ports:

@@ -29,8 +29,13 @@ from functools import lru_cache
 from importlib import resources
 
 import httpx
-from publicsuffixlist import PublicSuffixList
 
+from ..domains import (
+    Availability,
+    Rdap,
+    check_registrable,
+    is_claimable,
+)
 from ..models import CollectionResult, Kind, Record
 from .http import DEFAULT_MAX_BYTES, _fetch_limited
 
@@ -83,22 +88,14 @@ def match_service(cname: str) -> dict | None:
     return best
 
 
-@lru_cache(maxsize=1)
-def _psl() -> PublicSuffixList:
-    """Public Suffix List só com a seção ICANN: a pergunta é "dá para
-    REGISTRAR este domínio num registro público?". Sufixos privados
-    (herokuapp.com, github.io…) são recursos de plataforma, não registros —
-    esses ficam com a base de fingerprints. `accept_unknown=False`: TLD fora
-    da lista (.local, .internal, .test, .corp) não é registrável por ninguém."""
-    return PublicSuffixList(only_icann=True, accept_unknown=False)
-
-
-def registrable_domain(name: str) -> str | None:
-    """Domínio registrável (sufixo público ICANN + 1 rótulo), pela PSL.
-    None quando o nome não tem domínio registrável: TLD desconhecido/reservado
-    ou o próprio nome é um sufixo público (ex.: `co.uk`)."""
-    name = name.lower().rstrip(".")
-    return _psl().privatesuffix(name) if name else None
+def _dangling_reason(domain: str, av: Availability) -> str:
+    """Texto do achado conforme a certeza sobre o domínio registrável."""
+    if av == Availability.FREE:
+        return f"CNAME dangling: domínio {domain} não registrado (RDAP 404) — registrável agora"
+    if av == Availability.PENDING_RELEASE:
+        return f"CNAME dangling: domínio {domain} expirado/suspenso (RDAP) — a caminho de liberar"
+    return (f"CNAME dangling: domínio {domain} fora da zona do TLD (NXDOMAIN) — "
+            "não registrado ou expirado")
 
 
 async def _domain_unregistered(domain: str, timeout: float) -> bool | None:
@@ -190,6 +187,7 @@ async def collect_host(
     host: str, client: httpx.AsyncClient, timeout: float,
     cache: dict[str, str] | None = None, follow_redirects: bool = False,
     max_bytes: int = DEFAULT_MAX_BYTES, allow_private: bool = False,
+    rdap: Rdap | None = None,
 ) -> CollectionResult:
     target, resolves, cname_ok = await _cname_target(host, timeout)
     if target is None:
@@ -198,28 +196,26 @@ async def collect_host(
     fp = match_service(target)
     if not fp:
         # serviço desconhecido: só é achado se o alvo não existe E o domínio
-        # registrável dele está livre para registro (dangling genérico).
+        # registrável dele estiver livre para registro (dangling genérico).
         if not cname_ok:
             return CollectionResult(records=[], ok=False)
         if resolves:
             return CollectionResult(records=[], ok=True)
-        domain = registrable_domain(target)
-        if domain is None:  # TLD interno/reservado: ninguém registra -> não é achado
+        check = await check_registrable(
+            target, lambda d: _domain_unregistered(d, timeout), rdap)
+        if check.registrable is None:   # TLD interno/reservado -> não é achado
             return CollectionResult(records=[], ok=True)
-        free = await _domain_unregistered(domain, timeout)
-        if free is None:
-            return CollectionResult(records=[], ok=False)
-        if not free:
+        av = check.availability
+        if av == Availability.UNKNOWN:
+            return CollectionResult(records=[], ok=False)   # inconclusivo -> preserva
+        if not is_claimable(av):        # REGISTERED -> delegação lame, não reivindicável
             return CollectionResult(records=[], ok=True)
-        # NXDOMAIN no TLD = fora da zona: não registrado OU expirado/suspenso
-        # (hold/redemption). Os dois são risco; confirme no RDAP/WHOIS.
-        reason = (f"CNAME dangling: domínio {domain} fora da zona do TLD (NXDOMAIN) — "
-                  "não registrado ou expirado")
+        reason = _dangling_reason(check.registrable, av)
         service = "domínio não registrado/expirado"
         return CollectionResult(records=[Record(
             kind=Kind.TAKEOVER, key=host, value=f"{service} | {target} | {reason}",
             metadata={"service": service, "cname": target, "reason": reason,
-                      "domain": domain})], ok=True)
+                      "domain": check.registrable, "availability": av.value})], ok=True)
 
     reason = ""
     ok = True
