@@ -232,3 +232,115 @@ def test_ponta_a_ponta_include_vira_mais_all(monkeypatch, tmp_path):
     assert events[0].new_value == "+all · include:vendor.net → all"
     # antes: o ~all do fornecedor não casa o atacante -> cai no -all do apex
     assert events[0].metadata["_changes"]["result"] == {"old": "-", "new": "+"}
+
+
+# ── include/redirect órfão (takeover de e-mail) ───────────────────────────────
+def _collect_rdap(monkeypatch, script, rdap=None):
+    monkeypatch.setattr(dnsrecon.dns.asyncresolver, "Resolver", _resolver(script))
+    cr = asyncio.run(dnsrecon.collect("alvo.com", 5, rdap=rdap))
+    return cr, {r.key: r for r in cr.records if r.kind == Kind.MAILSEC}
+
+
+def test_spf_include_orfao_vira_critico(monkeypatch):
+    # include para um domínio cuja zona não existe (NS NXDOMAIN) e sem RDAP:
+    # OUT_OF_ZONE -> achado crítico (takeover de e-mail), confiança HIGH.
+    cr, mail = _collect_rdap(monkeypatch, {
+        ("alvo.com", "TXT"): ["v=spf1 include:vendor-livre.net -all"],
+        # vendor-livre.net: sem TXT e sem NS (tudo NXDOMAIN por padrão)
+    })
+    assert cr.ok
+    key = "alvo.com|SPF-ORPHAN|vendor-livre.net"
+    assert key in mail
+    md = mail[key].metadata
+    assert md["registrable"] == "vendor-livre.net" and md["availability"] == "out_of_zone"
+    ev = Event("alvo.com", EventType.ADDED, Kind.MAILSEC, key,
+               new_value=mail[key].value, metadata=md)
+    a = assess(ev)
+    assert a.level == Level.CRITICAL and L.SPF_INCLUDE_UNREGISTERED in a.reasons
+    assert a.confidence == L.Confidence.HIGH
+
+
+def test_spf_include_sem_spf_mas_registrado_nao_e_orfao(monkeypatch):
+    # vendor existe (NS responde) mas não tem SPF -> permerror, NÃO é órfão.
+    cr, mail = _collect_rdap(monkeypatch, {
+        ("alvo.com", "TXT"): ["v=spf1 include:vendor.net -all"],
+        ("vendor.net", "NS"): [object()],   # zona existe
+    })
+    assert not any("SPF-ORPHAN" in k for k in mail)
+    assert mail["alvo.com|SPF-EFFECTIVE"].metadata["result"] == "permerror"
+
+
+def test_spf_orfao_rdap_confirma_livre_confirmed(monkeypatch):
+    from padme.domains import Availability
+
+    async def rdap(_domain):
+        return Availability.FREE
+
+    cr, mail = _collect_rdap(monkeypatch, {
+        ("alvo.com", "TXT"): ["v=spf1 redirect=_spf.vendor-livre.net"],
+    }, rdap=rdap)
+    key = "alvo.com|SPF-ORPHAN|vendor-livre.net"
+    assert mail[key].metadata["availability"] == "free"
+    ev = Event("alvo.com", EventType.ADDED, Kind.MAILSEC, key,
+               new_value=mail[key].value, metadata=mail[key].metadata)
+    a = assess(ev)
+    assert a.level == Level.CRITICAL and a.confidence == L.Confidence.CONFIRMED
+
+
+def test_spf_orfao_removido_e_resolucao(monkeypatch):
+    # o órfão que some (domínio registrado / include removido) é LOW, não HIGH
+    ev = Event("alvo.com", EventType.REMOVED, Kind.MAILSEC,
+               "alvo.com|SPF-ORPHAN|vendor-livre.net", old_value="...", new_value=None)
+    a = assess(ev)
+    assert a.level == Level.LOW and L.SPF_INCLUDE_UNREGISTERED not in a.reasons
+
+
+# ── a/mx e limites de consulta (RFC 7208 §4.6.4) ──────────────────────────────
+def _eval_mx(record, zone, exists):
+    """exists: dict (host, rtype) -> True/False/None."""
+    async def fetch(domain):
+        v = zone.get(domain, [])
+        if v == "TIMEOUT":
+            raise SpfInconclusive(domain)
+        return v
+
+    async def mech(host, rtype):
+        return exists.get((host, rtype))
+
+    return asyncio.run(spf_effective(record, fetch, domain="alvo.com", mech_exists=mech))
+
+
+def test_void_lookups_excedidos_viram_permerror():
+    # 3 mecanismos 'a' sobre host sem A = 3 void lookups (> 2) -> permerror
+    v = _eval_mx("v=spf1 a:x.net a:y.net a:z.net -all", {},
+                 {("x.net", "A"): False, ("y.net", "A"): False, ("z.net", "A"): False})
+    assert v.result == "permerror" and "vazias" in v.via
+
+
+def test_a_mx_void_dentro_do_limite_nao_quebra():
+    v = _eval_mx("v=spf1 a:x.net mx:y.net -all", {},
+                 {("x.net", "A"): False, ("y.net", "MX"): False})
+    assert v.result == "-" and v.via == "all"
+
+
+def test_a_com_faixa_ampla_casa_qualquer_ip():
+    v = _eval_mx("v=spf1 a:big.net/0 -all", {}, {("big.net", "A"): True})
+    assert v.result == "+" and "faixa ampla" in v.via
+
+
+def test_mx_inconclusivo_preserva():
+    with pytest.raises(SpfInconclusive):
+        _eval_mx("v=spf1 mx -all", {}, {("alvo.com", "MX"): None})
+
+
+def test_painel_lista_include_orfao_como_critico(monkeypatch):
+    from padme.panel_metrics import _collect_problems
+    by_target = {"alvo.com": {"mailsec": [
+        {"key": "alvo.com|SPF-ORPHAN|vendor-livre.net",
+         "value": "vendor-livre.net (free) via _spf.vendor-livre.net",
+         "metadata": {"type": "spf-orphan", "registrable": "vendor-livre.net",
+                      "availability": "free"}},
+    ]}}
+    probs = _collect_problems(by_target, {})
+    assert probs and probs[0]["kind"] == "E-MAIL" and probs[0]["sev"] == "crítico"
+    assert "vendor-livre.net" in probs[0]["det"]

@@ -17,8 +17,10 @@ marca `ok=False` e preserva o estado anterior (não apaga por falha transitória
 
 from __future__ import annotations
 
+from ..domains import Rdap, check_registrable
 from ..mailpolicy import (
     SPF_EFFECTIVE_SUFFIX,
+    SPF_ORPHAN_SUFFIX,
     SpfInconclusive,
     SpfVerdict,
     dmarc_tag,
@@ -64,10 +66,35 @@ def _is_dmarc(txt: str) -> bool:
     return txt.strip().lower().startswith("v=dmarc1")
 
 
-async def _spf_records(apex: str, resolver) -> tuple[list[Record], bool]:
+async def _ns_nxdomain(resolver, domain: str) -> bool | None:
+    """NS do domínio: True NXDOMAIN (fora da zona) / False existe / None incerto."""
+    try:
+        await resolver.resolve(domain, "NS")
+        return False
+    except dns.resolver.NXDOMAIN:
+        return True
+    except dns.resolver.NoAnswer:
+        return False   # a zona existe (sem NS próprio: subzona de outro domínio)
+    except Exception:
+        return None
+
+
+async def _mech_exists(resolver, host: str, rtype: str) -> bool | None:
+    """a/mx/ptr/exists: True tem registros / False void / None incerto (RFC §4.6.4)."""
+    try:
+        ans = await resolver.resolve(host, rtype)
+        return len(ans) > 0
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return False
+    except Exception:
+        return None
+
+
+async def _spf_records(apex: str, resolver, rdap: Rdap | None) -> tuple[list[Record], bool]:
     """TXT bruto do SPF + registro de POSTURA EFETIVA (include/redirect
-    seguidos). O efetivo é um registro próprio porque um `include:` pode virar
-    `+all` sem o TXT do apex mudar — e só mudança de valor gera evento."""
+    seguidos) + registro(s) de include ÓRFÃO (domínio registrável livre). O
+    efetivo é um registro próprio porque um `include:` pode virar `+all` sem o
+    TXT do apex mudar — e só mudança de valor gera evento."""
     spfs = await _txt_matching(resolver, apex, is_spf)
     if spfs is None:
         return [], False
@@ -84,17 +111,30 @@ async def _spf_records(apex: str, resolver) -> tuple[list[Record], bool]:
             raise SpfInconclusive(domain)
         return found
 
+    async def availing(target: str):
+        return await check_registrable(target, lambda d: _ns_nxdomain(resolver, d), rdap)
+
+    async def mech_exists(host: str, rtype: str) -> bool | None:
+        return await _mech_exists(resolver, host, rtype)
+
     if len(spfs) > 1:  # RFC 7208 §4.5: mais de um registro = permerror
         verdict = SpfVerdict("permerror", f"{apex} com {len(spfs)} registros SPF")
     else:
         try:
-            verdict = await spf_effective(spfs[0], fetch)
+            verdict = await spf_effective(spfs[0], fetch, domain=apex,
+                                          availing=availing, mech_exists=mech_exists)
         except SpfInconclusive:
             return out, False   # cadeia sem resposta: preserva a postura anterior
     out.append(Record(Kind.MAILSEC, f"{apex}{SPF_EFFECTIVE_SUFFIX}", verdict.value,
                       metadata={"type": "spf-effective", "policy": verdict.value,
                                 "result": verdict.result, "via": verdict.via,
                                 "lookups": verdict.lookups}))
+    for orphan in verdict.orphans:   # 1 registro por domínio registrável livre
+        out.append(Record(
+            Kind.MAILSEC, f"{apex}{SPF_ORPHAN_SUFFIX}|{orphan.registrable}",
+            f"{orphan.registrable} ({orphan.availability}) via {orphan.target}",
+            metadata={"type": "spf-orphan", "registrable": orphan.registrable,
+                      "target": orphan.target, "availability": orphan.availability}))
     return out, True
 
 
@@ -110,7 +150,7 @@ async def _dmarc_record(apex: str, resolver) -> tuple[list[Record], bool]:
     return [Record(Kind.MAILSEC, f"{apex}|DMARC", raw, metadata=md)], True
 
 
-async def collect(apex: str, timeout: float) -> CollectionResult:
+async def collect(apex: str, timeout: float, rdap: Rdap | None = None) -> CollectionResult:
     if not _HAS_DNS:
         return CollectionResult(records=[], ok=False)
     resolver = dns.asyncresolver.Resolver()
@@ -128,9 +168,9 @@ async def collect(apex: str, timeout: float) -> CollectionResult:
     except Exception:
         ok = False
 
-    for part in (_spf_records, _dmarc_record):   # SPF (+ efetivo) e DMARC
-        recs, part_ok = await part(apex, resolver)
-        records.extend(recs)
-        ok = ok and part_ok
+    spf_recs, spf_ok = await _spf_records(apex, resolver, rdap)   # SPF + efetivo + órfãos
+    dmarc_recs, dmarc_ok = await _dmarc_record(apex, resolver)
+    records.extend(spf_recs + dmarc_recs)
+    ok = ok and spf_ok and dmarc_ok
 
     return CollectionResult(records=records, ok=ok)
