@@ -325,6 +325,30 @@ class Storage:
         )
         return [_row_to_event(r) for r in cur.fetchall()]
 
+    def query_events(self, *, targets: list[str] | None = None,
+                     kinds: list[str] | None = None,
+                     event_types: list[str] | None = None,
+                     since_ts: float | None = None, cap: int = 5000) -> list[Event]:
+        """Eventos (mais recentes primeiro) filtrados pelos campos que o SQL
+        resolve — alvo, kind, tipo, janela de tempo. A severidade NÃO é filtrada
+        aqui (é derivada por `risk.assess`, não armazenada): quem precisa dela
+        filtra em Python. Devolve até `cap`+1 linhas, p/ quem chama detectar
+        truncamento sem carregar o histórico inteiro."""
+        where, params = [], []
+        for col, vals in (("target", targets), ("kind", kinds), ("event_type", event_types)):
+            if vals:
+                where.append(f"{col} IN ({','.join('?' * len(vals))})")
+                params.extend(vals)
+        if since_ts is not None:
+            where.append("ts >= ?")
+            params.append(since_ts)
+        q = "SELECT * FROM events"
+        if where:
+            q += " WHERE " + " AND ".join(where)
+        q += " ORDER BY ts DESC, id DESC LIMIT ?"
+        params.append(cap + 1)
+        return [_row_to_event(r) for r in self._conn.execute(q, tuple(params)).fetchall()]
+
     def events_by_ids(self, event_ids: list[str]) -> list[Event]:
         """Eventos pelos `event_id` (ordem cronológica). Ids que a retenção já
         apagou simplesmente não voltam."""

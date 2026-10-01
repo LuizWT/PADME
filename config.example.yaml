@@ -90,6 +90,16 @@ web:
   # (o painel também envia headers de segurança: nosniff, X-Frame-Options: DENY,
   #  Referrer-Policy, Cache-Control: no-store e uma CSP compatível com o HTML.)
 
+# API REST/JSON read-only e versionada (/api/v1). `padme api` a serve numa porta
+# própria. É para automação (SIEM, ticketing, dashboards): sem token só serve em
+# loopback; fora de loopback exige `Authorization: Bearer <token>`.
+api:
+  bind: 127.0.0.1           # NUNCA 0.0.0.0 sem intenção; --host sobrescreve
+  port: 8788
+  # Token da API. Vazio -> cai no token do painel (web.token / PADME_WEB_TOKEN),
+  # a MESMA auth Bearer. Mantenha FORA do repositório (use ${PADME_API_TOKEN}).
+  token: ${PADME_API_TOKEN}
+
 # Contexto de ativo — deixa o risk engine ELEVAR o risco com base no ativo, não
 # só no tipo de evento. Casa por `match` (exato ou glob, ex.: "*.corp.x.com")
 # contra o host do evento e o alvo; a regra mais específica vence. Tudo opcional.

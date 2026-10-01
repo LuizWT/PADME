@@ -251,6 +251,12 @@ Padmé segue exigido ponta a ponta. No navegador, o próprio Padmé pede login
 (HTTP Basic: qualquer usuário, o token como senha) — o `proxy_set_header
 Authorization` acima repassa isso sem mudança. Em automação, use `Bearer`.
 
+A **API** (`padme api`, read-only, `/api/v1`) segue o mesmo modelo: loopback por
+padrão, exige `Bearer` fora de localhost e vai atrás do mesmo proxy — só numa
+porta própria (padrão `8788`; ajuste o `proxy_pass`/`reverse_proxy`). O token é o
+`PADME_API_TOKEN`, ou o do painel se aquele estiver vazio. Como é só Bearer (sem
+o prompt Basic do navegador), é o alvo natural para SIEM/ticketing/cron.
+
 ---
 
 ## 5. Manutenção do banco
