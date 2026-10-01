@@ -1,7 +1,7 @@
 {
   "_comment": "Gerado por scripts/update_takeover_fingerprints.py a partir do can-i-take-over-xyz. 'fingerprint' é REGEX (case-insensitive) buscada no corpo HTTP; vazio + nxdomain=true = vulnerável quando o alvo do CNAME não existe. 'status' edge case = reivindicação depende do caso (confiança menor). Rode o script de novo para revisar; o doctor avisa após 180 dias.",
   "source": "https://raw.githubusercontent.com/EdOverflow/can-i-take-over-xyz/master/fingerprints.json",
-  "reviewed": "2026-09-30",
+  "reviewed": "2026-10-01",
   "services": [
     {
       "service": "Agile CRM",
@@ -84,6 +84,24 @@
       "nxdomain": false
     },
     {
+      "service": "Campaign Monitor",
+      "status": "vulnerable",
+      "cnames": [
+        "createsend.com"
+      ],
+      "fingerprint": "Trying to access your account\\?",
+      "nxdomain": false
+    },
+    {
+      "service": "Canny",
+      "status": "vulnerable",
+      "cnames": [
+        "canny.io"
+      ],
+      "fingerprint": "Company Not Found|There is no such company\\. Did you enter the right URL\\?",
+      "nxdomain": false
+    },
+    {
       "service": "Discourse",
       "status": "vulnerable",
       "cnames": [
@@ -158,12 +176,30 @@
       "nxdomain": false
     },
     {
+      "service": "Intercom",
+      "status": "edge case",
+      "cnames": [
+        "custom.intercom.help"
+      ],
+      "fingerprint": "Uh oh\\. That page doesn't exist\\.",
+      "nxdomain": false
+    },
+    {
       "service": "JetBrains",
       "status": "vulnerable",
       "cnames": [
         "youtrack.cloud"
       ],
       "fingerprint": "is not a registered InCloud YouTrack",
+      "nxdomain": false
+    },
+    {
+      "service": "Netlify",
+      "status": "edge case",
+      "cnames": [
+        "netlify.app"
+      ],
+      "fingerprint": "Not Found \\- Request ID:",
       "nxdomain": false
     },
     {
@@ -182,6 +218,15 @@
         "pantheonsite.io"
       ],
       "fingerprint": "404 error unknown site!|The gods are wise, but do not know of the site which you seek",
+      "nxdomain": false
+    },
+    {
+      "service": "Pingdom",
+      "status": "vulnerable",
+      "cnames": [
+        "stats.pingdom.com"
+      ],
+      "fingerprint": "Sorry, couldn't find the status page",
       "nxdomain": false
     },
     {
@@ -264,6 +309,24 @@
         "stats.uptimerobot.com"
       ],
       "fingerprint": "page not found",
+      "nxdomain": false
+    },
+    {
+      "service": "Vercel",
+      "status": "edge case",
+      "cnames": [
+        "cname.vercel-dns.com"
+      ],
+      "fingerprint": "DEPLOYMENT_NOT_FOUND\\.",
+      "nxdomain": false
+    },
+    {
+      "service": "Webflow",
+      "status": "edge case",
+      "cnames": [
+        "proxy-ssl.webflow.com"
+      ],
+      "fingerprint": "The page you are looking for doesn't exist or has been moved\\.",
       "nxdomain": false
     },
     {
