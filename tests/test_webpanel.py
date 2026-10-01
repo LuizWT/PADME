@@ -249,3 +249,30 @@ def test_problems_panel_mostra_evidencia():
     assert "problemas abertos" in out
     # a prova normalizada aparece no cartão agregado (não só na timeline)
     assert "prova:" in out and "takeover_check" in out and "NXDOMAIN" in out
+
+
+# ── correções do painel (tile zero, filtro, persistência) ────────────────────
+def test_esc_preserva_zero_e_false():
+    from padme.webpanel import _esc
+    assert _esc(0) == "0"          # 0 NÃO vira "" (tile de portas abertas)
+    assert _esc(False) == "False"
+    assert _esc(None) == ""        # só None é vazio
+    assert _esc("<x>") == "&lt;x&gt;"
+
+
+def test_stat_tile_zero_portas_mostra_zero():
+    from padme.webpanel import _stat_tiles
+    html = _stat_tiles({"http": [{"key": "https://a.com", "value": "200"}]})  # sem 'port'
+    assert "<div class=num>0</div><div class=lab>portas abertas</div>" in html
+
+
+def test_render_tem_filtro_e_details_persistente():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("a.com", [])
+    s.apply_scan("a.com", [Record(Kind.PORT, "a.com:3389", "open", metadata={"port": 3389})])
+    s.close()
+    out = _render(Config(targets=["a.com"], db_path=db))
+    assert "data-persist='k-a-com'" in out       # estado do <details> persiste no refresh
+    assert "class=kfilter" in out                # caixa de busca por categoria
+    assert "data-kind='port'" in out             # grupo marcado p/ a busca casar o kind

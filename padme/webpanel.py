@@ -49,7 +49,9 @@ _KIND_LABEL = {
 _ARROW = {"added": "+", "removed": "−", "changed": "~"}
 
 def _esc(s) -> str:
-    return html.escape(str(s or ""))
+    # NÃO use `s or ""`: 0 e False são válidos e viram "" assim (o tile de
+    # "portas abertas" com contagem 0 ficava EM BRANCO). Só None é vazio.
+    return html.escape("" if s is None else str(s))
 
 
 def _ts_human(ts) -> str:
@@ -345,13 +347,19 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
         parts.append("<div class=empty>sem baseline ainda — rode um scan para este alvo.</div>")
     else:
         parts.append(_stat_tiles(kinds))
-        # detalhe completo por categoria, recolhido por padrão (denso mas opcional)
-        det = ['<details class=kinds><summary>ativos por categoria</summary>']
+        # detalhe completo por categoria. `data-persist`: a JS lembra aberto/
+        # fechado entre os auto-refreshes de 30s (senão recolhia sozinho).
+        det = [f"<details class=kinds data-persist='k-{_slug(target)}'>"
+               "<summary>ativos por categoria</summary>",
+               "<input class=kfilter type=search autocomplete=off "
+               "placeholder='filtrar (host, porta, kind, valor)…' "
+               "aria-label='filtrar ativos'>"]
         for kind in _KIND_ORDER:
             items = kinds.get(kind)
             if not items:
                 continue
-            det.append(f"<div class=kind><b>{_KIND_LABEL[kind]}</b>")
+            # data-kind p/ a busca casar também o nome da categoria (ex.: 'port')
+            det.append(f"<div class=kind data-kind='{kind}'><b>{_KIND_LABEL[kind]}</b>")
             for it in sorted(items, key=lambda x: x["key"]):
                 v = f"  <span class=v>{_esc(it['value'])}</span>" if it["value"] else ""
                 fp = _port_fp(it.get("metadata")) if kind == "port" else ""
