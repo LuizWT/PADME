@@ -1,0 +1,61 @@
+name: takeover base
+
+# Regenera padme/data/takeover_fingerprints.json a partir do can-i-take-over-xyz
+# e abre um PR quando os SERVIÇOS mudam (não só a data). Mensal, como o
+# Dependabot faz com dependências — a revisão humana continua no merge do PR.
+on:
+  schedule:
+    - cron: "33 6 1 * *"   # dia 1 de cada mês
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Detectar mudança de serviços no upstream
+        id: check
+        run: |
+          set +e
+          python scripts/update_takeover_fingerprints.py --check
+          code=$?
+          set -e
+          if [ "$code" -eq 3 ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" -eq 0 ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "falha ao consultar o upstream (exit $code)" >&2
+            exit "$code"
+          fi
+      - name: Regenerar a base
+        if: steps.check.outputs.changed == 'true'
+        run: python scripts/update_takeover_fingerprints.py
+      - name: Validar a base nova
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -q tests/test_takeover_base.py tests/test_deteccao.py
+      - name: Abrir PR
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="takeover-base/$(date +%Y%m)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add padme/data/takeover_fingerprints.json
+          git commit -m "takeover: atualiza base de fingerprints do can-i-take-over-xyz"
+          git push -u origin "$branch" --force-with-lease
+          gh pr create --fill --base "${GITHUB_REF_NAME:-main}" --head "$branch" \
+            --title "takeover: atualiza base de fingerprints (upstream mudou)" \
+            --body "Regeração automática de \`padme/data/takeover_fingerprints.json\` a partir do can-i-take-over-xyz. Revise o diff (serviços adicionados/removidos/alterados) antes do merge." \
+            || echo "PR já existe para $branch"
