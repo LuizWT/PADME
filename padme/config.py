@@ -201,6 +201,24 @@ class WebConfig:
 
 
 @dataclass
+class ApiConfig:
+    """API REST/JSON read-only e versionada (`/api/v1/...`). Bind SEGURO por
+    padrão (loopback) e porta própria (não colide com o painel). É para
+    automação, então exige `Authorization: Bearer <token>`: sem token, só serve
+    em loopback (fora de loopback, `padme api` recusa sem `--allow-no-auth`).
+
+    `token`: `${PADME_API_TOKEN}` ou a env var `PADME_API_TOKEN` (a CLI a lê
+    mesmo sem `api.token`); se vazio, cai no token do painel (`web.token` /
+    `PADME_WEB_TOKEN`) — a mesma auth Bearer, como manda o design."""
+    bind: str = "127.0.0.1"
+    port: int = 8788
+    token: str = ""
+
+    def resolved(self) -> "ApiConfig":
+        return ApiConfig(bind=self.bind, port=self.port, token=_expand(self.token))
+
+
+@dataclass
 class HeartbeatConfig:
     enabled: bool = False
     url: str = ""            # ping de watchdog (healthchecks.io etc.); vazio = só arquivo
@@ -254,6 +272,7 @@ class Config:
     storage: StorageConfig = field(default_factory=StorageConfig)
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     web: WebConfig = field(default_factory=WebConfig)
+    api: ApiConfig = field(default_factory=ApiConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
@@ -295,6 +314,7 @@ class Config:
         stg = raw.get("storage") or {}
         al = raw.get("alerts") or {}
         web = raw.get("web") or {}
+        api = raw.get("api") or {}
         ctx = raw.get("context") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
@@ -359,6 +379,11 @@ class Config:
                 port=_as_int(web.get("port"), "web.port", 8787),
                 token=str(web.get("token", "")),
                 vantage_dir=str(web.get("vantage_dir", "")).strip(),
+            ).resolved(),
+            api=ApiConfig(
+                bind=str(api.get("bind", "127.0.0.1")).strip() or "127.0.0.1",
+                port=_as_int(api.get("port"), "api.port", 8788),
+                token=str(api.get("token", "")),
             ).resolved(),
             context=_parse_context(ctx),
             telegram=TelegramConfig(
@@ -510,6 +535,7 @@ _SECTIONS: dict[str, set[str]] = {
     "storage": _names(StorageConfig),
     "alerts": _names(AlertsConfig),
     "web": _names(WebConfig),
+    "api": _names(ApiConfig),
     "context": {"assets"},
     "telegram": _names(TelegramConfig),
     "discord": _names(DiscordConfig),

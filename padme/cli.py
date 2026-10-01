@@ -7,6 +7,7 @@ Comandos:
   padme export       -> estado atual em JSON/CSV
   padme merge        -> consolida exports de várias fontes (multi-vantage)
   padme web          -> painel só-leitura
+  padme api          -> API REST/JSON read-only (/api/v1)
   padme doctor       -> integridade do banco, saúde dos scans e avisos de config
   padme backup       -> backup online consistente do SQLite
   padme health       -> o monitor está varrendo? (exit 0/1, p/ HEALTHCHECK/cron)
@@ -250,6 +251,39 @@ async def _cmd_web(cfg: Config, args) -> int:
     return 0
 
 
+def _resolve_api_token(cfg: Config) -> str:
+    """Token da API: `api.token`/`PADME_API_TOKEN` e, se vazio, cai no token do
+    painel (`web.token`/`PADME_WEB_TOKEN`) — a mesma auth Bearer."""
+    return ((cfg.api.token or os.environ.get("PADME_API_TOKEN", "")).strip()
+            or _resolve_web_token(cfg))
+
+
+async def _cmd_api(cfg: Config, args) -> int:
+    from .api import serve
+    host = args.host if args.host is not None else cfg.api.bind
+    port = args.port if args.port is not None else cfg.api.port
+    token = _resolve_api_token(cfg)
+    exposed = host not in _LOOPBACK
+
+    if exposed and not token and not args.allow_no_auth:
+        print(
+            f"⛔ Recusando servir a API em {host} (fora de localhost) SEM autenticação.\n"
+            "    A API expõe toda a superfície coletada. Escolha uma:\n"
+            "      • defina o token:  export PADME_API_TOKEN=... (ou api.token no config)\n"
+            "      • sirva local:     padme api            (bind em 127.0.0.1)\n"
+            "      • ciente do risco: padme api --host " + host + " --allow-no-auth",
+            file=sys.stderr,
+        )
+        return 3
+    if exposed:
+        detail = ("protegida por token (Authorization: Bearer)." if token
+                  else "SEM autenticação (--allow-no-auth). Só em rede confiável / atrás de proxy.")
+        print(f"⚠️  Servindo a API em {host} (fora de localhost) — {detail}", file=sys.stderr)
+
+    serve(cfg, host, port, token=token or None)
+    return 0
+
+
 def _config_warnings(cfg: Config) -> list[str]:
     """Sanidade de configuração (não bloqueia; só diagnostica em `doctor`)."""
     w: list[str] = list(cfg.warnings)
@@ -434,6 +468,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="permite servir fora de localhost SEM token (decisão consciente)")
     wb.set_defaults(func=_cmd_web)
 
+    ap = sub.add_parser("api", help="API REST/JSON read-only e versionada (/api/v1)")
+    ap.add_argument("--host", default=None, help="bind (padrão: api.bind do config ou 127.0.0.1)")
+    ap.add_argument("--port", type=int, default=None, help="porta (padrão: api.port do config ou 8788)")
+    ap.add_argument("--allow-no-auth", action="store_true",
+                    help="permite servir fora de localhost SEM token (decisão consciente)")
+    ap.set_defaults(func=_cmd_api)
+
     dp = sub.add_parser("doctor", help="diagnóstico: integridade do banco, saúde dos scans e config")
     dp.set_defaults(func=_cmd_doctor)
 
@@ -477,7 +518,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"aviso de config: {w}", file=sys.stderr)
 
     # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-notify", "web", "doctor", "merge", "backup",
+    read_only = args.command in ("events", "export", "test-notify", "web", "api", "doctor", "merge", "backup",
                                  "health")
     if not cfg.scope_confirmed and not read_only:
         print(
