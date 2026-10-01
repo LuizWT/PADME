@@ -433,6 +433,12 @@ python -m padme web            # http://127.0.0.1:8787 (localhost, sem token)
 export PADME_WEB_TOKEN="$(openssl rand -hex 32)"
 python -m padme web
 
+# API REST/JSON read-only e versionada (/api/v1) para automação
+python -m padme api            # http://127.0.0.1:8788/api/v1 (localhost, sem token)
+export PADME_API_TOKEN="$(openssl rand -hex 32)"   # fora de localhost, exigido
+curl -s -H "Authorization: Bearer $PADME_API_TOKEN" \
+  "http://127.0.0.1:8788/api/v1/events?min_severity=high&target=alvo.com"
+
 # Testar todos os canais de notificação configurados
 python -m padme test-notify
 
@@ -458,6 +464,44 @@ python -m padme merge casa.json vps-eu.json --out consolidado.json
 
 > Se instalar com `pip install -e .`, o comando `padme` fica disponível
 > direto (sem o `python -m`).
+
+## API programática (`/api/v1`)
+
+Para integrar o PADME a um pipeline (SIEM, ticketing, dashboards próprios), o
+`padme api` serve uma **API REST/JSON read-only e versionada** numa porta própria
+(padrão `127.0.0.1:8788`). É a formalização do `/export` como contrato estável:
+toda resposta carrega `schema_version` e o formato é **aditivo** (campos novos não
+quebram quem já consome).
+
+| Método e rota | O que devolve |
+|---|---|
+| `GET /api/v1` | metadados e a lista de endpoints |
+| `GET /api/v1/surface` | estado atual (os mesmos campos do `export`) |
+| `GET /api/v1/events` | eventos com `severity`/`confidence`/`risk` (o mesmo contrato do webhook) |
+| `GET /api/v1/health` | liveness por alvo (último scan, inconclusivos, baseline) |
+
+Filtros: `?target=` (exato; cai para substring se não casar), `?kind=`. Em
+`events` também `?type=added|removed|changed`, `?min_severity=low|medium|high|critical`
+(a severidade é calculada pelo `risk.assess`, não só lida do banco) e `?since=`
+(unix ou ISO-8601). Paginação por `?limit=` (1–1000) e `?offset=`, com `count`,
+`total` e `offset` no envelope.
+
+```bash
+# findings CRITICAL/HIGH abertos de um alvo, prontos para um ticket
+curl -s -H "Authorization: Bearer $PADME_API_TOKEN" \
+  "http://127.0.0.1:8788/api/v1/events?min_severity=high&target=alvo.com" | jq .
+```
+
+Autenticação é a **mesma Bearer** do painel: sem token só serve em loopback;
+fora de loopback, `padme api` recusa sem token (como o painel) a menos que
+`--allow-no-auth`. Só **leitura** — ações de escrita (`ack`/`suppress` de finding)
+dependem do lifecycle de finding, que ainda não existe, então não são expostas.
+
+> [!NOTE]
+> É `http.server` da stdlib, como o painel (zero dependências, mesmo servidor
+> endurecido: teto de conexões, timeout e headers de segurança). Se a API crescer
+> a ponto de precisar de OpenAPI/validação pesada, o passo natural é FastAPI — mas
+> só quando houver essa necessidade concreta.
 
 ## Níveis de notificação (por canal)
 
@@ -614,7 +658,7 @@ docker build -t padme:ci . && sh scripts/docker-smoke.sh padme:ci   # imagem
 ```
 padme/
 ├── padme/
-│   ├── cli.py            # comandos scan / monitor / events / export / web / doctor / health / backup / merge
+│   ├── cli.py            # comandos scan / monitor / events / export / web / api / doctor / health / backup / merge
 │   ├── config.py         # carrega e valida o YAML (collectors/network/storage/canais)
 │   ├── models.py         # Record / Event / Kind / CollectionResult / scope_of
 │   ├── risk.py           # motor de risco: severidade base + assess() (severity+confidence+reason codes)
@@ -636,6 +680,7 @@ padme/
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
 │   ├── webpanel.py       # painel só-leitura (auth Basic/Bearer) + tendência + /vantage (stdlib)
+│   ├── api.py            # API REST/JSON read-only e versionada (/api/v1), mesma auth Bearer
 │   ├── panel_metrics.py  # dados dos cartões: problemas, priorização, KPIs §27 (sem HTML)
 │   ├── panel_assets.py   # CSS e JS do painel (strings estáticas)
 │   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
@@ -659,6 +704,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 428 testes: unitários + reliability + netpolicy +
+└── tests/                # 439 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
