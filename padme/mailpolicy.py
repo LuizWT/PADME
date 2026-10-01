@@ -19,16 +19,21 @@ import ipaddress
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
+from .domains import DomainCheck, is_claimable
+
 # ── reason codes (estáveis p/ webhook/n8n; o risk.py reexporta) ───────────────
 SPF_PERMISSIVE = "SPF_PERMISSIVE"
 SPF_PERMERROR = "SPF_PERMERROR"
+SPF_INCLUDE_UNREGISTERED = "SPF_INCLUDE_UNREGISTERED"
 DMARC_NOT_ENFORCED = "DMARC_NOT_ENFORCED"
 DMARC_SUBDOMAINS_NOT_ENFORCED = "DMARC_SUBDOMAINS_NOT_ENFORCED"
 DMARC_PARTIAL = "DMARC_PARTIAL"
 
 SPF_EFFECTIVE_SUFFIX = "|SPF-EFFECTIVE"   # key do registro de postura efetiva
+SPF_ORPHAN_SUFFIX = "|SPF-ORPHAN"         # key do include/redirect órfão (1 por domínio)
 
 _MAX_LOOKUPS = 10          # RFC 7208 §4.6.4: termos que consultam DNS
+_MAX_VOID = 2              # RFC 7208 §4.6.4: lookups que voltam vazios
 _BROAD_PREFIX = {"ip4": 8, "ip6": 16}   # /8 (16M IPs) ou maior = cabe atacante
 _QUALIFIERS = "+-~?"
 _LABEL = {"+": "+all", "-": "-all", "~": "~all", "?": "?all"}
@@ -72,10 +77,21 @@ class SpfInconclusive(Exception):
 
 
 @dataclass(frozen=True)
+class SpfOrphan:
+    """Um `include:`/`redirect=` que aponta para um domínio registrável LIVRE:
+    quem registrar passa a autorizar envio em nome do alvo. É um takeover de
+    e-mail — mesmo peso do subdomain takeover."""
+    target: str          # o alvo do include/redirect (ex.: _spf.vendor.net)
+    registrable: str     # o domínio registrável livre (ex.: vendor.net)
+    availability: str    # 'free' | 'pending' | 'out_of_zone' (da PSL+RDAP)
+
+
+@dataclass(frozen=True)
 class SpfVerdict:
     result: str        # '+', '-', '~', '?' ou 'permerror'
     via: str           # o que decidiu (all, include:x, ip4:.../n, redirect:y, padrão)
     lookups: int = 0
+    orphans: tuple[SpfOrphan, ...] = ()
 
     @property
     def value(self) -> str:
@@ -88,6 +104,12 @@ class SpfVerdict:
 # fetch(domínio) -> lista de TXT "v=spf1" do domínio ([] = sem SPF);
 # levanta SpfInconclusive em erro transitório.
 Fetch = Callable[[str], Awaitable[list[str]]]
+# availability(domínio) -> DomainCheck (registrável + disponibilidade); usado só
+# quando um include/redirect não tem SPF (candidato a órfão). Nunca levanta.
+Availing = Callable[[str], Awaitable[DomainCheck]]
+# mech_exists(domínio, rtype) -> True (tem registros) | False (void) | None (incerto),
+# para a/mx/ptr/exists: conta void lookups (RFC 7208 §4.6.4) sem seguir o resultado.
+MechExists = Callable[[str, str], Awaitable["bool | None"]]
 
 
 class _PermError(Exception):
@@ -116,28 +138,79 @@ def _broad(name: str, arg: str) -> str | None:
     return None
 
 
-async def spf_effective(record: str, fetch: Fetch) -> SpfVerdict:
-    """Resultado do SPF para um IP arbitrário, seguindo include/redirect.
-    Levanta SpfInconclusive se alguma consulta necessária não respondeu."""
-    state = {"lookups": 0}
-    cache: dict[str, list[str]] = {}
+def _broad_cidr(name: str, cidr: str) -> bool:
+    """`/n` (ou dual `/n4//n6`) de um a:/mx: é largo o bastante p/ caber um
+    atacante? Usa o limiar IPv4 (/8) sobre a primeira parte."""
+    v4 = cidr.split("/", 1)[0]
+    try:
+        return int(v4) <= _BROAD_PREFIX["ip4"]
+    except ValueError:
+        return False
 
-    async def spf_of(domain: str) -> str:
+
+async def spf_effective(record: str, fetch: Fetch, *, domain: str | None = None,
+                        availing: Availing | None = None,
+                        mech_exists: MechExists | None = None) -> SpfVerdict:
+    """Resultado do SPF para um IP arbitrário, seguindo include/redirect.
+
+    `availing` (opcional): quando um include/redirect não tem SPF, confere se o
+    domínio registrável dele está LIVRE — nesse caso é um include órfão (takeover
+    de e-mail), registrado em `orphans`. `mech_exists` (opcional): resolve a/mx/
+    ptr/exists só para contar VOID lookups (RFC 7208 §4.6.4, limite 2) e detectar
+    faixa ampla com `/n`. Levanta SpfInconclusive se uma consulta necessária não
+    respondeu (quem chama preserva o estado)."""
+    state = {"lookups": 0, "void": 0}
+    cache: dict[str, list[str]] = {}
+    orphans: dict[str, SpfOrphan] = {}
+
+    def _count_lookup() -> None:
         state["lookups"] += 1
         if state["lookups"] > _MAX_LOOKUPS:
             raise _PermError(f"mais de {_MAX_LOOKUPS} consultas DNS (RFC 7208 §4.6.4)")
-        if "%" in domain:   # macro: depende do remetente, não dá p/ avaliar estático
+
+    def _count_void() -> None:
+        state["void"] += 1
+        if state["void"] > _MAX_VOID:
+            raise _PermError(f"mais de {_MAX_VOID} consultas vazias (RFC 7208 §4.6.4)")
+
+    async def _record_orphan(target: str) -> None:
+        """Checa se um include/redirect SEM SPF é um domínio livre (órfão)."""
+        if availing is None:
+            return
+        check = await availing(target)
+        if check.registrable and is_claimable(check.availability):
+            orphans.setdefault(check.registrable, SpfOrphan(
+                target, check.registrable, check.availability.value))
+
+    async def spf_of(target: str) -> str:
+        _count_lookup()
+        if "%" in target:   # macro: depende do remetente, não dá p/ avaliar estático
             return ""
-        if domain not in cache:
-            cache[domain] = await fetch(domain)
-        recs = cache[domain]
+        if target not in cache:
+            cache[target] = await fetch(target)
+        recs = cache[target]
         if not recs:
-            raise _PermError(f"{domain} sem registro SPF")
+            _count_void()
+            await _record_orphan(target)
+            raise _PermError(f"{target} sem registro SPF")
         if len(recs) > 1:
-            raise _PermError(f"{domain} com {len(recs)} registros SPF")
+            raise _PermError(f"{target} com {len(recs)} registros SPF")
         return recs[0]
 
-    async def check(text: str) -> tuple[str, str]:
+    async def _mech_void(name: str, host: str, rtype: str) -> bool:
+        """a/mx/ptr/exists: conta o lookup e, se `mech_exists` resolver, o void.
+        Devolve True se o host tem registros (pode casar via faixa ampla)."""
+        _count_lookup()
+        if mech_exists is None or "%" in host:
+            return False   # sem resolvedor (ou macro): não seguimos o resultado
+        has = await mech_exists(host, rtype)
+        if has is None:
+            raise SpfInconclusive(host)
+        if not has:
+            _count_void()
+        return has
+
+    async def check(text: str, this: str) -> tuple[str, str]:
         redirect = None
         for term in text.split()[1:]:
             t = term.lower()
@@ -153,14 +226,18 @@ async def spf_effective(record: str, fetch: Fetch) -> SpfVerdict:
                 wide = _broad(name, arg)
                 if wide:
                     return q, wide
-            elif name in ("a", "mx", "ptr", "exists"):
-                state["lookups"] += 1   # consulta, mas não casa um IP arbitrário
-                if state["lookups"] > _MAX_LOOKUPS:
-                    raise _PermError(f"mais de {_MAX_LOOKUPS} consultas DNS (RFC 7208 §4.6.4)")
+            elif name in ("a", "mx"):
+                host, _, cidr = arg.partition("/")
+                host = host or this
+                has = await _mech_void(name, host, "A" if name == "a" else "MX")
+                if has and cidr and _broad_cidr(name, cidr):
+                    return q, f"{name}:{host}/{cidr} (faixa ampla)"
+            elif name in ("ptr", "exists"):
+                await _mech_void(name, arg or this, "PTR" if name == "ptr" else "A")
             elif name == "include":
                 sub = await spf_of(arg)
                 if sub:
-                    r, via = await check(sub)
+                    r, via = await check(sub, arg)
                     if r == "+":   # o incluído passa qualquer um -> include casa
                         return q, f"include:{arg} → {via}"
             else:
@@ -168,15 +245,15 @@ async def spf_effective(record: str, fetch: Fetch) -> SpfVerdict:
         if redirect:   # só vale se nada casou (e não há `all`)
             sub = await spf_of(redirect)
             if sub:
-                r, via = await check(sub)
+                r, via = await check(sub, redirect)
                 return r, f"redirect:{redirect} → {via}"
         return "?", "sem all (padrão neutro)"
 
     try:
-        result, via = await check(record)
+        result, via = await check(record, domain or "")
     except _PermError as exc:
-        return SpfVerdict("permerror", str(exc), state["lookups"])
-    return SpfVerdict(result, via, state["lookups"])
+        return SpfVerdict("permerror", str(exc), state["lookups"], tuple(orphans.values()))
+    return SpfVerdict(result, via, state["lookups"], tuple(orphans.values()))
 
 
 # ── achados (risco + painel) ──────────────────────────────────────────────────
@@ -225,6 +302,22 @@ def _dmarc_findings(txt: str, md: dict) -> list[MailFinding]:
     return out
 
 
+def _spf_orphan_findings(md: dict) -> list[MailFinding]:
+    """include/redirect de SPF apontando para domínio registrável livre: quem
+    registrar autoriza envio em nome do alvo. Takeover de e-mail -> CRITICAL."""
+    reg = md.get("registrable") or md.get("domain") or "?"
+    av = str(md.get("availability", "")).lower()
+    if av == "free":
+        extra = "não registrado (RDAP 404) — registrável agora"
+    elif av == "pending":
+        extra = "expirado/suspenso (RDAP) — a caminho de liberar"
+    else:
+        extra = "fora da zona do TLD (NXDOMAIN) — não registrado ou expirado"
+    return [MailFinding(SPF_INCLUDE_UNREGISTERED,
+                        f"SPF autoriza via domínio {reg} {extra}: registre-o e você "
+                        "envia e-mail autenticado pelo alvo", "spf-include-unregistered", True)]
+
+
 def findings(key: str, value: str, md: dict | None = None) -> list[MailFinding]:
     """Fraquezas explícitas de um registro MAILSEC (`key` = 'apex|TIPO').
 
@@ -234,6 +327,8 @@ def findings(key: str, value: str, md: dict | None = None) -> list[MailFinding]:
     REMOÇÃO já é evento próprio."""
     md = md or {}
     value = value or ""
+    if SPF_ORPHAN_SUFFIX in key:
+        return _spf_orphan_findings(md)
     if key.endswith(SPF_EFFECTIVE_SUFFIX):
         return _spf_effective_findings(value, md)
     if key.endswith("|DMARC"):

@@ -7,6 +7,7 @@ import ssl
 from importlib import resources
 from types import SimpleNamespace
 
+from padme import domains
 from padme import risk as L
 from padme.collectors import takeover, tls
 from padme.engine import Engine
@@ -28,16 +29,16 @@ def test_fingerprints_vem_do_json_empacotado():
 
 # ── dangling CNAME genérico ─────────────────────────────────────────────────
 def test_registrable_domain_pela_psl():
-    assert takeover.registrable_domain("a.b.exemplo.com.") == "exemplo.com"
-    assert takeover.registrable_domain("cdn.loja.com.br") == "loja.com.br"
-    assert takeover.registrable_domain("x.site.co.uk") == "site.co.uk"
+    assert domains.registrable_domain("a.b.exemplo.com.") == "exemplo.com"
+    assert domains.registrable_domain("cdn.loja.com.br") == "loja.com.br"
+    assert domains.registrable_domain("x.site.co.uk") == "site.co.uk"
     # regra curinga/exceção da PSL (*.kawasaki.jp / !city.kawasaki.jp)
-    assert takeover.registrable_domain("x.city.kawasaki.jp") == "city.kawasaki.jp"
+    assert domains.registrable_domain("x.city.kawasaki.jp") == "city.kawasaki.jp"
     # só ICANN: sufixo PRIVADO é recurso de plataforma, não registro público
-    assert takeover.registrable_domain("app.herokuapp.com") == "herokuapp.com"
+    assert domains.registrable_domain("app.herokuapp.com") == "herokuapp.com"
     # TLD interno/reservado ou o próprio sufixo: nada registrável
     for name in ("svc.corp.local", "api.internal", "x.test", "co.uk", ""):
-        assert takeover.registrable_domain(name) is None
+        assert domains.registrable_domain(name) is None
 
 
 def test_cname_para_tld_interno_nunca_vira_achado(monkeypatch):

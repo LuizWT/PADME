@@ -55,6 +55,17 @@ _CURATED: dict[str, tuple[str, list[str], list[str]]] = {
     "Surge.sh": ("Surge.sh", ["surge.sh"], []),
     "Wordpress": ("WordPress", [], []),
     "Microsoft Azure": ("Azure", ["trafficmanager.net", "azurefd.net"], []),
+    # Serviços que o upstream lista SEM alvo de CNAME, completados com o domínio
+    # inequivocamente da plataforma (a assinatura de corpo vem do upstream). Só
+    # entram sufixos que a própria plataforma é dona — errar o sufixo só causaria
+    # falso NEGATIVO (não casa), nunca falso positivo.
+    "Campaign Monitor": ("Campaign Monitor", ["createsend.com"], []),
+    "Canny": ("Canny", ["canny.io"], []),
+    "Pingdom": ("Pingdom", ["stats.pingdom.com"], []),
+    "Intercom": ("Intercom", ["custom.intercom.help"], []),
+    "Netlify": ("Netlify", ["netlify.app"], []),
+    "Vercel": ("Vercel", ["cname.vercel-dns.com"], []),
+    "Webflow": ("Webflow", ["proxy-ssl.webflow.com"], []),
 }
 
 

@@ -34,6 +34,8 @@ from .mailpolicy import (
     DMARC_PARTIAL,
     DMARC_SUBDOMAINS_NOT_ENFORCED,
     SPF_EFFECTIVE_SUFFIX,
+    SPF_INCLUDE_UNREGISTERED,
+    SPF_ORPHAN_SUFFIX,
     SPF_PERMERROR,
     SPF_PERMISSIVE,
 )
@@ -88,8 +90,11 @@ def _base_severity(e: Event) -> Level:
     if k == Kind.NS:  # mudança de nameserver do apex = delegação / possível hijack
         return Level.HIGH
     if k == Kind.MAILSEC:  # SPF/DMARC removido = domínio spoofável -> HIGH
-        if e.key.endswith(SPF_EFFECTIVE_SUFFIX) and t == EventType.REMOVED:
-            return Level.LOW   # sai junto com o |SPF, que já leva o alerta HIGH
+        if t == EventType.REMOVED and (e.key.endswith(SPF_EFFECTIVE_SUFFIX)
+                                       or SPF_ORPHAN_SUFFIX in e.key):
+            # efetivo sai junto com o |SPF (já leva o HIGH); órfão que some é
+            # resolução (domínio registrado ou include removido): não é grave.
+            return Level.LOW
         return Level.HIGH if t == EventType.REMOVED else Level.MEDIUM
     if t == EventType.ADDED and k in (Kind.PORT, Kind.SUBDOMAIN):
         return Level.HIGH
@@ -149,6 +154,7 @@ REASON_LABEL = {
     DMARC_PARTIAL: "DMARC parcial (pct<100 ou t=y)",
     SPF_PERMISSIVE: "SPF efetivo permissivo (qualquer servidor passa ou neutro)",
     SPF_PERMERROR: "SPF quebrado (permerror: receptores ignoram)",
+    SPF_INCLUDE_UNREGISTERED: "SPF inclui domínio livre (takeover de e-mail)",
     MAIL_PROTECTION_REMOVED: "proteção de e-mail removida",
     NAMESERVER_CHANGED: "nameserver alterado (delegação/hijack)",
     CERT_EXPIRING: "certificado expirando",
@@ -194,8 +200,14 @@ def _confidence(e: Event) -> Confidence:
         md = e.metadata or {}
         if str(md.get("status", "")).lower() == "edge case":
             return Confidence.MEDIUM  # recurso livre, mas reivindicar depende do caso
+        if str(md.get("availability", "")).lower() == "free":
+            return Confidence.CONFIRMED  # RDAP confirmou domínio registrável agora
         reason = str(md.get("reason", "")).lower()
         return Confidence.CONFIRMED if "fingerprint" in reason else Confidence.HIGH
+    if e.kind == Kind.MAILSEC and SPF_ORPHAN_SUFFIX in e.key:
+        # include órfão: RDAP confirmou livre = CONFIRMED; só o sinal do DNS = HIGH
+        return (Confidence.CONFIRMED if str((e.metadata or {}).get("availability", "")).lower()
+                == "free" else Confidence.HIGH)
     return Confidence.CONFIRMED
 
 
@@ -242,8 +254,12 @@ def assess(e: Event) -> RiskAssessment:
 
     # ── E-MAIL (SPF/DMARC) ────────────────────────────────────────────────
     if e.kind == Kind.MAILSEC:
-        if e.event_type == EventType.REMOVED and not e.key.endswith(SPF_EFFECTIVE_SUFFIX):
-            reasons.append(MAIL_PROTECTION_REMOVED)   # base já é HIGH
+        _mail_aux = e.key.endswith(SPF_EFFECTIVE_SUFFIX) or SPF_ORPHAN_SUFFIX in e.key
+        if e.event_type == EventType.REMOVED:
+            # registros auxiliares (efetivo/órfão) que somem = resolução (base já
+            # é LOW); a remoção do SPF/DMARC em si é que expõe o domínio.
+            if not _mail_aux:
+                reasons.append(MAIL_PROTECTION_REMOVED)   # base já é HIGH
         else:
             # mesma interpretação do painel (mailpolicy); SPF julgado pelo efetivo
             for f in mail_findings(e.key, str(e.new_value or ""), e.metadata):
@@ -251,6 +267,10 @@ def assess(e: Event) -> RiskAssessment:
                 rule_id = rule_id or f.rule
                 if f.high:
                     level = max(level, Level.HIGH)
+            # include/redirect de SPF para domínio livre = takeover de e-mail:
+            # qualquer um registra e envia autenticado pelo alvo (nível takeover).
+            if SPF_INCLUDE_UNREGISTERED in reasons:
+                level = max(level, Level.CRITICAL)
 
     # ── NS / CERT (anotação explicativa; não muda o nível base) ───────────
     if e.kind == Kind.NS:
