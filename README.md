@@ -138,7 +138,8 @@ mesma stack. Tudo respeita o `ok`/escopo: coleta inconclusiva **não** vira
 
 Para cada host com **CNAME**, a Padmé casa o alvo contra uma base de serviços
 gerada do **can-i-take-over-xyz** (S3, Azure, Elastic Beanstalk, GitHub Pages,
-Heroku, Ghost, Ngrok, WordPress… 29 serviços) e confirma de dois jeitos:
+Heroku, Ghost, Ngrok, WordPress, Netlify, Vercel, Webflow, Intercom… 36
+serviços) e confirma de dois jeitos:
 
 - **fingerprint** — busca o corpo HTTP e casa a assinatura (regex) de "recurso
   não reivindicado" (ex: *"There isn't a GitHub Pages site here."*);
@@ -148,14 +149,29 @@ Heroku, Ghost, Ngrok, WordPress… 29 serviços) e confirma de dois jeitos:
 CNAME para um serviço **fora da base** também é checado: se o alvo não resolve
 (NXDOMAIN) **e** o domínio registrável dele não existe (consulta NS → NXDOMAIN),
 qualquer um pode registrar esse domínio e responder pelo seu host — achado
-`critical` com confiança `high` (inferência por DNS, sem fingerprint). Alvo
-inexistente dentro de um domínio que **existe** não é reivindicável por
-terceiro e não gera alerta; resposta inconclusiva (timeout) nunca vira achado.
+`critical`. Alvo inexistente dentro de um domínio que **existe** não é
+reivindicável por terceiro e não gera alerta; resposta inconclusiva (timeout)
+nunca vira achado.
 
 O domínio registrável sai da **Public Suffix List** (seção ICANN, via
 `publicsuffixlist`): `x.site.co.uk` → `site.co.uk`, regras curinga/exceção
 inclusas. CNAME para TLD que não existe publicamente (`.local`, `.internal`,
 `.corp`, `.test`) **nunca** vira achado — ninguém registra esses nomes.
+
+**RDAP** (`collectors.rdap`, ligado) refina o diagnóstico e a confiança: só o
+DNS não distingue domínio nunca registrado de domínio expirado. Numa pista de
+takeover, a Padmé consulta o RDAP público do TLD (bootstrap da IANA):
+
+| RDAP | Significado | Confiança |
+|---|---|---|
+| HTTP 404 | registrável **agora** | `confirmed` |
+| status `pendingDelete`/`redemptionPeriod`/`hold` | expirado, a caminho de liberar | `high` |
+| registrado e ativo | terceiro **não** reivindica (delegação lame) → sem alerta | — |
+| sem servidor RDAP / rede bloqueada | fica só o sinal do DNS | `high` |
+
+A consulta só dispara em domínio já suspeito (volume mínimo), verifica o
+certificado e **nunca** derruba a coleta: qualquer falha vira "inconclusivo" e
+cai no sinal do DNS.
 
 A base de serviços é **dado**, não código: `padme/data/takeover_fingerprints.json`,
 gerada por `scripts/update_takeover_fingerprints.py`:
@@ -185,10 +201,19 @@ TXT mudar.
 
 | SPF efetivo | Resultado |
 |---|---|
-| `+all` direto, `include:` de quem passa qualquer um, `ip4`/`ip6` com faixa de `/8` (`/16` no IPv6) ou maior | `SPF_PERMISSIVE` → `high` |
+| **`include:`/`redirect=` para domínio registrável livre** | `SPF_INCLUDE_UNREGISTERED` → **`critical`** (takeover de e-mail) |
+| `+all` direto, `include:` de quem passa qualquer um, `ip4`/`ip6`/`a`/`mx` com faixa de `/8` (`/16` no IPv6) ou maior | `SPF_PERMISSIVE` → `high` |
 | `?all`, ou sem `all` nem `redirect=` (padrão neutro) | `SPF_PERMISSIVE` → `high` |
-| mais de 10 consultas DNS, `include`/`redirect` sem SPF, dois registros SPF, termo inválido | `SPF_PERMERROR` → `high` (receptores ignoram o SPF) |
+| mais de 10 consultas DNS, mais de 2 consultas vazias (`a`/`mx`/`ptr`/`exists`), `include`/`redirect` sem SPF, dois registros SPF, termo inválido | `SPF_PERMERROR` → `high` (receptores ignoram o SPF) |
 | `~all` / `-all` | sem achado |
+
+O **include/redirect órfão** é o mais grave: um `include:_spf.fornecedor.net` cujo
+domínio registrável (`fornecedor.net`) está livre deixa qualquer um registrá-lo e
+enviar e-mail autenticado pelo alvo. Vira um registro próprio
+(`apex|SPF-ORPHAN|<domínio>`), usa a mesma PSL + RDAP do takeover (livre por RDAP =
+`confirmed`) e sobe ao topo dos problemas do painel. Mecanismos `a`/`mx`/`ptr`/
+`exists` são resolvidos só para contar as consultas vazias (RFC 7208 §4.6.4), sem
+seguir o resultado para um IP arbitrário.
 
 | DMARC | Resultado |
 |---|---|
@@ -592,6 +617,7 @@ padme/
 │   ├── risk.py           # motor de risco: severidade base + assess() (severity+confidence+reason codes)
 │   ├── portmap.py        # tabela única de portas: serviço, risco (acesso remoto/dados), TLS implícito
 │   ├── mailpolicy.py     # SPF efetivo (include/redirect, RFC 7208) e DMARC (p/sp/pct/t)
+│   ├── domains.py        # domínio registrável (PSL) + RDAP: livre vs expirado
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
@@ -628,6 +654,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 398 testes: unitários + reliability + netpolicy +
+└── tests/                # 422 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```
