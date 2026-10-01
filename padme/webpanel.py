@@ -607,14 +607,15 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
     parts = [
         "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
         "<meta name=viewport content='width=device-width,initial-scale=1'>",
-        "<meta http-equiv=refresh content=30>",
+        # auto-refresh é feito por JS (não <meta refresh>): ele PAUSA enquanto você
+        # filtra/foca um campo, para não apagar a filtragem a cada 30s.
         "<title>Padmé — superfície</title><style>", _CSS, "</style></head><body>",
         "<header><div class=top>",
         "<div class=brand>🛰️ PADMÉ<small>attack surface monitor</small></div>",
         "<div class=spacer></div>",
         f"<span class=pill>alvos <b>{len(all_targets)}</b></span>",
         f"<span class=pill>atualizado <b>{datetime.now():%d/%m %H:%M:%S}</b></span>",
-        "<span class=pill>auto <b>30s</b></span>",
+        "<span class=pill id=autopill data-secs=30>auto <b>30s</b></span>",
         "</div></header><div class=wrap>",
     ]
     if exposed and not authed:

@@ -204,10 +204,17 @@ _TREND_JS = """<script>
   });
 
   // busca local por categoria: filtra as linhas (host/porta/kind/valor) e
-  // esconde grupos sem match; abre o <details> ao digitar.
+  // esconde grupos sem match; abre o <details> ao digitar. O texto é lembrado
+  // (localStorage) e re-aplicado — e enquanto houver filtro o auto-refresh pausa,
+  // então a filtragem não é apagada.
+  function anyFilterActive(){
+    return Array.prototype.some.call(document.querySelectorAll('.kfilter'),
+      function(i){ return i.value.trim()!==''; });
+  }
   document.querySelectorAll('.kfilter').forEach(function(inp){
     var det=inp.closest('details');
-    inp.addEventListener('input', function(){
+    var key='padme:f-'+(det&&det.getAttribute('data-persist')||'');
+    function apply(){
       var q=inp.value.trim().toLowerCase();
       if(q && det) det.open=true;
       var any=false;
@@ -223,8 +230,34 @@ _TREND_JS = """<script>
         if(shown) any=true;
       });
       inp.classList.toggle('nomatch', !!q && !any);
+    }
+    try{ var saved=localStorage.getItem(key); if(saved){ inp.value=saved; } }catch(e){}
+    inp.addEventListener('input', function(){
+      try{ localStorage.setItem(key, inp.value); }catch(e){}
+      apply();
     });
+    if(inp.value) apply();   // re-aplica o filtro lembrado após o refresh
   });
+
+  // auto-refresh por JS: recarrega a cada N s, mas PAUSA enquanto você filtra ou
+  // está com o foco num campo — assim o refresh não apaga a filtragem. (N é o
+  // refresh do PAINEL, fixo; não tem relação com interval_seconds do scan.)
+  (function(){
+    var pill=document.getElementById('autopill');
+    var secs=pill ? parseInt(pill.getAttribute('data-secs'),10)||30 : 30;
+    function interacting(){
+      var a=document.activeElement;
+      var typing=a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA');
+      return typing || anyFilterActive();
+    }
+    setInterval(function(){
+      if(interacting()){
+        if(pill) pill.innerHTML='auto <b>pausado</b>';
+        return;
+      }
+      location.reload();
+    }, secs*1000);
+  })();
 
   document.querySelectorAll('.trend').forEach(function(el){
     var dataEl=el.querySelector('.tdata'), chart=el.querySelector('.chart');
