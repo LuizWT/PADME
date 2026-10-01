@@ -255,8 +255,12 @@ def test_painel_mostra_coleta_ok_com_inconclusivos():
     assert "dados parciais" in parcial and "coleta ok" not in parcial
 
 
-def test_doctor_mostra_inconclusivos(capsys):
+def test_doctor_mostra_inconclusivos(capsys, monkeypatch):
     from padme.cli import _cmd_doctor
+
+    async def _no_net(cfg, timeout=5.0):
+        return []
+    monkeypatch.setattr("padme.cli.netcheck.run", _no_net)
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
     s.apply_scan("x.com", [])

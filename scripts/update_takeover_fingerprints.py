@@ -121,24 +121,32 @@ def _load(source: str | None) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--source", help="fingerprints.json local (padrão: baixa do GitHub)")
-    ap.add_argument("--check", action="store_true", help="só mostra o diff, não grava")
+    ap.add_argument("--check", action="store_true", help="só mostra o diff; exit 3 se os serviços mudaram, 0 se não")
     args = ap.parse_args()
 
     services, skipped = convert(_load(args.source))
     old = {s["service"]: s for s in json.loads(OUT.read_text("utf-8"))["services"]}
     new = {s["service"]: s for s in services}
+    changed = False
     for name in sorted(new.keys() - old.keys()):
         print(f"+ {name} ({new[name]['status']})")
+        changed = True
     for name in sorted(old.keys() - new.keys()):
         print(f"- {name}")
+        changed = True
     for name in sorted(old.keys() & new.keys()):
         if old[name] != new[name]:
             print(f"~ {name}")
+            changed = True
     for s in skipped:
         print(f"  (fora) {s}")
     print(f"{len(services)} serviço(s) na base nova.")
     if args.check:
-        return 0
+        # exit 3 = os SERVIÇOS mudaram (vale regravar/abrir PR); 0 = só a data
+        # mudaria (nada substantivo). Código distinto de erro (1) / uso (2) para
+        # o workflow mensal não confundir falha de rede com mudança real.
+        print("mudou" if changed else "sem mudança de serviços")
+        return 3 if changed else 0
 
     doc = {
         "_comment": ("Gerado por scripts/update_takeover_fingerprints.py a partir do "

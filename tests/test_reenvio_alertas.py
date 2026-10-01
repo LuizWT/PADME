@@ -135,8 +135,12 @@ def test_run_cycle_enfileira_quando_o_canal_falha(storage):
     assert len(storage.pending_notifications("telegram")) == 1
 
 
-def test_doctor_mostra_pendencias(capsys):
+def test_doctor_mostra_pendencias(capsys, monkeypatch):
     from padme.cli import _cmd_doctor
+
+    async def _no_net(cfg, timeout=5.0):
+        return []
+    monkeypatch.setattr("padme.cli.netcheck.run", _no_net)
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
     s.queue_notifications("telegram", "x.com", ["e1", "e2"])

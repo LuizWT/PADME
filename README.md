@@ -21,8 +21,8 @@ te chama quando a paisagem muda.
   polui o histórico); notificações têm **retry** e um canal não derruba os outros.
 - **Segurança operacional:** segredos nunca aparecem nos logs; sem seguir
   redirects e sem sondar IP privado/reservado por padrão (anti-SSRF/rede interna).
-- **`padme doctor`** (integridade do banco + saúde dos scans) e **retenção** de
-  histórico configurável.
+- **`padme doctor`** (integridade do banco + saúde dos scans + sondas de rede:
+  TCP/53 e HTTPS de saída) e **retenção** de histórico configurável.
 - **Detecção de subdomain takeover** (CNAME dangling + fingerprints, e CNAME
   para **domínio não registrado** mesmo fora da base de serviços).
 - **Sinais RED**: mudança de **NS** (delegação / hijack de zona), **SPF/DMARC**
@@ -185,7 +185,9 @@ Entra só o que o upstream marca como **Vulnerable** ou **Edge case** (serviço
 "Not vulnerable" sai: era alerta crítico falso); precisa de alvo de CNAME e de
 um sinal (NXDOMAIN ou assinatura de corpo; só-status HTTP é fraco demais).
 Serviço **edge case** (reivindicar depende do caso) gera o achado com confiança
-`medium`. O `padme doctor` avisa quando a base passa de 180 dias sem revisão.
+`medium`. O `padme doctor` avisa quando a base passa de 180 dias sem revisão, e
+o workflow **takeover base** roda o script todo mês e abre um PR só quando os
+serviços do upstream mudam (não a cada execução) — a revisão fica no merge.
 
 Host sem CNAME nem entra na checagem (custo zero). Um achado vira um evento
 `TAKEOVER`, que aparece no **topo** do alerta (severidade `critical`).
@@ -234,7 +236,8 @@ avaliáveis estaticamente: contam no limite de consultas e não são seguidas.
 > [!IMPORTANT]
 > Respostas TXT grandes (domínios com muitas verificações) vêm truncadas por UDP
 > e exigem **TCP/53** até o resolvedor. Se a rede bloquear TCP/53, a coleta de
-> SPF desses domínios fica inconclusiva (estado preservado, `doctor` mostra).
+> SPF desses domínios fica inconclusiva (estado preservado); o `padme doctor`
+> sonda TCP/53 e o HTTPS de saída e aponta isso diretamente.
 
 ### Expiração de certificado
 
@@ -433,8 +436,8 @@ python -m padme web
 # Testar todos os canais de notificação configurados
 python -m padme test-notify
 
-# Diagnóstico: integridade do banco, saúde dos scans por alvo e avisos de config
-python -m padme doctor
+# Diagnóstico: integridade do banco, saúde dos scans, avisos de config e rede
+python -m padme doctor                 # inclui sondas de TCP/53 e HTTPS de saída
 
 # Liveness (exit 0/1, sem rede): o último scan é recente? Para HEALTHCHECK/cron
 python -m padme health                 # limite padrão: 2*interval_seconds + 10min
@@ -600,7 +603,7 @@ sh scripts/release.sh            # gera padme-<ver>.tar.gz e lista o conteúdo
 
 ```bash
 pip install -r requirements-dev.txt   # lock + pytest/ruff/pip-audit fixos
-ruff check padme tests scripts   # lint (o CI roda em Python 3.10/3.11/3.12)
+ruff check padme tests scripts   # lint (o CI roda em Python 3.10 a 3.14)
 pytest -q
 pip-audit -r requirements.txt    # CVEs conhecidas nas dependências fixas
 docker build -t padme:ci . && sh scripts/docker-smoke.sh padme:ci   # imagem
@@ -621,6 +624,7 @@ padme/
 │   ├── context.py        # contexto de ativo por config (criticality/exposure/ports)
 │   ├── evidence.py       # evidência normalizada por evento (tcp_connect/http_response…)
 │   ├── netpolicy.py      # política de rede: IP privado/reservado + redirect (anti-SSRF)
+│   ├── netcheck.py       # sondas do doctor: TCP/53 e HTTPS de saída
 │   ├── ratelimit.py      # pacing responsável: rps global + jitter + intervalo por host
 │   ├── logredact.py      # redação de segredos nos logs
 │   ├── storage.py        # SQLite: estado + histórico + saúde + migrações (user_version)
@@ -641,7 +645,8 @@ padme/
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
 ├── ideias.md             # evolução adiada por design (porquê/como/impacto)
-├── .github/workflows/    # CI: ruff + pytest (3.10-3.12) + pip-audit (+ semanal) + imagem
+├── .github/workflows/    # CI (ruff + pytest 3.10-3.14 + pip-audit + imagem) e
+│                         #   takeover-base (mensal: regenera a base e abre PR)
 ├── .github/dependabot.yml # PR semanal: lock Python, Actions e digest da imagem
 ├── scripts/
 │   ├── release.sh        # release limpo via git archive
@@ -654,6 +659,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 422 testes: unitários + reliability + netpolicy +
+└── tests/                # 428 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

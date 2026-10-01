@@ -29,7 +29,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__
+from . import __version__, netcheck
 
 try:
     from dotenv import load_dotenv
@@ -319,6 +319,14 @@ async def _cmd_doctor(cfg: Config, args) -> int:
             print("avisos de configuração:")
             for x in warns:
                 print(f"  ! {x}")
+        # sondas de rede (best-effort; não mudam o código de saída): TCP/53 e
+        # HTTPS de saída, as duas vias que o firewall costuma bloquear e que
+        # deixam a coleta inconclusiva sem erro visível.
+        net = await netcheck.run(cfg, timeout=min(cfg.timeout, 5.0))
+        if net:
+            print("rede:")
+            for line in net:
+                print(line)
     finally:
         storage.close()
     return 0 if integ == "ok" else 1

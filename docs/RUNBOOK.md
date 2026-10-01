@@ -256,8 +256,10 @@ Authorization` acima repassa isso sem mudança. Em automação, use `Bearer`.
 ## 5. Manutenção do banco
 
 - **Diagnóstico:** `padme -c .../config.yaml doctor` mostra integridade
-  (`PRAGMA integrity_check`), contagens, **tamanho do banco (db + WAL)** e a
-  saúde da última coleta por alvo.
+  (`PRAGMA integrity_check`), contagens, **tamanho do banco (db + WAL)**, a
+  saúde da última coleta por alvo e **sondas de rede** (TCP/53 e HTTPS de
+  saída). Se o doctor marca TCP/53 bloqueado, o SPF de domínios com muitos
+  includes fica inconclusivo até liberar a porta no firewall.
 - **Retenção:** o `state` (foto atual) nunca é apagado. Os **eventos** crescem em
   24/7 — defina `storage.event_retention_days` (0 = mantém tudo) e o monitor poda
   a cada ciclo.
@@ -296,4 +298,10 @@ Authorization` acima repassa isso sem mudança. Em automação, use `Bearer`.
   Serviço que o upstream rebaixar para "Not vulnerable" sai da base (menos
   falso positivo); serviço novo sem alvo de CNAME no upstream é listado como
   "(fora)" — só entra se você souber o domínio da plataforma (edite `_CURATED`
-  no script).
+  no script). O `--check` sai com 3 quando os serviços mudam e 0 quando só a
+  data mudaria.
+
+- **Base de takeover (automático):** o workflow **takeover base** roda o script
+  todo dia 1 e abre um PR só quando os serviços do upstream mudam. Na prática
+  você revisa o diff e dá merge, em vez de lembrar de rodar o script — mas o
+  comando manual acima continua valendo quando quiser forçar.

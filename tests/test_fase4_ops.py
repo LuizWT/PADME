@@ -64,10 +64,13 @@ def test_integrity_e_counts():
 
 
 # ── §30 comando doctor ──────────────────────────────────────────────────────
-def test_doctor(capsys):
+def test_doctor(capsys, monkeypatch):
     from padme.cli import _cmd_doctor
     from padme.config import Config
 
+    async def _no_net(cfg, timeout=5.0):   # sondas de rede não tocam a rede nos testes
+        return []
+    monkeypatch.setattr("padme.cli.netcheck.run", _no_net)
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
     s.apply_scan("x.com", [Record(Kind.PORT, "x.com:1", "open")])
