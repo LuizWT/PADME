@@ -453,9 +453,13 @@ python -m padme health --max-age 7200
 python -m padme merge casa.json vps-eu.json --out consolidado.json
 ```
 
-> O painel aceita **filtro por domínio** (`?target=alvo.com` ou o dropdown no
-> topo) e uma visão **multi-vantage** em `/vantage` quando `web.vantage_dir`
-> aponta para exports de outras fontes (consolida com o `padme merge`).
+> O painel é um console de operação: **visão geral** (KPIs, problemas abertos
+> ordenados por risco, atividade de 30 dias e saúde por collector), **tabela de
+> alvos** e um **dossiê por alvo** (risco aberto, saúde da coleta, cobertura,
+> timeline priorizada com diff e o inventário filtrável). Aceita **filtro por
+> domínio** (`?target=alvo.com` ou o campo no topo) e uma visão
+> **multi-vantage** em `/vantage` quando `web.vantage_dir` aponta para exports
+> de outras fontes (consolida com o `padme merge`).
 
 > [!TIP]
 > No multi-vantage, atualize todas as instâncias juntas: a partir desta versão o
@@ -704,6 +708,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 442 testes: unitários + reliability + netpolicy +
+└── tests/                # 444 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

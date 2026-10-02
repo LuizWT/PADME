@@ -139,3 +139,22 @@ def _collector_reliability(meta: dict) -> dict | None:
     has_error = any(s == "error" for s in degraded.values())
     return {"total": total, "ok": ok, "pct": round(100 * ok / total),
             "degraded": worst, "has_error": has_error}
+
+
+def _collector_table(meta: dict) -> list[dict]:
+    """Saúde POR collector consolidada entre os alvos (linha da tabela da visão
+    geral): quantos alvos o collector cobriu ok no último scan e o pior status
+    visto. Ordena o degradado primeiro — é o que pede atenção."""
+    agg: dict[str, dict] = {}
+    for m in meta.values():
+        for name, v in ((m or {}).get("collectors_health") or {}).items():
+            st = (v or {}).get("status")
+            if st not in _HEALTH_RANK:
+                continue
+            row = agg.setdefault(name, {"name": name, "ok": 0, "total": 0, "worst": "ok"})
+            row["total"] += 1
+            if st == "ok":
+                row["ok"] += 1
+            if _HEALTH_RANK[st] > _HEALTH_RANK[row["worst"]]:
+                row["worst"] = st
+    return sorted(agg.values(), key=lambda r: (-_HEALTH_RANK[r["worst"]], r["name"]))
