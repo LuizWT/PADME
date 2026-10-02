@@ -31,7 +31,7 @@ from pathlib import Path
 
 from .evidence import evidence_of
 from .merge import merge_exports
-from .panel_assets import _CSS, _TREND_ADD, _TREND_CHG, _TREND_JS, _TREND_REM
+from .panel_assets import _CSS, _LOGO, _TREND_ADD, _TREND_CHG, _TREND_JS, _TREND_REM
 from .panel_metrics import (
     _collect_problems,
     _collector_reliability,
@@ -589,8 +589,9 @@ def _sidebar(active: str, *, base: str = "", n_problems: int | None = None,
     if vantage:
         nav.append(link("vantage", "/vantage", "Multi-vantage"))
     out = ["<aside class=side>",
-           "<div class=logo><span class=mark>P</span><div><b>PADMÉ</b>"
-           "<small>attack surface monitor</small></div></div>",
+           "<div class=logo>"
+           + (f"<img class=mark src='{_LOGO}' alt=''>" if _LOGO else "<span class=mark>P</span>")
+           + "<div><b>PADMÉ</b><small>attack surface monitoring</small></div></div>",
            "<div><div class=navlabel>monitoração</div><nav class=nav>" + "".join(nav) + "</nav></div>"]
     if targets_nav:
         items = "".join(
@@ -610,7 +611,9 @@ def _page(title: str, side: str, body: str, script: str = "") -> str:
     return "".join([
         "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
         "<meta name=viewport content='width=device-width,initial-scale=1'>",
-        f"<title>{_esc(title)}</title><style>", _CSS, "</style></head><body>",
+        f"<title>{_esc(title)}</title>",
+        f"<link rel=icon href='{_LOGO}'>" if _LOGO else "",
+        "<style>", _CSS, "</style></head><body>",
         "<div class=app>", side, "<main class=main>", body, "</main></div>",
         script, "</body></html>",
     ])

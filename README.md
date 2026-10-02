@@ -708,6 +708,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 444 testes: unitários + reliability + netpolicy +
+└── tests/                # 445 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

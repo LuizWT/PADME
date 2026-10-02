@@ -1,8 +1,26 @@
 """Estilo e script do painel (strings estáticas, sem lógica).
 
 Fora do `webpanel` para o módulo de renderização caber na cabeça: aqui só mora
-o CSS (tokens de cor validados p/ fundo escuro) e o JS do gráfico de tendência.
+o CSS (tokens de cor validados p/ fundo escuro), o JS do gráfico de tendência
+e o logo (PNG em padme/data, servido inline como data: URI — a CSP só permite
+`img-src data:`, então nada é buscado fora da página).
 """
+
+from base64 import b64encode
+from importlib import resources
+
+
+def _logo_data_uri() -> str:
+    """Logo como data: URI; '' se o arquivo não estiver no pacote (o painel cai
+    para a marca em texto, nunca quebra)."""
+    try:
+        raw = resources.files("padme").joinpath("data/logo.png").read_bytes()
+    except (FileNotFoundError, OSError, ModuleNotFoundError):
+        return ""
+    return "data:image/png;base64," + b64encode(raw).decode("ascii")
+
+
+_LOGO = _logo_data_uri()
 
 # ── cores (dataviz — validadas p/ superfície escura) ────────────────────────
 _TREND_ADD, _TREND_CHG, _TREND_REM = "#2fb36d", "#d9a03a", "#e5534b"
@@ -36,6 +54,7 @@ code{font-family:var(--mono);background:rgba(255,255,255,.06);padding:0 4px;bord
 .logo{display:flex;gap:10px;align-items:center;padding:2px 8px 0}
 .logo .mark{width:30px;height:30px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
   background:linear-gradient(135deg,#5b8def,#3657a8);color:#fff;font-weight:700;font-size:14px}
+.logo img.mark{width:36px;height:36px;background:none;border-radius:0}
 .logo b{display:block;color:var(--ink);letter-spacing:.14em;font-size:13px}
 .logo small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
 .navlabel{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);

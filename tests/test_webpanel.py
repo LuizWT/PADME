@@ -309,3 +309,11 @@ def test_render_layout_console():
     assert "Timeline priorizada" in out
     assert "<span class=mk>+</span>open" in out               # bloco de diff
     assert "🛰" not in out                                     # sem emoji na interface
+
+
+def test_logo_embutido_como_data_uri():
+    from padme.panel_assets import _LOGO
+    assert _LOGO.startswith("data:image/png;base64,")  # no pacote (package-data)
+    out = _render(Config(targets=["a.com"], db_path=tempfile.mktemp(suffix=".db")))
+    assert f"<img class=mark src='{_LOGO}'" in out     # sidebar
+    assert "<link rel=icon href='data:image/png" in out  # favicon (CSP: img-src data:)
