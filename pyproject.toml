@@ -23,7 +23,7 @@ padme = "padme.cli:main"
 include = ["padme*"]
 
 [tool.setuptools.package-data]
-padme = ["data/*.json"]   # base de fingerprints de takeover
+padme = ["data/*.json", "data/*.png"]   # base de takeover + logo do painel
 
 [tool.pytest.ini_options]
 # Garante que a raiz do repositório entre no sys.path ao rodar `pytest`

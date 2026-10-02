@@ -279,3 +279,41 @@ def test_render_tem_filtro_e_details_persistente():
     # auto-refresh é por JS (pausável), NÃO <meta refresh> (que apagava o filtro)
     assert "http-equiv=refresh" not in out
     assert "id=autopill" in out and "data-secs=30" in out
+
+
+def test_collector_table_degradado_primeiro():
+    from padme.panel_metrics import _collector_table
+    rows = _collector_table({
+        "a.com": {"collectors_health": {"dns": {"status": "ok"}, "ports": {"status": "error"}}},
+        "b.com": {"collectors_health": {"dns": {"status": "ok"}, "ports": {"status": "ok"}}},
+    })
+    assert rows[0] == {"name": "ports", "ok": 1, "total": 2, "worst": "error"}
+    assert rows[1] == {"name": "dns", "ok": 2, "total": 2, "worst": "ok"}
+    assert _collector_table({"a.com": None}) == []
+
+
+def test_render_layout_console():
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    s.apply_scan("a.com", [])
+    s.apply_scan("a.com", [Record(Kind.PORT, "a.com:443", "open")])
+    s.update_health("a.com", error_count=0, partial=False, duration_ms=5,
+                    collectors={"dns": {"status": "ok"}, "ports": {"status": "partial"}})
+    s.close()
+    out = _render(Config(targets=["a.com"], db_path=db))
+    os.remove(db)
+    assert "class=side" in out and "Visão geral" in out       # sidebar de navegação
+    assert "id=problems" in out and "id=targets" in out       # âncoras da navegação
+    assert "Saúde dos collectors" in out                      # tabela consolidada
+    assert "class=dossier id='h-a-com'" in out                # dossiê por alvo
+    assert "Timeline priorizada" in out
+    assert "<span class=mk>+</span>open" in out               # bloco de diff
+    assert "🛰" not in out                                     # sem emoji na interface
+
+
+def test_logo_embutido_como_data_uri():
+    from padme.panel_assets import _LOGO
+    assert _LOGO.startswith("data:image/png;base64,")  # no pacote (package-data)
+    out = _render(Config(targets=["a.com"], db_path=tempfile.mktemp(suffix=".db")))
+    assert f"<img class=mark src='{_LOGO}'" in out     # sidebar
+    assert "<link rel=icon href='data:image/png" in out  # favicon (CSP: img-src data:)

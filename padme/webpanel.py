@@ -9,7 +9,9 @@ Só leitura — não altera nada. Bind em localhost por padrão.
 
 Design: paleta escura validada (status good/warning/serious/critical com
 chip = ponto + rótulo, nunca cor sozinha), tipografia de sistema, hairlines,
-`tabular-nums` nos números. Renderização server-side; atualiza sozinho (meta).
+`tabular-nums` nos números. Layout de console: sidebar de navegação, visão
+geral (KPIs, problemas, atividade, saúde dos collectors), tabela de alvos e um
+dossiê por alvo. Renderização server-side; auto-refresh por JS (pausável).
 """
 
 from __future__ import annotations
@@ -29,10 +31,11 @@ from pathlib import Path
 
 from .evidence import evidence_of
 from .merge import merge_exports
-from .panel_assets import _CSS, _TREND_ADD, _TREND_CHG, _TREND_JS, _TREND_REM
+from .panel_assets import _CSS, _LOGO, _TREND_ADD, _TREND_CHG, _TREND_JS, _TREND_REM
 from .panel_metrics import (
     _collect_problems,
     _collector_reliability,
+    _collector_table,
     _explainability,
     _prioritize_events,
 )
@@ -85,7 +88,7 @@ def _proof_html(e, value: str | None) -> str:
     typ = ev.get("type", "")
     facts = " · ".join(f"{k}={v}" for k, v in ev.items() if k != "type")
     full = f"{typ} — {facts}" if facts else typ
-    return f"<span class=proof title='{_esc(full)}'>prova: {_esc(typ)}</span>"
+    return f"<span class=tag title='{_esc(full)}'>prova: {_esc(typ)}</span>"
 
 
 def _port_fp(metadata: dict | None) -> str:
@@ -121,66 +124,79 @@ def _chip(cls: str, label: str) -> str:
 
 
 # ── problemas abertos (agregado, priorizado) ────────────────────────────────
+_PROBLEMS_VISIBLE = 8  # o resto fica num "mais N" — a lista não engole a página
+
+
+def _problem_row(p: dict) -> str:
+    proof = p.get("evidence")
+    proof_html = f"<div class=proof>prova: {_esc(proof)}</div>" if proof else ""
+    return ("<tr>"
+            f"<td class=nw>{_chip(p['cls'], p['sev'])}</td>"
+            f"<td><div class=who><span class=kd>{_esc(p['kind'])}</span>{_esc(p['who'])}</div>"
+            f"<div class=det>{_esc(p['det'])}</div>{proof_html}</td>"
+            f"<td class=tgt><a href='#h-{_slug(p['tgt'])}'>{_esc(p['tgt'])}</a></td>"
+            "</tr>")
+
+
 def _problems_panel(problems: list[dict]) -> str:
+    head = ("<div class=cardhd><h3>Problemas abertos</h3><span class=sub>ordenado por risco</span>"
+            f"<span class=right>{len(problems)}</span></div>")
     if not problems:
-        return ("<div class=panel><div class=calm>"
+        return ("<section class=card id=problems>" + head + "<div class=calm>"
                 + _chip("s-ok", "tudo ok")
-                + "<span>nenhum problema aberto na superfície monitorada.</span></div></div>")
-    rows = []
-    for p in problems:
-        proof = p.get("evidence")
-        proof_html = f"<div class=proof>prova: {_esc(proof)}</div>" if proof else ""
-        rows.append(
-            "<div class=prow>"
-            f"<div>{_chip(p['cls'], p['sev'])}</div>"
-            f"<div><div class=who>{_esc(p['kind'])} · {_esc(p['who'])}</div>"
-            f"<div class=det>{_esc(p['det'])}</div>{proof_html}</div>"
-            f"<div class=tgt>{_esc(p['tgt'])}</div>"
-            "</div>"
-        )
-    return "<div class=panel>" + "".join(rows) + "</div>"
+                + "<span>nenhum problema aberto na superfície monitorada.</span></div></section>")
+    first, rest = problems[:_PROBLEMS_VISIBLE], problems[_PROBLEMS_VISIBLE:]
+    out = ["<section class=card id=problems>", head,
+           "<div class=scroll><table class=t><thead><tr><th>severidade</th><th>problema</th>"
+           "<th>alvo</th></tr></thead><tbody>", *map(_problem_row, first), "</tbody></table></div>"]
+    if rest:
+        out += [f"<details class=more data-persist='problems-more'><summary>mais {len(rest)} "
+                "problema(s)</summary><div class=scroll><table class=t><tbody>",
+                *map(_problem_row, rest), "</tbody></table></div></details>"]
+    out.append("</section>")
+    return "".join(out)
 
 
 # ── KPIs globais ────────────────────────────────────────────────────────────
 def _kpi(n, label: str, sub: str = "", cls: str = "") -> str:
     sub_html = f"<div class=s>{_esc(sub)}</div>" if sub else ""
-    return (f"<div class='kpi {cls}'><div class=n>{_esc(n)}</div>"
-            f"<div class=l>{_esc(label)}</div>{sub_html}</div>")
+    return (f"<div class='kpi {cls}'><div class=l>{_esc(label)}</div>"
+            f"<div class=n>{_esc(n)}</div>{sub_html}</div>")
 
 
 def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: int,
                  explain: dict | None = None) -> str:
     assets = sum(len(v) for kinds in by_target.values() for v in kinds.values())
     crit = sum(1 for p in problems if p["cls"] in ("s-crit", "s-serious"))
-    partial = sum(1 for m in meta.values() if m and m.get("last_partial"))
-    ok_hosts = sum(1 for t in by_target if not (meta.get(t) or {}).get("last_partial"))
     prob_cls = "crit" if crit else ("warn" if problems else "ok")
     tiles = [
-        _kpi(n_targets, "alvos", f"{len(by_target)} com dados", cls="accent"),
+        _kpi(n_targets, "alvos monitorados", f"{len(by_target)} com dados", cls="accent"),
         _kpi(assets, "ativos observados", "subdomínios, portas, serviços…"),
         _kpi(len(problems), "problemas abertos",
              f"{crit} de alta gravidade" if problems else "superfície limpa", cls=prob_cls),
-        _kpi(f"{ok_hosts}/{len(by_target) or 0}", "coleta saudável",
-             f"{partial} parcial(is)" if partial else "sem coleta parcial",
-             cls=("warn" if partial else "ok")),
     ]
     rel = _collector_reliability(meta)
     if rel:  # §27: confiabilidade dos collectors (só quando há saúde registrada)
-        pct = rel["pct"]
         cls = "crit" if rel["has_error"] else ("warn" if rel["degraded"] else "ok")
         sub = (f"{rel['ok']}/{rel['total']} observações ok"
                if not rel["degraded"] else
                f"{rel['ok']}/{rel['total']} ok · degradado: " + ", ".join(rel["degraded"]))
-        tiles.append(_kpi(f"{pct}%", "collectors confiáveis", sub, cls=cls))
+        tiles.append(_kpi(f"{rel['pct']}%", "collectors confiáveis", sub, cls=cls))
+    else:  # sem saúde por collector gravada: cai p/ a visão por alvo (parcial ou não)
+        partial = sum(1 for m in meta.values() if m and m.get("last_partial"))
+        ok_hosts = sum(1 for t in by_target if not (meta.get(t) or {}).get("last_partial"))
+        tiles.append(_kpi(f"{ok_hosts}/{len(by_target) or 0}", "coleta saudável",
+                          f"{partial} parcial(is)" if partial else "sem coleta parcial",
+                          cls=("warn" if partial else "ok")))
     if explain:  # §27: só aparece quando há evento HIGH/CRITICAL recente p/ medir
         pct = explain["pct"]
         cls = "ok" if pct == 100 else ("warn" if pct >= 50 else "crit")
-        sub = (f"{explain['explained']}/{explain['high']} HIGH+ com razão+proveniência+evidência"
+        sub = (f"{explain['explained']}/{explain['high']} HIGH+ com razão, proveniência e evidência"
                if pct == 100 else
                f"{explain['explained']}/{explain['high']} HIGH+ · falta "
                + ", ".join(explain["missing"]))
         tiles.append(_kpi(f"{pct}%", "alertas explicáveis", sub, cls=cls))
-    return "<div class=kpis>" + "".join(tiles) + "</div>"
+    return "<section id=overview class=kpis>" + "".join(tiles) + "</section>"
 
 
 # ── stat tiles por alvo ─────────────────────────────────────────────────────
@@ -219,10 +235,10 @@ def _trend_svg(series: list[dict], days: int) -> str:
     parts = [f'<svg viewBox="0 0 {W:.0f} {H:.0f}" role="img" '
              f'aria-label="eventos por dia ({days}d)" preserveAspectRatio="none">']
     parts.append(f'<line x1="{pad_l}" y1="{base_y:.1f}" x2="{W - pad_r:.1f}" y2="{base_y:.1f}" '
-                 'stroke="#383835" stroke-width="1"/>')
+                 'stroke="#2a3240" stroke-width="1"/>')
     if max_total > 0:
         parts.append(f'<text x="{pad_l - 4:.1f}" y="{pad_t + 4:.1f}" text-anchor="end" '
-                     f'font-size="9" fill="#898781">{max_total}</text>')
+                     f'font-size="9" fill="#7c8696">{max_total}</text>')
     n = len(series)
     slot = plot_w / n if n else plot_w
     bar_w = max(1.0, slot - 2.0)
@@ -250,19 +266,19 @@ def _trend_svg(series: list[dict], days: int) -> str:
             cx = pad_l + idx * slot + slot / 2
             anchor = "start" if idx == 0 else ("end" if idx == n - 1 else "middle")
             parts.append(f'<text x="{cx:.1f}" y="{H - 6:.1f}" text-anchor="{anchor}" '
-                         f'font-size="9" fill="#898781">{label}</text>')
+                         f'font-size="9" fill="#7c8696">{label}</text>')
     parts.append("</svg>")
     return "".join(parts)
 
 
-def _trend(serie: list[dict], days: int) -> str:
+def _trend(serie: list[dict], days: int, title: str = "tendência") -> str:
     total = sum(d["total"] for d in serie)
     added = sum(d["added"] for d in serie)
     removed = sum(d["removed"] for d in serie)
     net = added - removed
     net_s = f"+{net}" if net > 0 else str(net)
     out = [f'<div class=trend data-days="{days}"><div class=hd>'
-           f'<b>tendência · {days}d</b><span class=lghint>sem registros DNS</span>']
+           f'<b>{_esc(title)} · {days}d</b><span class=lghint>sem registros DNS</span>']
     if total:
         out.append(f'<span class=net>líquido <b2>{net_s}</b2> · +{added}/−{removed} · {total} evento(s)</span>')
     out.append('</div>')
@@ -283,10 +299,48 @@ def _trend(serie: list[dict], days: int) -> str:
     return "".join(out)
 
 
+def _activity(trend: dict, days: int) -> str:
+    """Atividade de TODOS os alvos exibidos: soma as séries diárias por dia."""
+    agg: dict[str, dict] = {}
+    for serie in trend.values():
+        for d in serie:
+            a = agg.setdefault(d["day"], {"day": d["day"], "added": 0, "removed": 0,
+                                          "changed": 0, "total": 0})
+            for k in ("added", "removed", "changed", "total"):
+                a[k] += d[k]
+    serie = [agg[k] for k in sorted(agg)]
+    return "<section class=card>" + _trend(serie, days, title="atividade") + "</section>"
+
+
+_HEALTH_CLS = {"ok": "s-ok", "partial": "s-warn", "error": "s-crit"}
+
+
+def _collectors_card(meta: dict) -> str:
+    """Tabela de saúde por collector (consolidada entre alvos). Some quando não
+    há saúde gravada — sem card vazio."""
+    rows = _collector_table(meta)
+    if not rows:
+        return ""
+    trs = []
+    for r in rows:
+        pct = round(100 * r["ok"] / r["total"]) if r["total"] else 0
+        bar = {"error": "crit", "partial": "warn"}.get(r["worst"], "")
+        trs.append(
+            f"<tr><td class=mono>{_esc(r['name'])}</td>"
+            f"<td><div class='bar {bar}'><i style='width:{pct}%'></i></div></td>"
+            f"<td class=r>{r['ok']}/{r['total']}</td>"
+            f"<td class=r>{_chip(_HEALTH_CLS[r['worst']], r['worst'])}</td></tr>")
+    return ("<section class=card><div class=cardhd><h3>Saúde dos collectors</h3>"
+            "<span class=sub>último scan, por alvo</span></div>"
+            "<div class=scroll><table class=t><thead><tr><th>collector</th><th></th><th class=r>ok</th>"
+            "<th class=r>pior</th></tr></thead><tbody>" + "".join(trs)
+            + "</tbody></table></div></section>")
+
+
 # ── saúde da coleta por alvo ────────────────────────────────────────────────
 def _health(meta: dict | None) -> str:
     if not meta:
-        return "<div class=health>sem scan registrado ainda.</div>"
+        return "<div class=health><span class=lghint>sem scan registrado ainda.</span></div>"
     errs = meta.get("last_error_count")
     partial = bool(meta.get("last_partial"))
     dur = meta.get("last_duration_ms")
@@ -301,101 +355,185 @@ def _health(meta: dict | None) -> str:
         chip = _chip("s-ok", f"coleta ok · {inc} inconclusivo{'s' if inc != 1 else ''}")
     else:
         chip = _chip("s-ok", "dados completos")
-    bits = [chip,
-            f"último scan: <b>{_ts_human(meta.get('last_scan_at'))}</b>",
-            f"scan OK: <b>{_ts_human(meta.get('last_success_at'))}</b>"]
+    kv = [("último scan", _ts_human(meta.get("last_scan_at"))),
+          ("último scan ok", _ts_human(meta.get("last_success_at")))]
     if errs is not None:
-        bits.append(f"erros: <b>{errs}</b>")
+        kv.append(("erros", errs))
     if dur is not None:
-        bits.append(f"duração: <b>{dur} ms</b>")
-    out = "<div class=health>" + " · ".join(bits) + "</div>"
+        kv.append(("duração", f"{dur} ms"))
+    out = (f"<div class=health>{chip}</div><dl class=kv>"
+           + "".join(f"<dt>{_esc(k)}</dt><dd>{_esc(v)}</dd>" for k, v in kv) + "</dl>")
     # saúde POR collector (DNS ok / PORTS partial / CT error) — §7 do roadmap
     ch = meta.get("collectors_health") or {}
     if ch:
-        _cls = {"ok": "s-ok", "partial": "s-warn", "error": "s-crit"}
         chips = "".join(
-            f"<span class=chp>{_esc(name)} {_chip(_cls.get(v.get('status'), 's-muted'), v.get('status', '?'))}</span>"
+            f"<span class=chp>{_esc(name)} "
+            f"{_chip(_HEALTH_CLS.get(v.get('status'), 's-muted'), v.get('status', '?'))}</span>"
             for name, v in sorted(ch.items()))
         out += f"<div class=collhealth>{chips}</div>"
     return out
 
 
-def _host_status(kinds: dict, meta: dict | None) -> str:
+def _host_level(kinds: dict, meta: dict | None) -> tuple[str, str]:
+    """(classe de status, rótulo) do alvo — o mesmo no dossiê, na tabela e na sidebar."""
     if kinds.get("takeover"):
-        return _chip("s-crit", "takeover")
+        return "s-crit", "takeover"
     if kinds.get("cert_expiry"):
-        return _chip("s-serious", "cert")
+        return "s-serious", "cert"
     if (meta or {}).get("last_partial") or kinds.get("wildcard"):
-        return _chip("s-warn", "atenção")
+        return "s-warn", "atenção"
     if not kinds:
-        return _chip("s-muted", "sem dados")
-    return _chip("s-ok", "ok")
+        return "s-muted", "sem dados"
+    return "s-ok", "ok"
+
+
+def _host_status(kinds: dict, meta: dict | None) -> str:
+    return _chip(*_host_level(kinds, meta))
 
 
 def _slug(s: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in s.lower())
 
 
+# ── timeline (dossiê) ───────────────────────────────────────────────────────
+_EV_VERB = {"added": "novo", "removed": "removido", "changed": "alterado"}
+_EV_LEVEL = {"s-crit": "lv-crit", "s-serious": "lv-serious", "s-warn": "lv-warn"}
+_EVENTS_VISIBLE = 6
+
+
+def _diff_line(cls: str, mark: str, value) -> str:
+    return f"<div class={cls}><span class=mk>{mark}</span>{_esc(value)}</div>"
+
+
+def _event_html(e, risk) -> str:
+    t = e.event_type.value
+    val = e.new_value if t != "removed" else e.old_value
+    when = (e.detected_at or "")[5:16].replace("T", " ")
+    scls, slabel = _SEV.get(risk.level, ("s-muted", ""))
+    md = e.metadata or {}
+    diff = []
+    if t == "changed":
+        if e.old_value:
+            diff.append(_diff_line("dr", "−", e.old_value))
+        if e.new_value:
+            diff.append(_diff_line("da", "+", e.new_value))
+    elif val:
+        diff.append(_diff_line("dr" if t == "removed" else "da", _ARROW[t], val))
+    changes = _changes_html(md.get("_changes"))
+    diff_html = f"<div class=diff>{''.join(diff)}{changes}</div>" if (diff or changes) else ""
+    tags = []
+    labels = risk.reason_labels()
+    if risk.level > risk.base and labels:   # só destaca quando o contexto elevou
+        extra = f" +{len(labels) - 1}" if len(labels) > 1 else ""
+        tags.append(f"<span class='tag why' title='{_esc(' · '.join(labels))}'>▲ "
+                    f"{_esc(labels[0])}{extra}</span>")
+    prov = md.get("_collector") or md.get("_source")
+    if prov:
+        tags.append(f"<span class='tag prov' title='collector'>{_esc(prov)}</span>")
+    tags.append(_proof_html(e, val))
+    if risk.confidence.name != "CONFIRMED":
+        tags.append(f"<span class=tag>confiança: {risk.confidence.name.lower()}</span>")
+    tags_html = "".join(t_ for t_ in tags if t_)
+    meta_html = f"<div class=evmeta>{tags_html}</div>" if tags_html else ""
+    return (f"<div class='ev {_EV_LEVEL.get(scls, '')}'><div class=evhd>{_chip(scls, slabel)}"
+            f"<span class=evkind>{_esc(e.kind.value)} · {_EV_VERB[t]}</span>"
+            f"<span class=evkey>{_esc(e.key)}</span><span class=when>{_esc(when)}</span></div>"
+            f"{diff_html}{meta_html}</div>")
+
+
+def _timeline(target: str, events: list) -> str:
+    out = ["<div class=panehd><h4>Timeline priorizada</h4>"
+           f"<span>{len(events)} evento(s) recentes · mais relevante primeiro</span></div>"]
+    if not events:
+        out.append("<div class=empty>sem eventos recentes.</div>")
+        return "".join(out)
+    ranked = [_event_html(e, r) for e, r in _prioritize_events(events)]
+    first, rest = ranked[:_EVENTS_VISIBLE], ranked[_EVENTS_VISIBLE:]
+    out += first
+    if rest:
+        out.append(f"<details class=more data-persist='ev-{_slug(target)}'>"
+                   f"<summary>mais {len(rest)} evento(s)</summary>{''.join(rest)}</details>")
+    return "".join(out)
+
+
+def _risk_block(probs: list[dict]) -> str:
+    if not probs:
+        return "<div class=risk>" + _chip("s-ok", "nenhum") + "</div>"
+    items = [f"<div class=ri><span class='dot {p['cls']}'></span><div>"
+             f"<div class=w>{_esc(p['kind'])} · {_esc(p['who'])}</div>"
+             f"<div class=d>{_esc(p['det'])}</div></div></div>" for p in probs[:5]]
+    if len(probs) > 5:
+        items.append(f"<div class=lghint>+{len(probs) - 5} na lista de problemas</div>")
+    return "<div class=risk>" + "".join(items) + "</div>"
+
+
+def _assets(target: str, kinds: dict, total: int) -> str:
+    # detalhe completo por categoria. `data-persist`: a JS lembra aberto/
+    # fechado entre os auto-refreshes de 30s (senão recolhia sozinho).
+    det = [f"<details class=kinds data-persist='k-{_slug(target)}'>"
+           f"<summary>Ativos por categoria <span>{total}</span></summary>",
+           "<input class=kfilter type=search autocomplete=off "
+           "placeholder='filtrar (host, porta, kind, valor)…' "
+           "aria-label='filtrar ativos'>"]
+    for kind in _KIND_ORDER:
+        items = kinds.get(kind)
+        if not items:
+            continue
+        # data-kind p/ a busca casar também o nome da categoria (ex.: 'port')
+        det.append(f"<div class=kind data-kind='{kind}'><b>{_KIND_LABEL[kind]} · {len(items)}</b>")
+        for it in sorted(items, key=lambda x: x["key"]):
+            v = f"<span class=v>{_esc(it['value'])}</span>" if it["value"] else ""
+            fp = _port_fp(it.get("metadata")) if kind == "port" else ""
+            det.append(f"<div class=row><span class=k>{_esc(it['key'])}</span>{v}{fp}</div>")
+        det.append("</div>")
+    det.append("</details>")
+    return "".join(det)
+
+
 def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
-               meta: dict | None, trend_days: int) -> str:
+               meta: dict | None, trend_days: int, problems: list[dict] | None = None) -> str:
+    """Dossiê do alvo: à esquerda o resumo (risco, saúde, cobertura); à direita
+    a timeline priorizada com diff, a tendência e o inventário filtrável."""
     total = sum(len(v) for v in kinds.values())
-    parts = [f"<section class=host id='h-{_slug(target)}'>",
-             f"<h2>{_host_status(kinds, meta)}<span class=name>{_esc(target)}</span>"
-             f"<span class=count>{total} ativo(s)</span></h2>",
-             _health(meta)]
-    if not kinds:
-        parts.append("<div class=empty>sem baseline ainda — rode um scan para este alvo.</div>")
+    probs = [p for p in (problems or []) if p["tgt"] == target]
+    last = _ts_human(meta.get("last_scan_at")) if meta else "—"
+    side = ["<aside class=dosside>",
+            f"<div class=blk><h4>risco aberto<span class=c>{len(probs)}</span></h4>"
+            f"{_risk_block(probs)}</div>",
+            f"<div class=blk><h4>saúde da coleta</h4>{_health(meta)}</div>"]
+    if kinds:
+        side.append(f"<div class=blk><h4>cobertura</h4>{_stat_tiles(kinds)}</div>")
+    side.append("</aside>")
+    main = ["<div class=dosmain>", _timeline(target, events), _trend(serie, trend_days)]
+    if kinds:
+        main.append(_assets(target, kinds, total))
     else:
-        parts.append(_stat_tiles(kinds))
-        # detalhe completo por categoria. `data-persist`: a JS lembra aberto/
-        # fechado entre os auto-refreshes de 30s (senão recolhia sozinho).
-        det = [f"<details class=kinds data-persist='k-{_slug(target)}'>"
-               "<summary>ativos por categoria</summary>",
-               "<input class=kfilter type=search autocomplete=off "
-               "placeholder='filtrar (host, porta, kind, valor)…' "
-               "aria-label='filtrar ativos'>"]
-        for kind in _KIND_ORDER:
-            items = kinds.get(kind)
-            if not items:
-                continue
-            # data-kind p/ a busca casar também o nome da categoria (ex.: 'port')
-            det.append(f"<div class=kind data-kind='{kind}'><b>{_KIND_LABEL[kind]}</b>")
-            for it in sorted(items, key=lambda x: x["key"]):
-                v = f"  <span class=v>{_esc(it['value'])}</span>" if it["value"] else ""
-                fp = _port_fp(it.get("metadata")) if kind == "port" else ""
-                det.append(f"<div class=row><span class=k>{_esc(it['key'])}</span>{v}{fp}</div>")
-            det.append("</div>")
-        det.append("</details>")
-        parts.append("".join(det))
-    parts.append(_trend(serie, trend_days))
-    if events:
-        ev = ['<div class=events>']
-        for e, risk in _prioritize_events(events):
-            cls = {"added": "add", "removed": "rem", "changed": "chg"}[e.event_type.value]
-            val = e.new_value if e.event_type.value != "removed" else e.old_value
-            when = (e.detected_at or "")[5:16].replace("T", " ")
-            scls, slabel = _SEV.get(risk.level, ("s-muted", ""))
-            labels = risk.reason_labels()
-            why = ""
-            if risk.level > risk.base and labels:   # só destaca quando o contexto elevou
-                extra = f" +{len(labels) - 1}" if len(labels) > 1 else ""
-                why = (f"<span class=why title='{_esc(' · '.join(labels))}'>▲ "
-                       f"{_esc(labels[0])}{extra}</span>")
-            conf = ("" if risk.confidence.name == "CONFIRMED"
-                    else f"<span class=conf>conf: {risk.confidence.name.lower()}</span>")
-            changes = _changes_html(e.metadata.get("_changes")) if e.metadata else ""
-            proof = _proof_html(e, val)
-            ev.append(
-                f"<div class='line {cls}'>"
-                f"<span class=when>{_esc(when)}</span>"
-                f"{_chip(scls, slabel)}"
-                f"<span class=body><span class=mk>{_ARROW[e.event_type.value]}</span> "
-                f"[{e.kind.value}] {_esc(e.key)} {_esc(val)}{why}{conf}{proof}{changes}</span></div>"
-            )
-        ev.append("</div>")
-        parts.append("".join(ev))
-    parts.append("</section>")
-    return "".join(parts)
+        main.append("<div class=empty>sem baseline ainda — rode um scan para este alvo.</div>")
+    main.append("</div>")
+    return (f"<section class=dossier id='h-{_slug(target)}'>"
+            f"<div class=doshd>{_host_status(kinds, meta)}<span class=name>{_esc(target)}</span>"
+            f"<span class=meta>{total} ativo(s) · último scan {_esc(last)}</span></div>"
+            f"<div class=dosbody>{''.join(side)}{''.join(main)}</div></section>")
+
+
+def _targets_table(shown: list[str], by_target: dict, meta: dict, trend: dict,
+                   problems: list[dict]) -> str:
+    rows = []
+    for t in shown:
+        kinds = by_target.get(t, {})
+        m = meta.get(t)
+        n_prob = sum(1 for p in problems if p["tgt"] == t)
+        n_ev = sum(d["total"] for d in trend.get(t, []))
+        rows.append(
+            f"<tr><td><a class=mono href='#h-{_slug(t)}'>{_esc(t)}</a></td>"
+            f"<td>{_host_status(kinds, m)}</td>"
+            f"<td class=r>{sum(len(v) for v in kinds.values())}</td>"
+            f"<td class=r>{n_prob}</td><td class=r>{n_ev}</td>"
+            f"<td class=r>{_esc(_ts_human(m.get('last_scan_at')) if m else '—')}</td></tr>")
+    return ("<section class=card id=targets><div class=scroll><table class=t><thead><tr>"
+            "<th>alvo</th><th>estado</th><th class=r>ativos</th><th class=r>problemas</th>"
+            "<th class=r>eventos 30d</th><th class=r>último scan</th></tr></thead><tbody>"
+            + "".join(rows) + "</tbody></table></div></section>")
 
 
 def _filter_form(all_targets: list[str], only: str | None) -> str:
@@ -416,10 +554,69 @@ def _filter_form(all_targets: list[str], only: str | None) -> str:
 def _export_actions(only: str | None) -> str:
     q = f"&target={urllib.parse.quote(only)}" if only else ""
     return (
-        '<span class=exports>exportar:'
-        f'<a class=xbtn href="/export?fmt=json{q}">JSON</a>'
+        '<span class=exports>'
+        f'<a class=xbtn href="/export?fmt=json{q}">exportar JSON</a>'
         f'<a class=xbtn href="/export?fmt=csv{q}">CSV</a></span>'
     )
+
+
+# ── shell: sidebar + página ─────────────────────────────────────────────────
+# ícones de linha inline (sem fonte/arquivo externo: a CSP não deixa e nem precisa)
+_ICON = {
+    "overview": "<path d='M3 3h7v7H3zM14 3h7v4h-7zM14 11h7v10h-7zM3 14h7v7H3z'/>",
+    "problems": "<path d='M12 3 2 21h20L12 3z'/><path d='M12 10v5M12 18v.01'/>",
+    "targets": "<circle cx='12' cy='12' r='9'/><circle cx='12' cy='12' r='4'/>",
+    "vantage": "<path d='M12 3 2 8l10 5 10-5-10-5z'/><path d='M2 16l10 5 10-5'/>",
+}
+
+
+def _icon(name: str) -> str:
+    return ("<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' "
+            f"stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>{_ICON[name]}</svg>")
+
+
+def _sidebar(active: str, *, base: str = "", n_problems: int | None = None,
+             n_targets: int | None = None, hot: bool = False, vantage: bool = False,
+             targets_nav: list[tuple[str, str]] | None = None, foot: str = "") -> str:
+    def link(key, href, label, cnt=None, hot_=False):
+        on = " class=on" if key == active else ""
+        c = (f"<span class='cnt{' hot' if hot_ else ''}'>{cnt}</span>" if cnt is not None else "")
+        return f"<a href='{href}'{on}>{_icon(key)}<span>{label}</span>{c}</a>"
+
+    nav = [link("overview", f"{base}#overview", "Visão geral"),
+           link("problems", f"{base}#problems", "Problemas", n_problems, hot),
+           link("targets", f"{base}#targets", "Alvos", n_targets)]
+    if vantage:
+        nav.append(link("vantage", "/vantage", "Multi-vantage"))
+    out = ["<aside class=side>",
+           "<div class=logo>"
+           + (f"<img class=mark src='{_LOGO}' alt=''>" if _LOGO else "<span class=mark>P</span>")
+           + "<div><b>PADMÉ</b><small>attack surface monitoring</small></div></div>",
+           "<div><div class=navlabel>monitoração</div><nav class=nav>" + "".join(nav) + "</nav></div>"]
+    if targets_nav:
+        items = "".join(
+            f"<a href='#h-{_slug(t)}'><span class='dot {cls}'></span><span class=n>{_esc(t)}</span></a>"
+            for t, cls in targets_nav[:15])
+        more = (f"<div class=lghint style='padding:4px 10px'>+{len(targets_nav) - 15} alvo(s)</div>"
+                if len(targets_nav) > 15 else "")
+        out.append(f"<div class=tlistwrap><div class=navlabel>dossiês</div>"
+                   f"<nav class='nav tlist'>{items}</nav>{more}</div>")
+    if foot:
+        out.append(f"<div class=sidefoot>{foot}</div>")
+    out.append("</aside>")
+    return "".join(out)
+
+
+def _page(title: str, side: str, body: str, script: str = "") -> str:
+    return "".join([
+        "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
+        "<meta name=viewport content='width=device-width,initial-scale=1'>",
+        f"<title>{_esc(title)}</title>",
+        f"<link rel=icon href='{_LOGO}'>" if _LOGO else "",
+        "<style>", _CSS, "</style></head><body>",
+        "<div class=app>", side, "<main class=main>", body, "</main></div>",
+        script, "</body></html>",
+    ])
 
 
 def _open_ro(cfg) -> Storage | None:
@@ -493,18 +690,6 @@ def _vantage_exports(cfg) -> tuple[list[list[dict]], list[str]]:
     return exports, warnings
 
 
-def _vantage_values(a: dict, sources: list[str]) -> str:
-    """Valor observado por fonte (— = ausente)."""
-    vals = a.get("values", {})
-    bits = []
-    for s in sources:
-        v = vals.get(s)
-        cls = "k" if v is not None else "v"
-        bits.append(f"<span class=row><span class={cls}>{_esc(s)}</span>"
-                    f"  <span class=v>{_esc(v) if v is not None else '—'}</span></span>")
-    return "".join(bits)
-
-
 def render_vantage(cfg) -> str:
     exports, warnings = _vantage_exports(cfg)
     merged = merge_exports(exports)
@@ -513,63 +698,59 @@ def render_vantage(cfg) -> str:
     presence = [a for a in divs if a["divergence"] == "presence"]
     value = [a for a in divs if a["divergence"] == "value"]
 
-    parts = [
-        "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
-        "<meta name=viewport content='width=device-width,initial-scale=1'>",
-        "<title>Padmé — multi-vantage</title><style>", _CSS, "</style></head><body>",
-        "<header><div class=top>",
-        "<div class=brand>🛰️ PADMÉ<small>multi-vantage</small></div>",
-        "<div class=spacer></div>",
-        f"<span class=pill>fontes <b>{len(sources)}</b></span>",
-        f"<span class=pill>ativos <b>{merged['asset_count']}</b></span>",
-        '<a class=xbtn href="/">← superfície</a>',
-        "</div></header><div class=wrap>",
-    ]
+    body = ["<header class=pagehead><div><h1>Multi-vantage</h1>"
+            "<p>consolida exports por (target, kind, key) — mesma lógica do "
+            "<code>padme merge</code>, sem DB central</p></div>"
+            "<div class=actions><a class=xbtn href='/'>← voltar à superfície</a></div></header>"]
     for w in warnings:
-        parts.append(f"<div class=note>⚠ {_esc(w)}</div>")
-
-    parts.append("<div class=eyebrow>fontes (pontos de observação)</div>")
-    parts.append("<div class=panel><div class=calm>"
-                 + (" · ".join(f"<b>{_esc(s)}</b>" for s in sources) or "nenhuma fonte")
-                 + "</div></div>")
+        body.append(f"<div class=note>{_esc(w)}</div>")
+    body.append("<section class=kpis>"
+                + _kpi(len(sources), "fontes", " · ".join(sources) or "nenhuma fonte", cls="accent")
+                + _kpi(merged["asset_count"], "ativos consolidados")
+                + _kpi(len(presence), "divergência de presença", "visto de umas fontes, não de outras",
+                       cls="warn" if presence else "ok")
+                + _kpi(len(value), "divergência de valor", "mesmo ativo, valor diferente",
+                       cls="warn" if value else "ok")
+                + "</section>")
 
     # divergências de PRESENÇA (visto de umas fontes, ausente em outras)
-    parts.append(f"<div class=eyebrow>divergência de presença · {len(presence)}</div>")
+    body.append("<div class=sectitle><h2>Presença</h2><span>ativo ausente em parte das fontes</span></div>")
     if not presence:
-        parts.append("<div class=panel><div class=calm>" + _chip("s-ok", "sem divergência")
-                     + "<span>todo ativo aparece em todas as fontes.</span></div></div>")
+        body.append("<section class=card><div class=calm>" + _chip("s-ok", "sem divergência")
+                    + "<span>todo ativo aparece em todas as fontes.</span></div></section>")
     else:
-        rows = []
-        for a in presence:
-            rows.append(
-                "<div class=prow>"
-                f"<div>{_chip('s-warn', 'presença')}</div>"
-                f"<div><div class=who>{_esc(a['kind'].upper())} · {_esc(a['key'])}</div>"
-                f"<div class=det>visto de {_esc(', '.join(a['sources_seen']))} · "
-                f"ausente em {_esc(', '.join(a['sources_missing']))}</div></div>"
-                f"<div class=tgt>{_esc(a['target'])}</div>"
-                "</div>")
-        parts.append("<div class=panel>" + "".join(rows) + "</div>")
+        rows = "".join(
+            f"<tr><td class=nw>{_chip('s-warn', 'presença')}</td>"
+            f"<td><div class=who><span class=kd>{_esc(a['kind'].upper())}</span>{_esc(a['key'])}</div>"
+            f"<div class=det>visto de {_esc(', '.join(a['sources_seen']))} · "
+            f"ausente em {_esc(', '.join(a['sources_missing']))}</div></td>"
+            f"<td class=tgt>{_esc(a['target'])}</td></tr>" for a in presence)
+        body.append("<section class=card><div class=scroll><table class=t><thead><tr><th>tipo</th>"
+                    "<th>ativo</th><th>alvo</th></tr></thead><tbody>" + rows
+                    + "</tbody></table></div></section>")
 
     # divergência de VALOR (visto de todas, mas com valor diferente)
-    parts.append(f"<div class=eyebrow>divergência de valor · {len(value)}</div>")
+    body.append("<div class=sectitle><h2>Valor</h2><span>valor observado por fonte (— = ausente)</span></div>")
     if not value:
-        parts.append("<div class=panel><div class=calm>" + _chip("s-ok", "sem divergência")
-                     + "<span>ativos presentes em todas as fontes têm o mesmo valor.</span></div></div>")
+        body.append("<section class=card><div class=calm>" + _chip("s-ok", "sem divergência")
+                    + "<span>ativos presentes em todas as fontes têm o mesmo valor.</span></div></section>")
     else:
+        head = "".join(f"<th>{_esc(s)}</th>" for s in sources)
         rows = []
         for a in value:
-            rows.append(
-                "<div class=kind>"
-                f"<div class=who>{_chip('s-info', 'valor')} {_esc(a['kind'].upper())} · "
-                f"{_esc(a['key'])} <span class=tgt>{_esc(a['target'])}</span></div>"
-                + _vantage_values(a, sources) + "</div>")
-        parts.append("<div class=panel>" + "".join(rows) + "</div>")
+            vals = a.get("values", {})
+            cells = "".join(f"<td class=mono>{_esc(vals[s]) if vals.get(s) is not None else '—'}</td>"
+                            for s in sources)
+            rows.append(f"<tr><td><div class=who><span class=kd>{_esc(a['kind'].upper())}</span>"
+                        f"{_esc(a['key'])}</div><div class=tgt>{_esc(a['target'])}</div></td>{cells}</tr>")
+        body.append("<section class=card><div class=scroll><table class=t><thead><tr><th>ativo</th>"
+                    + head + "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div></section>")
 
-    parts.append("<footer>Padmé · multi-vantage · consolida exports por (target, kind, key) "
-                 "— mesma lógica do <code>padme merge</code>, sem DB central</footer>")
-    parts.append("</div></body></html>")
-    return "".join(parts)
+    body.append("<footer>Padmé · multi-vantage · painel read-only</footer>")
+    side = _sidebar("vantage", base="/", vantage=True,
+                    foot=f"<div class=row2><span>fontes</span><b>{len(sources)}</b></div>"
+                         f"<div class=row2><span>ativos</span><b>{merged['asset_count']}</b></div>")
+    return _page("Padmé — multi-vantage", side, "".join(body))
 
 
 def _render(cfg, exposed: bool = False, only: str | None = None,
@@ -603,59 +784,58 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
 
     problems = _collect_problems(by_target, meta)
     explain = _explainability(events)
+    scans = [m.get("last_scan_at") for m in meta.values() if m and m.get("last_scan_at")]
+    last_cycle = _ts_human(max(scans)) if scans else "—"
 
-    parts = [
-        "<!doctype html><html lang=pt-br><head><meta charset=utf-8>",
-        "<meta name=viewport content='width=device-width,initial-scale=1'>",
-        # auto-refresh é feito por JS (não <meta refresh>): ele PAUSA enquanto você
-        # filtra/foca um campo, para não apagar a filtragem a cada 30s.
-        "<title>Padmé — superfície</title><style>", _CSS, "</style></head><body>",
-        "<header><div class=top>",
-        "<div class=brand>🛰️ PADMÉ<small>attack surface monitor</small></div>",
-        "<div class=spacer></div>",
-        f"<span class=pill>alvos <b>{len(all_targets)}</b></span>",
-        f"<span class=pill>atualizado <b>{datetime.now():%d/%m %H:%M:%S}</b></span>",
-        "<span class=pill id=autopill data-secs=30>auto <b>30s</b></span>",
-        "</div></header><div class=wrap>",
-    ]
+    body = []
+    scope = f" · filtro: {only}" if only else ""
+    actions = (_filter_form(all_targets, only) if len(all_targets) > 1 else "") + _export_actions(only)
+    body.append("<header class=pagehead><div><h1>Centro de operações</h1>"
+                f"<p>visão geral{_esc(scope)} · {len(shown)} alvo(s) · somente leitura</p></div>"
+                f"<div class=actions>{actions}</div></header>")
     if exposed and not authed:
-        parts.append("<div class=banner>⚠️ Painel exposto fora de localhost e SEM autenticação. "
-                     "Qualquer um com acesso à rede vê sua superfície de ataque — "
-                     "defina <code>PADME_WEB_TOKEN</code> ou sirva atrás de um proxy autenticado.</div>")
+        body.append("<div class=banner><b>Exposto SEM autenticação.</b><span>O painel está fora de "
+                    "localhost e qualquer um com acesso à rede vê sua superfície de ataque — "
+                    "defina <code>PADME_WEB_TOKEN</code> ou sirva atrás de um proxy autenticado."
+                    "</span></div>")
     elif exposed and authed:
-        parts.append("<div class=note>🔒 Painel exposto fora de localhost, protegido por token "
-                     "(navegador: login com qualquer usuário e o token como senha; "
-                     "automação: <code>Authorization: Bearer</code>).</div>")
-    toolbar = "<div class=toolbar>"
-    if len(all_targets) > 1:
-        toolbar += _filter_form(all_targets, only)
-    if cfg.web.vantage_dir:
-        toolbar += '<a class=xbtn href="/vantage">multi-vantage →</a>'
-    toolbar += _export_actions(only)
-    parts.append(toolbar + "</div>")
+        body.append("<div class=note><b>Protegido por token.</b><span>Navegador: login com qualquer "
+                    "usuário e o token como senha; automação: <code>Authorization: Bearer</code>."
+                    "</span></div>")
 
-    scope = f" · {only}" if only else ""
-    parts.append(f"<div class=eyebrow>visão geral{scope}</div>")
-    parts.append(_global_kpis(by_target, meta, problems, len(shown), explain))
+    body.append(_global_kpis(by_target, meta, problems, len(shown), explain))
+    body.append("<div class=grid2>" + _problems_panel(problems)
+                + "<div class=stack>" + _activity(trend, trend_days) + _collectors_card(meta)
+                + "</div></div>")
 
-    parts.append(f"<div class=eyebrow>problemas abertos · {len(problems)}</div>")
-    parts.append(_problems_panel(problems))
-
-    parts.append("<div class=eyebrow>alvos</div>")
+    body.append(f"<div class=sectitle><h2>Alvos</h2><span>{len(shown)} no escopo</span></div>")
     if not shown:
-        parts.append("<div class=panel><div class=empty>nenhum alvo"
-                     + (f" casa com o filtro '{_esc(only)}'." if only
-                        else " ainda — rode <code>padme scan</code> ou <code>padme monitor</code>.")
-                     + "</div></div>")
-    for target in shown:
-        parts.append(_host_card(target, by_target.get(target, {}), events.get(target, []),
-                                trend.get(target, []), meta.get(target), trend_days))
+        body.append("<section class=card id=targets><div class=empty>nenhum alvo"
+                    + (f" casa com o filtro '{_esc(only)}'." if only
+                       else " ainda — rode <code>padme scan</code> ou <code>padme monitor</code>.")
+                    + "</div></section>")
+    else:
+        body.append(_targets_table(shown, by_target, meta, trend, problems))
+        body.append("<div class=sectitle><h2>Dossiês</h2>"
+                    "<span>resumo, timeline priorizada e inventário por alvo</span></div>")
+        for target in shown:
+            body.append(_host_card(target, by_target.get(target, {}), events.get(target, []),
+                                   trend.get(target, []), meta.get(target), trend_days, problems))
+    body.append("<footer>Padmé · painel read-only · lê o padme.db, não altera nada</footer>")
 
-    parts.append("<footer>Padmé · painel read-only · lê o padme.db, não altera nada</footer>")
-    parts.append("</div>")
-    parts.append(_TREND_JS)
-    parts.append("</body></html>")
-    return "".join(parts)
+    hot = any(p["cls"] in ("s-crit", "s-serious") for p in problems)
+    # auto-refresh é feito por JS (não <meta refresh>): ele PAUSA enquanto você
+    # filtra/foca um campo, para não apagar a filtragem a cada 30s.
+    foot = (f"<div class=row2><span>último ciclo</span><b>{_esc(last_cycle)}</b></div>"
+            f"<div class=row2><span>atualizado</span><b>{datetime.now():%H:%M:%S}</b></div>"
+            "<div class=row2><span>refresh</span>"
+            "<span class=pill id=autopill data-secs=30>auto <b>30s</b></span></div>")
+    side = _sidebar("overview", n_problems=len(problems), n_targets=len(shown), hot=hot,
+                    vantage=bool(cfg.web.vantage_dir),
+                    targets_nav=[(t, _host_level(by_target.get(t, {}), meta.get(t))[0])
+                                 for t in shown],
+                    foot=foot)
+    return _page("Padmé — superfície", side, "".join(body), _TREND_JS)
 
 
 def _bearer_ok(header: str | None, token: str) -> bool:
