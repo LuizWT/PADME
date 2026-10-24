@@ -9,7 +9,7 @@
 # então monte um volume em /data (o .env em /data também é lido sozinho).
 # Base fixada por DIGEST (build reproduzível: a tag 3.12-slim anda sozinha).
 # O Dependabot (ecossistema docker) abre PR quando a tag ganha digest novo.
-FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
 
 # stdout sem buffer (log aparece na hora) e sem .pyc no container.
 ENV PYTHONUNBUFFERED=1 \
