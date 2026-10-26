@@ -4,7 +4,7 @@
 # uma). Para regenerar à mão: instale o pacote num venv limpo (`pip install .`),
 # rode `pip freeze --exclude padme-asm`, a suíte e `pip-audit -r requirements.txt`.
 anyio==4.15.1
-certifi==2026.7.22
+certifi==2026.10.23
 cffi==2.1.1
 cryptography==50.0.2
 dnspython==2.8.0

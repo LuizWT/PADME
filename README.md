@@ -1,6 +1,13 @@
-# Padmé — Attack Surface Monitoring
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/padme-logo-dark.png">
+    <img src="docs/assets/padme-logo-light.png" alt="Padmé — Attack Surface Monitoring Platform" width="560">
+  </picture>
+</p>
 
-![tests](https://github.com/LuizWT/PADME/actions/workflows/tests.yml/badge.svg)
+<p align="center">
+  <img src="https://github.com/LuizWT/PADME/actions/workflows/tests.yml/badge.svg" alt="tests">
+</p>
 
 > Vigia a superfície de ataque dos **seus** ativos ao longo do tempo e te avisa
 > no **Telegram, Discord, E-mail e/ou outro** sempre que algo muda: subdomínio novo, porta aberta,
@@ -693,6 +700,7 @@ padme/
 │   ├── data/             # takeover_fingerprints.json (gerada do can-i-take-over-xyz)
 │   └── notify/           # base (Protocol/Manager/retry), formatting, telegram, webhook, email
 ├── docs/RUNBOOK.md       # operação: systemd, backup, rotação de segredos, proxy+TLS
+├── docs/assets/          # logo (versões p/ tema claro e escuro do GitHub)
 ├── ideias.md             # evolução adiada por design (porquê/como/impacto)
 ├── .github/workflows/    # CI (ruff + pytest 3.10-3.14 + pip-audit + imagem) e
 │                         #   takeover-base (mensal: regenera a base e abre PR)
