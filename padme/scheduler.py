@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from .alerts import damp_flapping
 from .config import Config
 from .engine import Engine, build_notifiers, summarize_health
+from .findings import derive, is_muted
 from .heartbeat import from_config as heartbeat_from_config
 from .models import Event, ScanResult
 from .notify import NotificationManager
@@ -75,6 +76,12 @@ async def retry_pending(storage: Storage, notifier: NotificationManager) -> None
             gone = set(ids) - {e.event_id for e in events}
             if gone:  # evento apagado pela retenção: não há o que reenviar
                 storage.resolve_notifications(n.name, list(gone))
+            # silenciado/aceito depois que o envio falhou: não reenvia
+            statuses = {fid: r["status"] for fid, r in storage.finding_rows([target]).items()}
+            muted = [e.event_id for e in events if is_muted(target, e, statuses)]
+            if muted:
+                storage.resolve_notifications(n.name, muted)
+                events = [e for e in events if e.event_id not in set(muted)]
             if not events:
                 continue
             try:
@@ -103,6 +110,19 @@ class TargetOutcome:
     flapped: int = 0         # eventos suprimidos da notificação por flapping
     failed_channels: list[str] = field(default_factory=list)
     queued: int = 0          # alertas graves que foram para a fila de reenvio
+    muted: int = 0           # eventos de findings silenciados/aceitos (não notificados)
+    findings: dict = field(default_factory=dict)  # opened/reopened/resolved neste scan
+
+
+def sync_target_findings(storage: Storage, target: str) -> tuple[dict, dict[str, str]]:
+    """Reconcilia o ciclo de vida dos findings com o estado recém-gravado.
+    Devolve (contagens do sync, {finding_id: status}) — o status decide o que
+    ainda notifica."""
+    kinds: dict[str, list] = {}
+    for r in storage.all_state([target]):
+        kinds.setdefault(r["kind"], []).append(r)
+    counts = storage.sync_findings(target, derive(target, kinds))
+    return counts, {fid: r["status"] for fid, r in storage.finding_rows([target]).items()}
 
 
 async def scan_one(cfg: Config, engine: Engine, storage: Storage,
@@ -121,10 +141,15 @@ async def scan_one(cfg: Config, engine: Engine, storage: Storage,
                           inconclusive=result.inconclusive)
     out = TargetOutcome(result, events, first,
                         provisional=first and not storage.is_known_target(target))
+    out.findings, statuses = sync_target_findings(storage, target)
     if first or not events:
         return out
     to_notify, out.flapped = damp_flapping(
         storage, target, events, cfg.alerts.flap_threshold, cfg.alerts.flap_window_minutes)
+    # finding silenciado (falso positivo) ou com risco aceito: fica no histórico,
+    # mas não volta a notificar. Reconhecido (ack) continua notificando.
+    kept = [e for e in to_notify if not is_muted(target, e, statuses)]
+    out.muted, to_notify = len(to_notify) - len(kept), kept
     if notifier and to_notify:
         results = await notifier.dispatch(target, to_notify)
         out.failed_channels = [r.channel for r in results if not r.ok]
@@ -157,8 +182,9 @@ async def _run_cycle(cfg: Config, engine: Engine, storage: Storage,
         elif o.first:
             log.info("[%s] baseline gravado (%d itens no estado).", target, len(o.result.records))
         elif o.events:
-            log.info("[%s] %d mudança(s)%s.", target, len(o.events),
-                     f"; {o.flapped} suprimida(s) por flapping" if o.flapped else "")
+            log.info("[%s] %d mudança(s)%s%s.", target, len(o.events),
+                     f"; {o.flapped} suprimida(s) por flapping" if o.flapped else "",
+                     f"; {o.muted} de finding(s) silenciado(s)/aceito(s)" if o.muted else "")
             if o.failed_channels:
                 log.warning("[%s] notificação falhou em %d canal(is): %s%s", target,
                             len(o.failed_channels), ", ".join(o.failed_channels),

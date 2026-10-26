@@ -5,7 +5,10 @@ num relance: um resumo global, um painel de PROBLEMAS abertos (takeover, cert
 expirando, wildcard, coleta parcial) priorizado por severidade, e um cartão por
 alvo com saúde da coleta, KPIs da superfície, tendência e últimos eventos.
 
-Só leitura — não altera nada. Bind em localhost por padrão.
+Leitura por padrão: a única escrita é a ação de finding (reconhecer,
+silenciar, aceitar risco, reabrir) via POST /finding, com token de CSRF e
+checagem de origem — desligável com `web.actions: false` e nunca ligada em
+painel exposto sem auth. Bind em localhost por padrão.
 
 Design: paleta escura validada (status good/warning/serious/critical com
 chip = ponto + rótulo, nunca cor sozinha), tipografia de sistema, hairlines,
@@ -23,13 +26,28 @@ import html
 import http.server
 import io
 import json
+import secrets
 import socketserver
+import sqlite3
 import threading
+import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
 
 from .evidence import evidence_of
+from .findings import (
+    ACCEPTED,
+    ACKNOWLEDGED,
+    ACTIONS,
+    DEFAULT_SLA_HOURS,
+    MUTED,
+    OPEN,
+    STATUS_LABEL,
+    SUPPRESSED,
+    human_hours,
+    sla_info,
+)
 from .merge import merge_exports
 from .panel_assets import _CSS, _LOGO, _TREND_ADD, _TREND_CHG, _TREND_JS, _TREND_REM
 from .panel_metrics import (
@@ -123,36 +141,123 @@ def _chip(cls: str, label: str) -> str:
     return f"<span class='chip {cls}'><span class=dot></span>{_esc(label)}</span>"
 
 
-# ── problemas abertos (agregado, priorizado) ────────────────────────────────
+# ── problemas abertos (agregado, priorizado, com ciclo de vida) ─────────────
 _PROBLEMS_VISIBLE = 8  # o resto fica num "mais N" — a lista não engole a página
+_STATUS_CLS = {OPEN: "s-muted", ACKNOWLEDGED: "s-info", SUPPRESSED: "s-muted", ACCEPTED: "s-muted"}
 
 
-def _problem_row(p: dict) -> str:
+def _sla_of(p: dict, sla_hours: dict, now: float) -> dict | None:
+    row = p.get("row") or {}
+    if not row:
+        return None
+    return sla_info({**row, "status": p.get("status", OPEN), "severity": p.get("severity", "")},
+                    now, sla_hours)
+
+
+def _status_cell(p: dict, sla_hours: dict, now: float) -> str:
+    """Estado do finding: status + há quanto tempo + prazo (ou o motivo, se tratado)."""
+    if not p.get("id"):  # COLETA: operacional e transitório, sem ciclo de vida
+        return "<span class=lghint>transitório</span>"
+    st = p.get("status", OPEN)
+    row = p.get("row") or {}
+    bits = [_chip(_STATUS_CLS.get(st, "s-muted"), STATUS_LABEL.get(st, st))]
+    info = _sla_of(p, sla_hours, now)
+    if st in MUTED:
+        why = row.get("status_reason") or ""
+        who = row.get("status_by") or ""
+        if why or who:
+            bits.append(f"<div class=stx>{_esc(why)}{' · ' if why and who else ''}"
+                        f"{'por ' + _esc(who) if who else ''}</div>")
+    elif info is None:
+        bits.append("<div class=stx>novo · aguardando o próximo scan</div>")
+    else:
+        line = f"há {human_hours(info['age_h'])}"
+        if info["limit_h"]:
+            line += (f" · <span class=late>prazo estourado há {human_hours(info['left_h'])}</span>"
+                     if info["breached"] else f" · vence em {human_hours(info['left_h'])}")
+        bits.append(f"<div class=stx>{line}</div>")
+    return "".join(bits)
+
+
+def _actions(p: dict, act: dict | None) -> str:
+    """Formulário de ação do finding (POST com token de CSRF). `act` None =
+    painel read-only (ações desligadas ou painel exposto sem auth)."""
+    if not act or not p.get("id"):
+        return ""
+    st = p.get("status", OPEN)
+    buttons = []
+    if st == OPEN:
+        buttons.append(("ack", "Reconhecer"))
+    if st in (OPEN, ACKNOWLEDGED):
+        buttons += [("suppress", "Falso positivo"), ("accept", "Aceitar risco")]
+    if st != OPEN:
+        buttons.append(("reopen", "Reabrir"))
+    needs_reason = any(a in ("suppress", "accept") for a, _ in buttons)
+    reason = ("<input class=actr name=reason maxlength=500 autocomplete=off "
+              "placeholder='motivo' aria-label='motivo'>"
+              "<span class=acth>obrigatório para falso positivo e aceitar risco</span>"
+              if needs_reason else "")
+    btns = "".join(f"<button class=actbtn type=submit name=action value={a}>{label}</button>"
+                   for a, label in buttons)
+    return ("<details class=act><summary>ações</summary>"
+            "<form method=post action='/finding' class=actf>"
+            f"<input type=hidden name=csrf value='{_esc(act['csrf'])}'>"
+            f"<input type=hidden name=id value='{_esc(p['id'])}'>"
+            f"<input type=hidden name=target value='{_esc(act.get('target') or '')}'>"
+            f"{reason}<div class=actb>{btns}</div></form></details>")
+
+
+def _problem_row(p: dict, act: dict | None = None, sla_hours: dict | None = None,
+                 now: float | None = None) -> str:
+    sla_hours = DEFAULT_SLA_HOURS if sla_hours is None else sla_hours
+    now = time.time() if now is None else now
     proof = p.get("evidence")
     proof_html = f"<div class=proof>prova: {_esc(proof)}</div>" if proof else ""
+    fid = f"<span class=fid title='id do finding (padme finding show …)'>{_esc(p['id'][:10])}</span>" \
+        if p.get("id") else ""
     return ("<tr>"
             f"<td class=nw>{_chip(p['cls'], p['sev'])}</td>"
-            f"<td><div class=who><span class=kd>{_esc(p['kind'])}</span>{_esc(p['who'])}</div>"
+            f"<td><div class=who><span class=kd>{_esc(p['kind'])}</span>{_esc(p['who'])}{fid}</div>"
             f"<div class=det>{_esc(p['det'])}</div>{proof_html}</td>"
+            f"<td class=st>{_status_cell(p, sla_hours, now)}{_actions(p, act)}</td>"
             f"<td class=tgt><a href='#h-{_slug(p['tgt'])}'>{_esc(p['tgt'])}</a></td>"
             "</tr>")
 
 
-def _problems_panel(problems: list[dict]) -> str:
+# colunas fixas: a tabela principal, o "mais N" e os "tratados" ficam alinhados
+_PROBLEMS_COLS = ("<colgroup><col class=c-sev><col><col class=c-st><col class=c-tgt>"
+                  "</colgroup>")
+_PROBLEMS_HEAD = (_PROBLEMS_COLS + "<thead><tr><th>severidade</th><th>problema</th>"
+                  "<th>estado</th><th>alvo</th></tr></thead>")
+
+
+def _problems_panel(problems: list[dict], treated: list[dict] | None = None,
+                    act: dict | None = None, sla_hours: dict | None = None) -> str:
+    now = time.time()
+    treated = treated or []
+
+    def rows(items):
+        return "".join(_problem_row(p, act, sla_hours, now) for p in items)
+
     head = ("<div class=cardhd><h3>Problemas abertos</h3><span class=sub>ordenado por risco</span>"
             f"<span class=right>{len(problems)}</span></div>")
+    out = ["<section class=card id=problems>", head]
     if not problems:
-        return ("<section class=card id=problems>" + head + "<div class=calm>"
-                + _chip("s-ok", "tudo ok")
-                + "<span>nenhum problema aberto na superfície monitorada.</span></div></section>")
-    first, rest = problems[:_PROBLEMS_VISIBLE], problems[_PROBLEMS_VISIBLE:]
-    out = ["<section class=card id=problems>", head,
-           "<div class=scroll><table class=t><thead><tr><th>severidade</th><th>problema</th>"
-           "<th>alvo</th></tr></thead><tbody>", *map(_problem_row, first), "</tbody></table></div>"]
-    if rest:
-        out += [f"<details class=more data-persist='problems-more'><summary>mais {len(rest)} "
-                "problema(s)</summary><div class=scroll><table class=t><tbody>",
-                *map(_problem_row, rest), "</tbody></table></div></details>"]
+        out.append("<div class=calm>" + _chip("s-ok", "tudo ok")
+                   + "<span>nenhum problema aberto na superfície monitorada.</span></div>")
+    else:
+        first, rest = problems[:_PROBLEMS_VISIBLE], problems[_PROBLEMS_VISIBLE:]
+        out.append("<div class=scroll><table class='t pt'>" + _PROBLEMS_HEAD + "<tbody>"
+                   + rows(first) + "</tbody></table></div>")
+        if rest:
+            out.append(f"<details class=more data-persist='problems-more'><summary>mais {len(rest)} "
+                       "problema(s)</summary><div class=scroll><table class='t pt'>"
+                       + _PROBLEMS_COLS + "<tbody>" + rows(rest) + "</tbody></table></div></details>")
+    if treated:  # silenciados / risco aceito: fora da conta, mas à vista (e reabríveis)
+        out.append(f"<details class=more data-persist='problems-treated'><summary>{len(treated)} "
+                   "tratado(s) · falso positivo ou risco aceito</summary>"
+                   "<div class=scroll><table class='t pt'>" + _PROBLEMS_COLS + "<tbody>"
+                   + rows(treated) + "</tbody></table></div></details>")
     out.append("</section>")
     return "".join(out)
 
@@ -165,15 +270,21 @@ def _kpi(n, label: str, sub: str = "", cls: str = "") -> str:
 
 
 def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: int,
-                 explain: dict | None = None) -> str:
+                 explain: dict | None = None, sla_hours: dict | None = None) -> str:
     assets = sum(len(v) for kinds in by_target.values() for v in kinds.values())
     crit = sum(1 for p in problems if p["cls"] in ("s-crit", "s-serious"))
-    prob_cls = "crit" if crit else ("warn" if problems else "ok")
+    now = time.time()
+    late = sum(1 for p in problems
+               if (i := _sla_of(p, DEFAULT_SLA_HOURS if sla_hours is None else sla_hours, now))
+               and i["breached"])
+    prob_cls = "crit" if crit or late else ("warn" if problems else "ok")
+    sub = f"{crit} de alta gravidade" if problems else "superfície limpa"
+    if late:
+        sub += f" · {late} com prazo estourado"
     tiles = [
         _kpi(n_targets, "alvos monitorados", f"{len(by_target)} com dados", cls="accent"),
         _kpi(assets, "ativos observados", "subdomínios, portas, serviços…"),
-        _kpi(len(problems), "problemas abertos",
-             f"{crit} de alta gravidade" if problems else "superfície limpa", cls=prob_cls),
+        _kpi(len(problems), "problemas abertos", sub, cls=prob_cls),
     ]
     rel = _collector_reliability(meta)
     if rel:  # §27: confiabilidade dos collectors (só quando há saúde registrada)
@@ -754,7 +865,10 @@ def render_vantage(cfg) -> str:
 
 
 def _render(cfg, exposed: bool = False, only: str | None = None,
-            authed: bool = False) -> str:
+            authed: bool = False, csrf: str = "") -> str:
+    """Página principal. `csrf` não-vazio = ações de finding ligadas (o handler
+    só passa o token quando `web.actions` está on e o painel não está exposto
+    sem auth); vazio = painel estritamente read-only."""
     trend_days = 30
     storage = _open_ro(cfg)
     try:
@@ -770,8 +884,10 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
             events = {t: storage.recent_events(t, 20) for t in shown}
             trend = {t: storage.events_per_day(t, trend_days) for t in shown}
             meta = {t: storage.target_meta(t) for t in shown}
+            statuses = storage.finding_rows(shown) if shown else {}
         else:  # sem banco ainda: página vazia, nada é criado
             events, meta = {t: [] for t in shown}, {t: None for t in shown}
+            statuses = {}
             trend = {t: [] for t in shown}
     finally:
         if storage:
@@ -782,8 +898,11 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
         if r["target"] in by_target:
             by_target[r["target"]].setdefault(r["kind"], []).append(r)
 
-    problems = _collect_problems(by_target, meta)
+    problems = _collect_problems(by_target, meta, statuses)
+    treated = _collect_problems(by_target, meta, statuses, include_muted=True)
     explain = _explainability(events)
+    sla_hours = cfg.findings.sla_hours
+    act = {"csrf": csrf, "target": only or ""} if csrf else None
     scans = [m.get("last_scan_at") for m in meta.values() if m and m.get("last_scan_at")]
     last_cycle = _ts_human(max(scans)) if scans else "—"
 
@@ -803,8 +922,8 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
                     "usuário e o token como senha; automação: <code>Authorization: Bearer</code>."
                     "</span></div>")
 
-    body.append(_global_kpis(by_target, meta, problems, len(shown), explain))
-    body.append("<div class=grid2>" + _problems_panel(problems)
+    body.append(_global_kpis(by_target, meta, problems, len(shown), explain, sla_hours))
+    body.append("<div class=grid2>" + _problems_panel(problems, treated, act, sla_hours)
                 + "<div class=stack>" + _activity(trend, trend_days) + _collectors_card(meta)
                 + "</div></div>")
 
@@ -821,7 +940,8 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
         for target in shown:
             body.append(_host_card(target, by_target.get(target, {}), events.get(target, []),
                                    trend.get(target, []), meta.get(target), trend_days, problems))
-    body.append("<footer>Padmé · painel read-only · lê o padme.db, não altera nada</footer>")
+    body.append("<footer>Padmé · " + ("lê o padme.db; só grava ações de finding (com CSRF)"
+                if csrf else "painel read-only · lê o padme.db, não altera nada") + "</footer>")
 
     hot = any(p["cls"] in ("s-crit", "s-serious") for p in problems)
     # auto-refresh é feito por JS (não <meta refresh>): ele PAUSA enquanto você
@@ -882,8 +1002,8 @@ def _auth_ok(header: str | None, token: str) -> bool:
 _ROUTES = ("/", "/export", "/vantage")  # rotas conhecidas (após auth)
 
 # CSP compatível com o HTML real do painel: <style>/<script> e style="" inline
-# (daí 'unsafe-inline'), ícones/imagens só como data:, formulário GET p/ mesma
-# origem. Sem fontes/JS externos — o painel é 100% self-contained.
+# (daí 'unsafe-inline'), ícones/imagens só como data:, formulários (filtro GET,
+# ações POST) só p/ a mesma origem. Sem fontes/JS externos — 100% self-contained.
 _CSP = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
         "img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 _SEC_RESPONSE_HEADERS = {
@@ -925,9 +1045,80 @@ class PanelServer(socketserver.ThreadingTCPServer):
             self._slots.release()
 
 
+# ── ações de finding (POST) ─────────────────────────────────────────────────
+_MAX_FORM_BYTES = 4096  # um formulário de ação tem id + ação + motivo (<= 500)
+
+
+def _same_origin(headers) -> bool:
+    """CSRF em camadas, além do token: navegador moderno manda `Sec-Fetch-Site`
+    e/ou `Origin` num POST — origem cruzada (ou opaca, 'null') é recusada. Sem
+    nenhum dos dois (curl, navegador antigo) quem decide é o token de CSRF."""
+    site = headers.get("Sec-Fetch-Site")
+    if site and site not in ("same-origin", "none"):
+        return False
+    origin = headers.get("Origin")
+    if origin is None:
+        return True
+    if origin == "null":
+        return False
+    return urllib.parse.urlparse(origin).netloc == (headers.get("Host") or "")
+
+
+def _basic_user(header: str | None) -> str:
+    """Usuário do login Basic (vai para a trilha de auditoria); '' se não houver."""
+    parts = (header or "").split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "basic":
+        return ""
+    try:
+        raw = base64.b64decode(parts[1].strip(), validate=True).decode("utf-8")
+    except Exception:  # noqa: BLE001 — já validado pelo _auth_ok; aqui só o nome
+        return ""
+    return raw.partition(":")[0].strip()
+
+
+def _apply_action(cfg, form: dict, actor: str) -> tuple[int, str]:
+    """Aplica a ação no banco (conexão de ESCRITA só durante o POST; o render
+    continua read-only). Devolve (status HTTP, mensagem de erro)."""
+    fid = (form.get("id") or [""])[0]
+    action = (form.get("action") or [""])[0]
+    reason = (form.get("reason") or [""])[0]
+    if action not in ACTIONS:
+        return 400, "ação inválida."
+    try:
+        storage = Storage(cfg.db_path)
+    except (sqlite3.Error, OSError):
+        return 503, ("o banco não aceita escrita (volume só-leitura ou sem permissão): "
+                     "use `padme finding` onde o monitor roda, ou web.actions: false.")
+    try:
+        storage.set_finding_status(fid, action, reason=reason, actor=actor)
+    except ValueError as exc:
+        return 400, str(exc)
+    except sqlite3.Error:
+        return 503, "falha ao gravar no banco (ocupado ou só-leitura): tente de novo."
+    finally:
+        storage.close()
+    return 303, ""
+
+
+def _action_error_page(msg: str, target: str) -> bytes:
+    back = "/" + (f"?target={urllib.parse.quote(target)}" if target else "") + "#problems"
+    body = ("<header class=pagehead><div><h1>Ação não aplicada</h1>"
+            "<p>nada foi alterado no finding</p></div></header>"
+            f"<div class=banner><span>{_esc(msg)}</span></div>"
+            f"<a class=xbtn href='{_esc(back)}'>← voltar aos problemas</a>")
+    return _page("Padmé — ação", "", body).encode("utf-8")
+
+
 def make_handler(page_cfg, exposed: bool, auth_token: str | None):
     """Fábrica do handler HTTP (fecha sobre cfg/exposed/token). Separada de
-    `serve` para ser testável sem depender de `serve_forever`."""
+    `serve` para ser testável sem depender de `serve_forever`.
+
+    Ações de finding (POST /finding) só ligam com `web.actions` e se o painel
+    NÃO estiver exposto sem auth — fora de localhost sem token, qualquer um da
+    rede mudaria o estado. O token de CSRF é aleatório por processo e vai no
+    formulário; uma página de outra origem não consegue lê-lo."""
+    actions_on = bool(page_cfg.web.actions) and (not exposed or auth_token is not None)
+    csrf = secrets.token_hex(32) if actions_on else ""
 
     class Handler(http.server.BaseHTTPRequestHandler):
         server_version = "padme"  # não anuncia versão do Python/BaseHTTPServer
@@ -972,6 +1163,56 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
                 # o painel só LÊ: quem migra o schema é o monitor/scan/doctor
                 self._write(503, "text/plain; charset=utf-8", f"503 {exc}\n".encode("utf-8"))
 
+        def do_POST(self):
+            if auth_token is not None and not _auth_ok(
+                    self.headers.get("Authorization"), auth_token):
+                self._deny()
+                return
+            route = urllib.parse.urlparse(self.path).path.rstrip("/") or "/"
+            if route != "/finding":
+                self._write(404, "text/plain; charset=utf-8", b"404 Not Found\n")
+                return
+            if not actions_on:
+                self._write(403, "text/plain; charset=utf-8",
+                            "403 ações desligadas: painel read-only (web.actions=false ou "
+                            "exposto sem token). Use `padme finding`.\n".encode("utf-8"))
+                return
+            if not _same_origin(self.headers):
+                self._write(403, "text/plain; charset=utf-8", b"403 origem cruzada recusada\n")
+                return
+            try:
+                size = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                size = -1
+            if not 0 < size <= _MAX_FORM_BYTES:
+                self._write(413, "text/plain; charset=utf-8", b"413 formulario invalido ou grande demais\n")
+                return
+            ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if ctype != "application/x-www-form-urlencoded":
+                self._write(415, "text/plain; charset=utf-8", b"415 tipo de conteudo nao suportado\n")
+                return
+            try:
+                form = urllib.parse.parse_qs(self.rfile.read(size).decode("utf-8", "replace"),
+                                             max_num_fields=10)
+            except ValueError:
+                self._write(400, "text/plain; charset=utf-8", b"400 formulario invalido\n")
+                return
+            sent = (form.get("csrf") or [""])[0].encode("utf-8")
+            if not hmac.compare_digest(sent, csrf.encode("utf-8")):
+                self._write(403, "text/plain; charset=utf-8",
+                            "403 token de CSRF inválido — recarregue o painel e tente de novo.\n"
+                            .encode("utf-8"))
+                return
+            target = (form.get("target") or [""])[0]
+            actor = _basic_user(self.headers.get("Authorization")) or "painel"
+            code, msg = _apply_action(page_cfg, form, actor)
+            if code == 303:
+                # quote() no alvo: vem do formulário, um \r\n viraria header injection
+                loc = "/" + (f"?target={urllib.parse.quote(target)}" if target else "") + "#problems"
+                self._write(303, "text/plain; charset=utf-8", b"", {"Location": loc})
+            else:
+                self._write(code, "text/html; charset=utf-8", _action_error_page(msg, target))
+
         def _route(self, route: str, params: dict) -> None:
             only = params.get("target", [None])[0]
             if route == "/export":
@@ -989,7 +1230,7 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
                             render_vantage(page_cfg).encode("utf-8"))
             else:
                 body = _render(page_cfg, exposed=exposed, only=only,
-                               authed=auth_token is not None).encode("utf-8")
+                               authed=auth_token is not None, csrf=csrf).encode("utf-8")
                 self._write(200, "text/html; charset=utf-8", body)
 
         def log_message(self, *args):

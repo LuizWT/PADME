@@ -143,6 +143,30 @@ table.t{width:100%;border-collapse:collapse;font-size:12.5px}
 .proof{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px;word-break:break-all}
 .tgt{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
 .calm{padding:16px;display:flex;align-items:center;gap:10px;color:var(--ink2)}
+.fid{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-left:8px;opacity:.8;
+  white-space:nowrap;display:inline-block;word-break:normal}
+table.pt{table-layout:fixed}
+table.pt col.c-sev{width:118px} table.pt col.c-st{width:230px} table.pt col.c-tgt{width:130px}
+.acth{font-size:10.5px;color:var(--muted)}
+.chip.s-info{background:rgba(91,141,239,.09);border-color:rgba(91,141,239,.32)}
+td.st{min-width:150px}
+@media(max-width:820px){table.pt{table-layout:auto}}
+.stx{font-size:11.5px;color:var(--muted);margin-top:4px}
+.late{color:#f08a84;font-weight:600}
+details.act{margin-top:6px}
+details.act>summary{list-style:none;cursor:pointer;font-size:11.5px;color:var(--accent);user-select:none;
+  display:inline-block}
+details.act>summary::-webkit-details-marker{display:none}
+details.act[open]>summary{color:var(--muted)}
+.actf{margin-top:6px;display:flex;flex-direction:column;gap:6px;min-width:210px}
+.actr{background:var(--inset);border:1px solid var(--border);border-radius:6px;color:var(--ink);
+  font:12px var(--sans);padding:5px 8px}
+.actr:focus{outline:none;border-color:var(--accent)}
+.actr.need{border-color:var(--crit)}
+.actb{display:flex;flex-wrap:wrap;gap:6px}
+.actbtn{background:var(--surface);border:1px solid var(--line);color:var(--ink2);border-radius:6px;
+  font:600 11.5px var(--sans);padding:4px 9px;cursor:pointer}
+.actbtn:hover{border-color:var(--accent);color:var(--ink)}
 .empty{color:var(--muted);padding:16px}
 details.more>summary{list-style:none;cursor:pointer;padding:9px 16px;font-size:12px;color:var(--accent);
   border-top:1px solid var(--border);user-select:none}
@@ -372,7 +396,8 @@ _TREND_JS = """<script>
     function interacting(){
       var a=document.activeElement;
       var typing=a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA');
-      return typing || anyFilterActive();
+      // menu de ação aberto: o refresh fecharia o formulário no meio da ação
+      return typing || anyFilterActive() || !!document.querySelector('details.act[open]');
     }
     setInterval(function(){
       if(interacting()){
@@ -382,6 +407,18 @@ _TREND_JS = """<script>
       location.reload();
     }, secs*1000);
   })();
+
+  // falso positivo / aceitar risco exigem motivo (o servidor também valida):
+  // avisa antes de enviar em vez de mostrar a página de erro.
+  document.querySelectorAll('form.actf').forEach(function(f){
+    f.addEventListener('submit', function(ev){
+      var btn=ev.submitter, r=f.querySelector('.actr');
+      var need=btn && (btn.value==='suppress'||btn.value==='accept');
+      if(need && r && !r.value.trim()){
+        ev.preventDefault(); r.classList.add('need'); r.focus();
+      }
+    });
+  });
 
   document.querySelectorAll('.trend').forEach(function(el){
     var dataEl=el.querySelector('.tdata'), chart=el.querySelector('.chart');

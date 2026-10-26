@@ -6,12 +6,13 @@ Comandos:
   padme events       -> últimos eventos gravados de cada alvo
   padme export       -> estado atual em JSON/CSV
   padme merge        -> consolida exports de várias fontes (multi-vantage)
-  padme web          -> painel só-leitura
+  padme web          -> painel (leitura + ações de finding com CSRF)
   padme api          -> API REST/JSON read-only (/api/v1)
   padme doctor       -> integridade do banco, saúde dos scans e avisos de config
   padme backup       -> backup online consistente do SQLite
   padme health       -> o monitor está varrendo? (exit 0/1, p/ HEALTHCHECK/cron)
   padme test-notify  -> testa todos os canais configurados
+  padme finding      -> problemas abertos: listar, reconhecer, silenciar, aceitar, reabrir
 
 Uso responsável: monitore apenas ativos que você é dono ou tem autorização
 explícita para testar.
@@ -22,11 +23,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import getpass
 import io
 import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +42,7 @@ except ImportError:
 
 from .config import Config
 from .engine import Engine, build_notifiers
+from .findings import ACTIONS, ACTIVE, STATUS_LABEL, STATUSES, human_hours, sla_info
 from .logredact import install_secret_redaction
 from .models import Event
 from .risk import Level
@@ -100,6 +104,9 @@ async def _cmd_scan(cfg: Config, args) -> int:
                 log.debug("erro: %s", err)
             if o.flapped:
                 print(f"[{target}] {o.flapped} evento(s) suprimido(s) da notificação (flapping).")
+            if o.muted:
+                print(f"[{target}] {o.muted} evento(s) de finding(s) silenciado(s)/aceito(s) "
+                      "não notificado(s).")
             if o.failed_channels:
                 print(f"[{target}] notificação falhou em: {', '.join(o.failed_channels)}"
                       + (f" ({o.queued} alerta(s) grave(s) na fila de reenvio)" if o.queued else ""))
@@ -408,6 +415,83 @@ async def _cmd_health(cfg: Config, args) -> int:
     return 0
 
 
+def _actor(args) -> str:
+    """Quem fez a ação (trilha de auditoria): --by, ou o usuário do SO."""
+    if getattr(args, "by", None):
+        return args.by
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 — sem usuário resolvível (container sem passwd)
+        return "cli"
+
+
+def _sla_text(row: dict, sla_hours: dict) -> str:
+    info = sla_info(row, time.time(), sla_hours)
+    if not info or not info["limit_h"]:
+        return "—"
+    if info["breached"]:
+        return f"estourado há {human_hours(info['left_h'])}"
+    return f"vence em {human_hours(info['left_h'])}"
+
+
+async def _cmd_finding(cfg: Config, args) -> int:
+    storage = Storage(cfg.db_path)
+    try:
+        if args.action == "list":
+            if args.all:
+                rows = storage.list_findings(target=args.target, status=args.status)
+            elif args.status:
+                rows = storage.list_findings(target=args.target, status=args.status)
+            else:  # padrão: só o que pede ação
+                rows = [r for r in storage.list_findings(target=args.target)
+                        if r["status"] in ACTIVE]
+            if not rows:
+                print("nenhum finding" + (" com esse filtro." if (args.status or args.target)
+                                           else " ativo. (--all mostra tratados e resolvidos)"))
+                return 0
+            print(f"{'ID':<10}  {'ESTADO':<12}  {'SEV':<8}  {'IDADE':>6}  {'PRAZO':<18}  "
+                  f"{'ALVO':<20}  PROBLEMA")
+            now = time.time()
+            for r in rows:
+                age = human_hours((now - r["opened_at"]) / 3600)
+                print(f"{r['finding_id'][:10]:<10}  {STATUS_LABEL.get(r['status'], r['status']):<12}  "
+                      f"{r['severity']:<8}  {age:>6}  {_sla_text(r, cfg.findings.sla_hours):<18}  "
+                      f"{r['target']:<20}  {r['title']}")
+            return 0
+        if not args.id:
+            print(f"informe o id do finding: padme finding {args.action} <id>", file=sys.stderr)
+            return 2
+        try:
+            if args.action == "show":
+                row = storage.get_finding(args.id)
+                if row is None:
+                    raise ValueError(f"finding não encontrado: {args.id}")
+                print(f"{row['finding_id']}  [{STATUS_LABEL.get(row['status'], row['status'])}]  "
+                      f"{row['severity']}")
+                print(f"  {row['title']}")
+                print(f"  alvo: {row['target']} · kind: {row['kind']} · key: {row['key']}")
+                print(f"  visto: {_iso(row['first_seen'])} → {_iso(row['last_seen'])}"
+                      f"{'' if row['present'] else ' (ausente no estado atual)'}"
+                      f" · reaberto {row['reopen_count']}x · prazo: "
+                      f"{_sla_text(row, cfg.findings.sla_hours)}")
+                print("  histórico:")
+                for h in storage.finding_history(row["finding_id"]):
+                    frm = STATUS_LABEL.get(h["from_status"], h["from_status"] or "—")
+                    print(f"    {_iso(h['ts'])}  {frm} → {STATUS_LABEL.get(h['to_status'], h['to_status'])}"
+                          f"  por {h['actor'] or '?'}" + (f": {h['reason']}" if h["reason"] else ""))
+                return 0
+            row = storage.set_finding_status(args.id, args.action, reason=args.reason or "",
+                                             actor=_actor(args))
+        except ValueError as exc:
+            print(f"erro: {exc}", file=sys.stderr)
+            return 1
+        print(f"{row['finding_id'][:10]} → {STATUS_LABEL.get(row['status'], row['status'])}: "
+              f"{row['title']}")
+        return 0
+    finally:
+        storage.close()
+
+
 async def _cmd_test_notify(cfg: Config, args) -> int:
     notifiers = build_notifiers(cfg)
     if not notifiers:
@@ -488,6 +572,17 @@ def build_parser() -> argparse.ArgumentParser:
                     help="idade máxima do último scan (padrão: 2*interval_seconds + 600)")
     hp.set_defaults(func=_cmd_health)
 
+    fp = sub.add_parser("finding", help="ciclo de vida dos problemas: list/show/ack/suppress/accept/reopen")
+    fp.add_argument("action", choices=["list", "show", *ACTIONS],
+                    help="list (padrão: só ativos) | show <id> | ack | suppress | accept | reopen <id>")
+    fp.add_argument("id", nargs="?", help="id do finding (ou prefixo único com 6+ caracteres)")
+    fp.add_argument("--reason", help="motivo (obrigatório em suppress/accept; vai p/ a auditoria)")
+    fp.add_argument("--by", help="quem está agindo (padrão: usuário do sistema)")
+    fp.add_argument("--target", help="list: só este alvo")
+    fp.add_argument("--status", choices=list(STATUSES), help="list: só este status")
+    fp.add_argument("--all", action="store_true", help="list: inclui tratados e resolvidos")
+    fp.set_defaults(func=_cmd_finding)
+
     mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
     mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
     mg.add_argument("--out", default=None, help="grava a consolidação em JSON (padrão: resumo no stdout)")
@@ -519,7 +614,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # comandos que não varrem alvos não exigem confirmação de escopo
     read_only = args.command in ("events", "export", "test-notify", "web", "api", "doctor", "merge", "backup",
-                                 "health")
+                                 "health", "finding")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"
