@@ -8,21 +8,14 @@ serve) para ser testável e legível sozinho.
 from __future__ import annotations
 
 from .evidence import evidence_of
-from .mailpolicy import SPF_INCLUDE_UNREGISTERED
-from .mailpolicy import findings as mail_findings
-from .models import Kind
+from .findings import (
+    ACTIVE,
+    MUTED,
+    OPEN,
+    _evidence_facts,  # noqa: F401 — reexport (a derivação mora em findings)
+    derive,
+)
 from .risk import Level, assess
-
-
-def _evidence_facts(kind: Kind, key: str, value: str, metadata: dict | None) -> str:
-    """Prova normalizada compacta ('tipo — k=v · k=v') p/ o cartão de finding
-    agregado, ou '' se não houver. Mesma projeção do webhook/timeline (evidence_of)."""
-    ev = evidence_of(kind, key, value, metadata)
-    if not ev:
-        return ""
-    typ = ev.get("type", "")
-    facts = " · ".join(f"{k}={v}" for k, v in ev.items() if k != "type")
-    return f"{typ} — {facts}" if facts else typ
 
 
 def _prioritize_events(events: list):
@@ -35,41 +28,35 @@ def _prioritize_events(events: list):
     return scored
 
 
-def _collect_problems(by_target: dict, meta: dict) -> list[dict]:
-    """Varre o estado atual e devolve os problemas abertos, mais grave primeiro."""
+def _collect_problems(by_target: dict, meta: dict,
+                      statuses: dict[str, dict] | None = None,
+                      include_muted: bool = False) -> list[dict]:
+    """Problemas abertos do estado atual, mais grave primeiro.
+
+    `statuses`: {finding_id: linha da tabela findings} — anota status/idade em
+    cada problema e tira da lista os silenciados/aceitos (vão para "tratados"
+    com `include_muted=True`). Sem `statuses` (banco antigo/teste), tudo conta
+    como aberto, como antes do lifecycle."""
+    statuses = statuses or {}
     prob: list[dict] = []
     for target, kinds in by_target.items():
-        for it in kinds.get("takeover", []):
-            prob.append({"rank": 4, "cls": "s-crit", "sev": "crítico", "kind": "TAKEOVER",
-                         "who": it["key"], "det": it["value"], "tgt": target,
-                         "evidence": _evidence_facts(Kind.TAKEOVER, it["key"], it["value"], it.get("metadata"))})
-        for it in kinds.get("cert_expiry", []):
-            expired = "EXPIRAD" in (it["value"] or "").upper()
-            prob.append({"rank": 4 if expired else 3,
-                         "cls": "s-crit" if expired else "s-serious",
-                         "sev": "expirado" if expired else "expira",
-                         "kind": "CERT", "who": it["key"], "det": it["value"], "tgt": target,
-                         "evidence": _evidence_facts(Kind.CERT_EXPIRY, it["key"], it["value"], it.get("metadata"))})
-        for it in kinds.get("wildcard", []):
-            prob.append({"rank": 2, "cls": "s-warn", "sev": "atenção", "kind": "WILDCARD",
-                         "who": it["key"], "det": f"catch-all {it['value']}", "tgt": target,
-                         "evidence": _evidence_facts(Kind.WILDCARD, it["key"], it["value"], it.get("metadata"))})
-        for it in kinds.get("mailsec", []):  # política de e-mail publicada, mas fraca
-            md = it.get("metadata") or {}
-            for f in mail_findings(it["key"], it["value"], md):
-                crit = f.code == SPF_INCLUDE_UNREGISTERED  # takeover de e-mail = crítico
-                prob.append({"rank": 4 if crit else (3 if f.high else 2),
-                             "cls": "s-crit" if crit else ("s-serious" if f.high else "s-warn"),
-                             "sev": "crítico" if crit else ("fraco" if f.high else "atenção"),
-                             "kind": "E-MAIL",
-                             "who": it["key"].split("|", 1)[0], "det": f.label, "tgt": target,
-                             "evidence": _evidence_facts(Kind.MAILSEC, it["key"], it["value"], md)})
-    # coleta parcial por alvo (não é da superfície, mas é um problema operacional)
-    for target, m in meta.items():
-        if m and m.get("last_partial"):
-            n = m.get("last_error_count") or "?"
-            prob.append({"rank": 2, "cls": "s-warn", "sev": "atenção", "kind": "COLETA",
-                         "who": target, "det": f"coleta parcial — {n} erro(s) de collector", "tgt": target})
+        for f in derive(target, kinds):
+            row = statuses.get(f["id"]) or {}
+            st = row.get("status") or OPEN
+            if st not in ACTIVE and st not in MUTED:
+                st = OPEN  # 'resolved' no banco mas presente no estado: o scan reabre
+            if (st in MUTED) != include_muted:
+                continue
+            prob.append({**f, "status": st, "row": row})
+    if not include_muted:
+        # coleta parcial por alvo (não é da superfície, mas é um problema operacional;
+        # transitório, então sem lifecycle — some sozinho na próxima coleta completa)
+        for target, m in meta.items():
+            if m and m.get("last_partial"):
+                n = m.get("last_error_count") or "?"
+                prob.append({"rank": 2, "cls": "s-warn", "sev": "atenção", "kind": "COLETA",
+                             "who": target, "det": f"coleta parcial — {n} erro(s) de collector",
+                             "tgt": target, "status": OPEN, "row": {}})
     prob.sort(key=lambda p: (-p["rank"], p["tgt"], p["who"]))
     return prob
 

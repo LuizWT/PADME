@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from .context import AssetContext, ContextConfig
+from .findings import DEFAULT_SLA_HOURS
 
 _TRUE = {"true", "1", "yes", "y", "on", "sim"}
 _FALSE = {"false", "0", "no", "n", "off", "nao", "não", ""}
@@ -194,10 +195,22 @@ class WebConfig:
     port: int = 8787
     token: str = ""
     vantage_dir: str = ""
+    # ações de finding (reconhecer/silenciar/aceitar/reabrir) pelo painel. Com
+    # token de CSRF e checagem de origem; nunca liga em painel exposto SEM auth.
+    # false = painel volta a ser estritamente read-only (ações só pela CLI).
+    actions: bool = True
 
     def resolved(self) -> "WebConfig":
         return WebConfig(bind=self.bind, port=self.port, token=_expand(self.token),
-                         vantage_dir=self.vantage_dir)
+                         vantage_dir=self.vantage_dir, actions=self.actions)
+
+
+@dataclass
+class FindingsConfig:
+    """Ciclo de vida de finding. `sla_hours`: prazo para tratar, por severidade,
+    contado desde a (re)abertura; 0 = sem prazo. Reconhecer (ack) não para o
+    relógio — só silenciar, aceitar o risco ou o problema sumir."""
+    sla_hours: dict[str, int] = field(default_factory=lambda: dict(DEFAULT_SLA_HOURS))
 
 
 @dataclass
@@ -273,6 +286,7 @@ class Config:
     alerts: AlertsConfig = field(default_factory=AlertsConfig)
     web: WebConfig = field(default_factory=WebConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    findings: FindingsConfig = field(default_factory=FindingsConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
@@ -315,6 +329,7 @@ class Config:
         al = raw.get("alerts") or {}
         web = raw.get("web") or {}
         api = raw.get("api") or {}
+        fnd = raw.get("findings") or {}
         ctx = raw.get("context") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
@@ -379,12 +394,14 @@ class Config:
                 port=_as_int(web.get("port"), "web.port", 8787),
                 token=str(web.get("token", "")),
                 vantage_dir=str(web.get("vantage_dir", "")).strip(),
+                actions=_as_bool(web.get("actions"), True),
             ).resolved(),
             api=ApiConfig(
                 bind=str(api.get("bind", "127.0.0.1")).strip() or "127.0.0.1",
                 port=_as_int(api.get("port"), "api.port", 8788),
                 token=str(api.get("token", "")),
             ).resolved(),
+            findings=FindingsConfig(sla_hours=_parse_sla(fnd.get("sla_hours"))),
             context=_parse_context(ctx),
             telegram=TelegramConfig(
                 enabled=_as_bool(tg.get("enabled"), False),
@@ -425,6 +442,25 @@ class Config:
         _validate(cfg)
         cfg.warnings = _unknown_keys(raw)
         return cfg
+
+
+def _parse_sla(raw) -> dict[str, int]:
+    """findings.sla_hours: {critical|high|medium: horas}. Ausente -> padrão;
+    severidade omitida mantém o padrão dela; desconhecida ou negativa -> erro."""
+    out = dict(DEFAULT_SLA_HOURS)
+    if raw in (None, ""):
+        return out
+    if not isinstance(raw, dict):
+        raise ValueError("findings.sla_hours deve ser um mapa {critical|high|medium: horas}")
+    for sev, hours in raw.items():
+        if sev not in DEFAULT_SLA_HOURS:
+            raise ValueError(f"findings.sla_hours: severidade desconhecida '{sev}' "
+                             f"(use {', '.join(DEFAULT_SLA_HOURS)})")
+        h = _as_int(hours, f"findings.sla_hours.{sev}", 0)
+        if h < 0:
+            raise ValueError(f"findings.sla_hours.{sev} deve ser >= 0 (0 = sem prazo)")
+        out[sev] = h
+    return out
 
 
 _CRITICALITY = {"low", "medium", "high", "critical", "unknown"}
@@ -536,6 +572,7 @@ _SECTIONS: dict[str, set[str]] = {
     "alerts": _names(AlertsConfig),
     "web": _names(WebConfig),
     "api": _names(ApiConfig),
+    "findings": _names(FindingsConfig),
     "context": {"assets"},
     "telegram": _names(TelegramConfig),
     "discord": _names(DiscordConfig),

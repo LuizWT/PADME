@@ -2,8 +2,8 @@
 
 Formaliza o que o `/export` já fazia (JSON sob token) como contrato estável para
 automação: SIEM, ticketing, dashboards próprios. Tudo é **GET** e **somente
-leitura** — ações de escrita (ack/suppress de finding) dependem do lifecycle de
-finding, que ainda não existe (ver ideias.md), então nem são roteadas.
+leitura**. Ações de finding (reconhecer/silenciar/aceitar/reabrir) ficam na CLI
+(`padme finding`) e no painel; aqui elas só são LIDAS (status + auditoria).
 
 Design (ideias.md §4):
   - versionada em `/api/v1`; `schema_version` em toda resposta (contrato aditivo);
@@ -16,10 +16,12 @@ Endpoints:
   GET /api/v1/surface         -> estado atual (mesmos campos do export)
   GET /api/v1/events          -> eventos com severidade/confiança/razões (risk.assess)
   GET /api/v1/health          -> liveness por alvo (último scan, inconclusivos)
+  GET /api/v1/findings        -> ciclo de vida dos problemas (status, prazo, motivo)
 
 Filtros comuns: ?target= (exato, ou substring se não casar exato), ?kind=.
 Eventos: ?type=added|removed|changed, ?min_severity=low|medium|high|critical,
-?since=<unix|ISO-8601>. Paginação: ?limit= (1..1000), ?offset=.
+?since=<unix|ISO-8601>. Findings: ?status= (repetível; padrão: open e
+acknowledged; `all` = todos). Paginação: ?limit= (1..1000), ?offset=.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from datetime import datetime, timezone
 
 from . import __version__
 from .config import Config
+from .findings import ACTIVE, STATUSES, sla_info
 from .notify.webhook import event_to_dict
 from .risk import Level, parse_level, severity
 from .storage import Storage, StorageOutdated
@@ -163,6 +166,40 @@ def _health(cfg: Config, params: dict) -> dict:
     return {"targets": targets}
 
 
+def _findings(cfg: Config, params: dict) -> dict:
+    only = params.get("target", [None])[0]
+    wanted = [st for st in params.get("status", []) if st]
+    if "all" in wanted:
+        wanted = list(STATUSES)
+    wanted = [st for st in wanted if st in STATUSES] or sorted(ACTIVE)
+    storage = _open_ro(cfg)
+    rows: list[dict] = []
+    if storage is not None:
+        try:
+            rows = storage.list_findings()
+        finally:
+            storage.close()
+    rows = _match_target([r for r in rows if r["status"] in wanted], only)
+    now = datetime.now(timezone.utc).timestamp()
+    items = []
+    for r in rows:
+        sla = sla_info(r, now, cfg.findings.sla_hours)
+        items.append({
+            "finding_id": r["finding_id"], "target": r["target"], "kind": r["kind"],
+            "key": r["key"], "title": r["title"], "severity": r["severity"],
+            "status": r["status"], "present": bool(r["present"]),
+            "first_seen": _iso(r["first_seen"]), "last_seen": _iso(r["last_seen"]),
+            "opened_at": _iso(r["opened_at"]), "reopen_count": r["reopen_count"],
+            "status_reason": r["status_reason"], "status_by": r["status_by"],
+            "status_at": _iso(r["status_at"]), "resolved_at": _iso(r["resolved_at"]),
+            "sla": None if not sla else {
+                "limit_hours": sla["limit_h"], "age_hours": round(sla["age_h"], 1),
+                "hours_left": None if sla["left_h"] is None else round(sla["left_h"], 1),
+                "breached": sla["breached"]},
+        })
+    return _page(items, params)
+
+
 def _meta(cfg: Config, params: dict) -> dict:
     return {
         "service": "padme",
@@ -170,7 +207,7 @@ def _meta(cfg: Config, params: dict) -> dict:
         "source": cfg.source,
         "targets": len(cfg.targets),
         "endpoints": [f"{_PREFIX}", f"{_PREFIX}/surface", f"{_PREFIX}/events",
-                      f"{_PREFIX}/health"],
+                      f"{_PREFIX}/health", f"{_PREFIX}/findings"],
     }
 
 
@@ -179,6 +216,7 @@ _HANDLERS = {
     f"{_PREFIX}/surface": _surface,
     f"{_PREFIX}/events": _events,
     f"{_PREFIX}/health": _health,
+    f"{_PREFIX}/findings": _findings,
 }
 
 

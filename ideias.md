@@ -17,13 +17,24 @@ capacidade que só se paga com **necessidade operacional real**.
 > Há dependência entre elas. O caminho natural é:
 > **lifecycle de finding** → painel deixa de ser 100% read-only (passa a aceitar
 > ações) → **RBAC/SSO + auditoria** por usuário → **API programática** de escrita.
-> Construir na ordem errada gera retrabalho.
+> Construir na ordem errada gera retrabalho. Os dois primeiros passos já estão
+> feitos (a auditoria registra o autor, mas ainda com um token único, sem papéis).
 
 ---
 
-## 1. Lifecycle de finding
+## 1. Lifecycle de finding — ENTREGUE
 
 `finding_id` persistente · acknowledge / suppress / accepted / close · reopen · SLA
+
+> [!NOTE]
+> Implementado em `padme/findings.py` (lógica pura), tabelas `findings` e
+> `finding_history` (schema v9), `padme finding` na CLI, ações no painel (POST
+> com CSRF e checagem de origem, desligadas em painel exposto sem token) e
+> `GET /api/v1/findings`. Diferenças em relação ao desenho abaixo: "fechar" não
+> é ação manual — só o scan resolve (o problema sumiu do estado), porque fechar
+> à mão algo ainda presente seria desfeito no ciclo seguinte; e silenciado/aceito
+> que some e volta continua tratado (é o mesmo falso positivo). O texto abaixo
+> fica como registro do porquê.
 
 ### Por quê
 

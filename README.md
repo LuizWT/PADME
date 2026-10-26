@@ -433,7 +433,7 @@ python -m padme events --limit 50
 python -m padme export --format json
 python -m padme export --format csv --out superficie.csv
 
-# Painel web read-only (lê o padme.db; atualiza sozinho a cada 30s)
+# Painel web (lê o padme.db; atualiza sozinho a cada 30s)
 python -m padme web            # http://127.0.0.1:8787 (localhost, sem token)
 
 # Painel com token (navegador: login com o token como senha; API: Bearer)
@@ -445,6 +445,15 @@ python -m padme api            # http://127.0.0.1:8788/api/v1 (localhost, sem to
 export PADME_API_TOKEN="$(openssl rand -hex 32)"   # fora de localhost, exigido
 curl -s -H "Authorization: Bearer $PADME_API_TOKEN" \
   "http://127.0.0.1:8788/api/v1/events?min_severity=high&target=alvo.com"
+
+# Problemas abertos: listar, reconhecer, silenciar falso positivo, aceitar risco
+python -m padme finding list                       # só os que pedem ação
+python -m padme finding list --all                 # inclui tratados e resolvidos
+python -m padme finding ack 4a3cadf8               # id ou prefixo (6+ caracteres)
+python -m padme finding suppress 4a3cadf8 --reason "CNAME é nosso (manutenção)"
+python -m padme finding accept 5d9a787e --reason "curinga do CDN, esperado"
+python -m padme finding show 4a3cadf8              # detalhes + trilha de auditoria
+python -m padme finding reopen 4a3cadf8
 
 # Testar todos os canais de notificação configurados
 python -m padme test-notify
@@ -468,6 +477,43 @@ python -m padme merge casa.json vps-eu.json --out consolidado.json
 > **multi-vantage** em `/vantage` quando `web.vantage_dir` aponta para exports
 > de outras fontes (consolida com o `padme merge`).
 
+## Ciclo de vida dos problemas (findings)
+
+Cada problema aberto (takeover, certificado expirando, wildcard de DNS, política
+de e-mail fraca) tem um **id estável**: o mesmo problema mantém o mesmo id entre
+scans, mesmo quando o valor muda ("expira em 6 dias" → "5 dias"). Em cima disso:
+
+| Status | Quando | Conta como aberto? | Notifica? |
+|---|---|---|---|
+| `aberto` | detectado no scan (ou reapareceu) | sim | sim |
+| `reconhecido` | alguém viu e vai tratar (`ack`) | sim | sim |
+| `silenciado` | falso positivo (`suppress`, exige motivo) | não | não |
+| `risco aceito` | decisão consciente (`accept`, exige motivo) | não | não |
+| `resolvido` | sumiu do estado no scan (só o scan resolve) | não | — |
+
+- **Reabre sozinho:** resolvido que volta a aparecer vira `aberto` de novo
+  (com contador de reaberturas e o prazo recomeçando). Silenciado ou aceito que
+  some e volta **continua** tratado: é o mesmo falso positivo.
+- **Prazo (SLA):** `findings.sla_hours` define horas por severidade (padrão:
+  crítico 24h, alto 72h, médio 7 dias), contadas desde a (re)abertura.
+  Reconhecer **não** para o relógio. Passou do prazo, o painel e a CLI mostram
+  "prazo estourado" e o KPI de problemas abertos conta quantos estão atrasados.
+- **Auditoria:** toda mudança fica em `finding_history` (de/para, quem e por
+  quê). No painel com token, o usuário do login entra como autor.
+- **Onde agir:** pela CLI (`padme finding`) ou no painel (menu "ações" em cada
+  problema). A API só lê (`GET /api/v1/findings`).
+
+> [!IMPORTANT]
+> As ações no painel são a única escrita dele: `POST /finding` com **token de
+> CSRF** por processo e checagem de origem (`Origin`/`Sec-Fetch-Site`). Ficam
+> **desligadas sozinhas** se o painel estiver exposto fora de localhost sem
+> token, e `web.actions: false` deixa o painel estritamente read-only.
+
+> [!NOTE]
+> A migração do banco para este formato (schema v9) é feita pelo processo que
+> escreve (`monitor`, `scan` ou `doctor`). Até ele rodar uma vez, o painel
+> responde 503 pedindo a migração, como nas versões anteriores.
+
 > [!TIP]
 > No multi-vantage, atualize todas as instâncias juntas: a partir desta versão o
 > DNS é exportado agregado (`host|A`), então comparar com export de versão
@@ -490,12 +536,14 @@ quebram quem já consome).
 | `GET /api/v1/surface` | estado atual (os mesmos campos do `export`) |
 | `GET /api/v1/events` | eventos com `severity`/`confidence`/`risk` (o mesmo contrato do webhook) |
 | `GET /api/v1/health` | liveness por alvo (último scan, inconclusivos, baseline) |
+| `GET /api/v1/findings` | problemas com status, prazo (SLA), motivo e autor da última ação |
 
 Filtros: `?target=` (exato; cai para substring se não casar), `?kind=`. Em
 `events` também `?type=added|removed|changed`, `?min_severity=low|medium|high|critical`
 (a severidade é calculada pelo `risk.assess`, não só lida do banco) e `?since=`
-(unix ou ISO-8601). Paginação por `?limit=` (1–1000) e `?offset=`, com `count`,
-`total` e `offset` no envelope.
+(unix ou ISO-8601). Em `findings`, `?status=` (repetível; padrão `open` e
+`acknowledged`; `all` traz todos). Paginação por `?limit=` (1–1000) e `?offset=`,
+com `count`, `total` e `offset` no envelope.
 
 ```bash
 # findings CRITICAL/HIGH abertos de um alvo, prontos para um ticket
@@ -505,8 +553,8 @@ curl -s -H "Authorization: Bearer $PADME_API_TOKEN" \
 
 Autenticação é a **mesma Bearer** do painel: sem token só serve em loopback;
 fora de loopback, `padme api` recusa sem token (como o painel) a menos que
-`--allow-no-auth`. Só **leitura** — ações de escrita (`ack`/`suppress` de finding)
-dependem do lifecycle de finding, que ainda não existe, então não são expostas.
+`--allow-no-auth`. Só **leitura**: as ações de finding ficam na CLI
+(`padme finding`) e no painel, e a API expõe o resultado delas em `/findings`.
 
 > [!NOTE]
 > É `http.server` da stdlib, como o painel (zero dependências, mesmo servidor
@@ -690,7 +738,8 @@ padme/
 │   ├── scheduler.py      # ciclo por alvo (scan_one, usado por monitor e scan) + reenvio + heartbeat
 │   ├── heartbeat.py      # dead-man's switch (ping de watchdog + arquivo de vida)
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
-│   ├── webpanel.py       # painel só-leitura (auth Basic/Bearer) + tendência + /vantage (stdlib)
+│   ├── webpanel.py       # painel (auth Basic/Bearer, ações de finding c/ CSRF) + /vantage (stdlib)
+│   ├── findings.py       # ciclo de vida dos problemas: id estável, status, SLA (lógica pura)
 │   ├── api.py            # API REST/JSON read-only e versionada (/api/v1), mesma auth Bearer
 │   ├── panel_metrics.py  # dados dos cartões: problemas, priorização, KPIs §27 (sem HTML)
 │   ├── panel_assets.py   # CSS e JS do painel (strings estáticas)
@@ -716,6 +765,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 445 testes: unitários + reliability + netpolicy +
+└── tests/                # 465 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

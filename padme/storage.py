@@ -4,6 +4,8 @@ Tabelas:
   state   -> foto atual da superfície (um Record por linha, com first/last seen)
   events  -> log imutável do que mudou (added/removed/changed)
   targets -> metadados por alvo (baseline, timestamps de scan)
+  findings / finding_history -> ciclo de vida dos problemas (status, quem
+             mudou e por quê); derivados do `state` a cada scan (padme.findings)
 
 O diff acontece comparando os Records novos de um scan contra o `state`
 guardado do alvo. É aqui que o "o que mudou?" ganha memória.
@@ -31,6 +33,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .findings import ACTIONS, ACTIVE, OPEN, RESOLVED
 from .models import COLLECTOR_OF, Event, EventType, Kind, Record, scope_of, subject_host
 
 
@@ -102,9 +105,43 @@ CREATE TABLE IF NOT EXISTS pending_notifications (
     attempts   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (event_id, channel)
 );
+-- ciclo de vida de finding (v9): estado de NEGÓCIO por cima de state/events.
+-- Uma linha por finding_id estável (padme.findings.finding_id).
+CREATE TABLE IF NOT EXISTS findings (
+    finding_id    TEXT PRIMARY KEY,
+    target        TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    key           TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    severity      TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'open',
+    first_seen    REAL NOT NULL,
+    last_seen     REAL NOT NULL,
+    opened_at     REAL NOT NULL,              -- (re)abertura: base do SLA
+    present       INTEGER NOT NULL DEFAULT 1, -- aparece no estado atual?
+    reopen_count  INTEGER NOT NULL DEFAULT 0,
+    status_reason TEXT,
+    status_by     TEXT,
+    status_at     REAL,
+    resolved_at   REAL
+);
+CREATE INDEX IF NOT EXISTS idx_findings_target ON findings (target, status);
+-- trilha de auditoria: toda mudança de status (do scan ou de uma pessoa)
+CREATE TABLE IF NOT EXISTS finding_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    finding_id  TEXT NOT NULL,
+    ts          REAL NOT NULL,
+    from_status TEXT,
+    to_status   TEXT NOT NULL,
+    reason      TEXT,
+    actor       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_finding_history ON finding_history (finding_id, ts);
 """
 
-_SCHEMA_VERSION = 8  # v7: pending_notifications (criada pelo _SCHEMA); v8: DNS agregado
+# v7: pending_notifications; v8: DNS agregado; v9: findings + finding_history
+# (as tabelas novas vêm do _SCHEMA; o backfill é o próprio próximo scan)
+_SCHEMA_VERSION = 9
 
 
 class StorageOutdated(RuntimeError):
@@ -572,6 +609,132 @@ class Storage:
             self._conn.execute("UPDATE targets SET collectors_health=? WHERE target=?",
                                (_jdump(collectors), target))
         self._conn.commit()
+
+    # -- findings (ciclo de vida) -------------------------------------------
+    def _finding_history(self, fid: str, now: float, frm, to: str, reason: str, actor: str) -> None:
+        self._conn.execute(
+            "INSERT INTO finding_history (finding_id, ts, from_status, to_status, reason, actor)"
+            " VALUES (?,?,?,?,?,?)", (fid, now, frm, to, reason, actor))
+
+    def sync_findings(self, target: str, current: list[dict], now: float | None = None) -> dict:
+        """Reconcilia os findings do alvo com os derivados do estado ATUAL
+        (`padme.findings.derive`). Novo -> open; presente de novo depois de
+        resolvido -> reabre (reopen_count+1, SLA recomeça); sumiu do estado e
+        estava ativo -> resolved. Silenciado/aceito que some só fica ausente:
+        se voltar, continua tratado (é o mesmo falso positivo / risco aceito).
+        Só some do estado o que o scan OBSERVOU sumir (coleta com erro preserva
+        o estado), então "resolvido" aqui não nasce de falha de coleta."""
+        now = time.time() if now is None else now
+        rows = {r["finding_id"]: dict(r) for r in self._conn.execute(
+            "SELECT * FROM findings WHERE target = ?", (target,)).fetchall()}
+        out = {"opened": 0, "reopened": 0, "resolved": 0}
+        seen = set()
+        for f in current:
+            fid = f["id"]
+            seen.add(fid)
+            title = f"{f['kind']} · {f['who']} — {f['det']}"
+            row = rows.get(fid)
+            if row is None:
+                self._conn.execute(
+                    "INSERT INTO findings (finding_id, target, kind, key, title, severity, status,"
+                    " first_seen, last_seen, opened_at, present) VALUES (?,?,?,?,?,?,?,?,?,?,1)",
+                    (fid, target, f["src_kind"], f["src_key"], title, f["severity"], OPEN,
+                     now, now, now))
+                self._finding_history(fid, now, None, OPEN, "detectado no scan", "scan")
+                out["opened"] += 1
+                continue
+            if row["status"] == RESOLVED:
+                self._conn.execute(
+                    "UPDATE findings SET status=?, opened_at=?, resolved_at=NULL,"
+                    " reopen_count=reopen_count+1, status_reason=?, status_by='scan', status_at=?"
+                    " WHERE finding_id=?", (OPEN, now, "reapareceu no scan", now, fid))
+                self._finding_history(fid, now, RESOLVED, OPEN, "reapareceu no scan", "scan")
+                out["reopened"] += 1
+            self._conn.execute(
+                "UPDATE findings SET last_seen=?, present=1, title=?, severity=? WHERE finding_id=?",
+                (now, title, f["severity"], fid))
+        for fid, row in rows.items():
+            if fid in seen or not row["present"]:
+                continue
+            if row["status"] in ACTIVE:
+                self._conn.execute(
+                    "UPDATE findings SET status=?, present=0, resolved_at=?, status_reason=?,"
+                    " status_by='scan', status_at=? WHERE finding_id=?",
+                    (RESOLVED, now, "não observado no scan", now, fid))
+                self._finding_history(fid, now, row["status"], RESOLVED, "não observado no scan", "scan")
+                out["resolved"] += 1
+            else:
+                self._conn.execute("UPDATE findings SET present=0 WHERE finding_id=?", (fid,))
+        self._conn.commit()
+        return out
+
+    def finding_rows(self, targets: list[str] | None = None) -> dict[str, dict]:
+        """{finding_id: linha} (todos os status), opcionalmente por alvo."""
+        q, params = "SELECT * FROM findings", ()
+        if targets:
+            q += f" WHERE target IN ({','.join('?' * len(targets))})"
+            params = tuple(targets)
+        return {r["finding_id"]: dict(r) for r in self._conn.execute(q, params).fetchall()}
+
+    def list_findings(self, target: str | None = None, status: str | None = None) -> list[dict]:
+        """Findings para CLI/API, mais recentes (re)abertos primeiro."""
+        q, params = "SELECT * FROM findings WHERE 1=1", []
+        if target:
+            q += " AND target = ?"
+            params.append(target)
+        if status:
+            q += " AND status = ?"
+            params.append(status)
+        q += " ORDER BY opened_at DESC, finding_id"
+        return [dict(r) for r in self._conn.execute(q, params).fetchall()]
+
+    def get_finding(self, ref: str) -> dict | None:
+        """Busca por id completo ou PREFIXO único (>= 6 hex, como no git).
+        Prefixo ambíguo -> ValueError (não escolhe um ao acaso)."""
+        ref = (ref or "").strip().lower()
+        if len(ref) < 6 or any(c not in "0123456789abcdef" for c in ref):
+            return None
+        rows = self._conn.execute(
+            "SELECT * FROM findings WHERE finding_id LIKE ? LIMIT 2", (ref + "%",)).fetchall()
+        if len(rows) > 1:
+            raise ValueError(f"prefixo ambíguo: {ref} (use mais caracteres)")
+        return dict(rows[0]) if rows else None
+
+    def set_finding_status(self, ref: str, action: str, reason: str = "", actor: str = "",
+                           now: float | None = None) -> dict:
+        """Aplica uma ação do analista (`ack`/`suppress`/`accept`/`reopen`) e
+        grava na trilha de auditoria. Devolve a linha atualizada.
+
+        ValueError: ação inválida, finding inexistente, já resolvido (o scan é
+        quem resolve/reabre) ou já no status pedido. `suppress`/`accept` exigem
+        motivo: é a memória de POR QUE aquilo deixou de ser problema."""
+        now = time.time() if now is None else now
+        to = ACTIONS.get(action)
+        if to is None:
+            raise ValueError(f"ação inválida: {action} (use {', '.join(ACTIONS)})")
+        row = self.get_finding(ref)
+        if row is None:
+            raise ValueError(f"finding não encontrado: {ref}")
+        if row["status"] == RESOLVED:
+            raise ValueError("finding resolvido (sumiu do estado): nada a tratar")
+        if row["status"] == to:
+            raise ValueError(f"finding já está como {to}")
+        reason = (reason or "").strip()[:500]
+        if action in ("suppress", "accept") and not reason:
+            raise ValueError("informe o motivo (--reason): fica na trilha de auditoria")
+        actor = (actor or "").strip()[:100] or "?"
+        opened = now if action == "reopen" else row["opened_at"]
+        self._conn.execute(
+            "UPDATE findings SET status=?, status_reason=?, status_by=?, status_at=?, opened_at=?"
+            " WHERE finding_id=?", (to, reason or None, actor, now, opened, row["finding_id"]))
+        self._finding_history(row["finding_id"], now, row["status"], to, reason, actor)
+        self._conn.commit()
+        return self.get_finding(row["finding_id"])
+
+    def finding_history(self, finding_id: str) -> list[dict]:
+        return [dict(r) for r in self._conn.execute(
+            "SELECT ts, from_status, to_status, reason, actor FROM finding_history"
+            " WHERE finding_id = ? ORDER BY ts, id", (finding_id,)).fetchall()]
 
     def prune_events(self, retention_days: int) -> int:
         """Apaga eventos mais antigos que `retention_days` (0/negativo = mantém
