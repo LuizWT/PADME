@@ -455,6 +455,11 @@ python -m padme finding accept 5d9a787e --reason "curinga do CDN, esperado"
 python -m padme finding show 4a3cadf8              # detalhes + trilha de auditoria
 python -m padme finding reopen 4a3cadf8
 
+# Resumo do período (o mesmo que o monitor manda no horário agendado)
+python -m padme digest --print             # só mostra no terminal
+python -m padme digest --print --hours 168 # última semana
+python -m padme digest                     # envia agora aos canais
+
 # Testar todos os canais de notificação configurados
 python -m padme test-notify
 
@@ -638,6 +643,11 @@ nunca em 4xx):
   }
   ```
 
+  O resumo periódico chega como `"type": "digest"`, com `title`, `text` (a
+  mesma versão legível dos outros canais) e `digest` (os números por alvo:
+  mudanças, abertos por severidade, prazos estourados, novos, resolvidos,
+  destaques e saúde da coleta), para a automação montar o próprio relatório.
+
   > Contrato **aditivo** (`schema_version` só muda se algum campo for removido):
   > `confidence`, `risk.rule_id`/`risk.reasons` (códigos estáveis), `source`,
   > `context`, `evidence` (a prova normalizada — `tcp_connect`/`http_response`/
@@ -676,6 +686,46 @@ Teste todos de uma vez com `python -m padme test-notify`.
   agende `padme monitor --once --lock /tmp/padme.lock` — um ciclo por vez, sem
   sobrepor execuções (o `--lock` sai na hora se o ciclo anterior ainda roda).
 - **tmux/screen**: pro rápido e sujo.
+
+### Resumo periódico
+
+O alerta em tempo real só fala quando algo muda. Para saber, de tempos em
+tempos, como está tudo, ligue `digest.enabled`: no horário agendado (diário ou
+semanal, hora local) o monitor manda um resumo do período nos canais.
+
+```text
+Resumo diário · 2 problema(s) aberto(s)
+Período: 25/10 09:00 → 26/10 09:00
+
+3 alvo(s) · 2 problema(s) aberto(s): 1 crítico, 1 alto · 1 com prazo estourado
+Mudanças (sem DNS): +5 · ~0 · −0
+Coleta: 2 de 3 alvo(s) completos e em dia
+
+acme.com
+  abertos: 1 (1 crítico) · prazo estourado: 1
+  mudanças: +4 · ~0 · −0
+  [crítico] takeover blog.acme.com GitHub Pages
+  [crítico] port db.acme.com:3389 open
+  tratados (falso positivo/risco aceito): 1
+
+example.org
+  abertos: 1 (1 alto)
+  coleta parcial · degradado: ports
+
+Sem novidade: loja.dev
+```
+
+- **Período:** desde o último resumo enviado, gravado no banco. Reiniciar o
+  monitor não duplica nem pula. No primeiro uso ele só agenda; o primeiro resumo
+  sai no próximo horário.
+- **No horário:** o monitor acorda para o resumo mesmo no meio do intervalo de
+  scan. Com `monitor --once` (cron), sai no primeiro ciclo depois do horário.
+- **Mesmas regras do painel:** mudanças sem DNS (como o gráfico), findings pelo
+  ciclo de vida (silenciado/aceito não conta como aberto nem vira destaque) e
+  destaques só HIGH ou CRITICAL. Alvo sem scan recente aparece com ATENÇÃO.
+- **Canais:** `digest.channels` escolhe quais (vazio = todos). O resumo ignora o
+  `level` do canal: é um resumo, não um alerta. Se nenhum canal entrega, tenta
+  de novo no ciclo seguinte.
 
 > [!NOTE]
 > **Heartbeat / dead-man's switch.** Um processo morto não avisa que morreu —
@@ -740,6 +790,7 @@ padme/
 │   ├── singleton.py      # lock de instância única (fcntl/msvcrt) p/ cron
 │   ├── webpanel.py       # painel (auth Basic/Bearer, ações de finding c/ CSRF) + /vantage (stdlib)
 │   ├── findings.py       # ciclo de vida dos problemas: id estável, status, SLA (lógica pura)
+│   ├── digest.py         # resumo periódico: agenda, dados do período e texto dos canais
 │   ├── api.py            # API REST/JSON read-only e versionada (/api/v1), mesma auth Bearer
 │   ├── panel_metrics.py  # dados dos cartões: problemas, priorização, KPIs §27 (sem HTML)
 │   ├── panel_assets.py   # CSS e JS do painel (strings estáticas)
@@ -765,6 +816,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 465 testes: unitários + reliability + netpolicy +
+└── tests/                # 477 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

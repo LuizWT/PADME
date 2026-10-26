@@ -156,14 +156,17 @@ class DiscordNotifier:
         return bool(self.webhook_url)
 
     async def _post_chunks(self, text: str) -> NotificationResult:
+        return await self._post_messages(chunk_text(text, 1900) if text else [])  # limite 2000
+
+    async def _post_messages(self, messages: list[str]) -> NotificationResult:
         if not self.configured:
             return NotificationResult(self.name, ok=False, error="não configurado")
-        if not text:
+        if not messages:
             return NotificationResult(self.name, ok=True, attempts=0)
         attempts = 0
         last: NotificationResult | None = None
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            for chunk in chunk_text(text, 1900):  # Discord: limite 2000
+            for chunk in messages:
                 r = await post_with_retry(client, self.webhook_url, self.name,
                                           json={"content": chunk})
                 attempts += r.attempts
@@ -179,6 +182,15 @@ class DiscordNotifier:
 
     async def announce(self, msg: str) -> NotificationResult:
         return await self._post_chunks(f"**Padmé** — {msg}")
+
+    async def send_digest(self, title: str, text: str, data: dict) -> NotificationResult:
+        # corpo em bloco de código: `*.alvo.com` e `_` não viram markdown. Cada
+        # pedaço fecha o próprio bloco (o corte no limite não quebra a cerca);
+        # crase no texto vira aspa para não fechar o bloco antes da hora.
+        msgs = [f"```\n{c}\n```" for c in chunk_text(text.replace("`", "'"), 1880)]
+        if msgs:
+            msgs[0] = f"**Padmé · {title}**\n" + msgs[0]
+        return await self._post_messages(msgs)
 
 
 class WebhookNotifier:
@@ -237,4 +249,17 @@ class WebhookNotifier:
             "type": "announce",
             "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "text": msg,
+        })
+
+    async def send_digest(self, title: str, text: str, data: dict) -> NotificationResult:
+        """Resumo estruturado: `digest` traz os números (para automação montar o
+        próprio relatório); `text` é a mesma versão legível dos outros canais."""
+        return await self._post({
+            "schema_version": WEBHOOK_SCHEMA_VERSION,
+            "source": "padme",
+            "type": "digest",
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "title": title,
+            "text": text,
+            "digest": data,
         })

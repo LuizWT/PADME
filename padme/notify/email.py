@@ -124,3 +124,6 @@ class EmailNotifier:
 
     async def announce(self, msg: str) -> NotificationResult:
         return await self._send("[Padmé] status", f"Padmé — {msg}")
+
+    async def send_digest(self, title: str, text: str, data: dict) -> NotificationResult:
+        return await self._send(f"[Padmé] {title}", text)
