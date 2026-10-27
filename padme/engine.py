@@ -172,7 +172,9 @@ class Engine:
                     result.mark_collector("bruteforce", False)
                     result.errors.append(f"bruteforce: {exc}")
             col = self.cfg.collectors
-            if col.passive and col.passive_sources and self._passive_due(target):
+            # segue o interruptor da descoberta: `subdomains: false` desliga tudo
+            if (col.subdomains and col.passive and col.passive_sources
+                    and self._passive_due(target)):
                 try:
                     cr = await passive.collect(
                         target, col.passive_sources, col.passive_keys, col.passive_timeout,

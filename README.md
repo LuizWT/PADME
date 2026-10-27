@@ -149,7 +149,9 @@ não trazer ruído:
   exigindo prova de DNS), e uma fonte fora do ar não deixa a coleta "parcial"
   nem adia a baseline. A saúde delas aparece como o collector `passive`.
 - **No máximo a cada `passive_every_hours`** (padrão 24h) por alvo: elas mudam
-  devagar e têm cota.
+  devagar e têm cota. São consultadas em paralelo, cada uma com prazo total de
+  `passive_timeout` (padrão 20s), e seguem o `collectors.subdomains`: desligar
+  a descoberta desliga também estas fontes.
 - **Cliente HTTP próprio, com verificação de TLS** (o cliente dos alvos roda com
   `verify=False`), porque leva chave de API. As chaves vão em `passive_keys` com
   `${VAR}` do `.env` e são mascaradas no log.
@@ -845,6 +847,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 485 testes: unitários + reliability + netpolicy +
+└── tests/                # 487 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

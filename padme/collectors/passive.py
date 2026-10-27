@@ -26,6 +26,7 @@ rate-limit do resto). Use somente em alvos autorizados.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -119,28 +120,34 @@ async def _fetch(client: httpx.AsyncClient, name: str, apex: str, key: str) -> s
 async def query_sources(apex: str, sources: list[str], keys: dict[str, str],
                         timeout: float, transport: httpx.AsyncBaseTransport | None = None,
                         ) -> tuple[set[str], dict[str, str]]:
-    """Consulta as fontes. Devolve (nomes sob o apex, status por fonte). Uma
-    fonte que falha não derruba as outras. `transport`: injeção p/ testes."""
+    """Consulta as fontes EM PARALELO. Devolve (nomes sob o apex, status por
+    fonte). Uma fonte que falha não derruba as outras. `timeout` é o prazo
+    TOTAL de cada fonte (o do httpx vale por operação: uma resposta que chega
+    devagar, aos pedaços, passaria dele). `transport`: injeção p/ testes."""
+
+    async def one(client: httpx.AsyncClient, name: str) -> tuple[str, set[str]]:
+        src = SOURCES.get(name)
+        if src is None:
+            return "desconhecida", set()
+        key = (keys or {}).get(name, "")
+        if src.key_required and not key:
+            return "sem chave", set()
+        try:
+            got = await asyncio.wait_for(_fetch(client, name, apex, key), timeout)
+        except asyncio.TimeoutError:
+            return "erro (prazo esgotado)", set()
+        except Exception as exc:  # noqa: BLE001 — fonte externa: falha é esperada
+            return f"erro ({type(exc).__name__})", set()
+        return f"{len(got)} nome(s)", got
+
     names: set[str] = set()
     status: dict[str, str] = {}
     async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": _USER_AGENT},
                                  follow_redirects=False, transport=transport) as client:
-        for name in sources:
-            src = SOURCES.get(name)
-            if src is None:
-                status[name] = "desconhecida"
-                continue
-            key = (keys or {}).get(name, "")
-            if src.key_required and not key:
-                status[name] = "sem chave"
-                continue
-            try:
-                got = await _fetch(client, name, apex, key)
-            except Exception as exc:  # noqa: BLE001 — fonte externa: falha é esperada
-                status[name] = f"erro ({type(exc).__name__})"
-                continue
-            status[name] = f"{len(got)} nome(s)"
-            names |= got
+        results = await asyncio.gather(*(one(client, n) for n in sources))
+    for name, (st, got) in zip(sources, results):
+        status[name] = st
+        names |= got
     names.discard(apex)
     return names, status
 

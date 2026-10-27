@@ -303,7 +303,7 @@ class CollectorsConfig:
     passive_sources: list[str] = field(default_factory=lambda: list(_PASSIVE_DEFAULT))
     passive_keys: dict[str, str] = field(default_factory=dict)  # securitytrails/virustotal/otx
     passive_every_hours: int = 24     # consulta no máx. a cada N horas por alvo (cota)
-    passive_timeout: float = 30.0     # s por fonte (wayback é lento em domínio grande)
+    passive_timeout: float = 20.0     # s, prazo TOTAL por fonte (consultadas em paralelo)
     passive_max_candidates: int = 2000  # teto de nomes novos resolvidos por consulta
 
 
@@ -418,7 +418,7 @@ class Config:
                               for k, v in (col.get("passive_keys") or {}).items()},
                 passive_every_hours=_as_int(col.get("passive_every_hours"),
                                             "collectors.passive_every_hours", 24),
-                passive_timeout=_as_float(col.get("passive_timeout"), "collectors.passive_timeout", 30.0),
+                passive_timeout=_as_float(col.get("passive_timeout"), "collectors.passive_timeout", 20.0),
                 passive_max_candidates=_as_int(col.get("passive_max_candidates"),
                                                "collectors.passive_max_candidates", 2000),
             ),

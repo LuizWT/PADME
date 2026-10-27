@@ -189,3 +189,43 @@ def test_redacao_de_header_de_chave():
     assert redact("{'x-apikey': 'deadbeef'}") == "{'x-apikey': 'REDACTED'}"
     assert redact("X-OTX-API-KEY=zz9") == "X-OTX-API-KEY=REDACTED"
     assert redact("a apikey é obrigatória") == "a apikey é obrigatória"
+
+
+@pytest.mark.passive_sources
+def test_prazo_total_por_fonte_e_consulta_em_paralelo():
+    import time
+
+    async def lento(req):
+        await asyncio.sleep(1.0)                 # resposta que nunca chega a tempo
+        return httpx.Response(200, json=[])
+
+    t0 = time.monotonic()
+    names, status = asyncio.run(passive.query_sources(
+        APEX, ["certspotter", "otx", "wayback"], {}, 0.2, transport=httpx.MockTransport(lento)))
+    elapsed = time.monotonic() - t0
+    assert names == set() and set(status.values()) == {"erro (prazo esgotado)"}
+    assert elapsed < 0.6                         # em paralelo: um prazo, não três somados
+
+
+@pytest.mark.passive_sources
+def test_subdomains_false_desliga_tambem_as_fontes_passivas(monkeypatch):
+    """Como no smoke da imagem: descoberta desligada -> nenhuma consulta externa."""
+    chamadas = []
+
+    async def fake_collect(*a, **k):
+        chamadas.append(1)
+        return CollectionResult(records=[], ok=True)
+
+    monkeypatch.setattr(passive, "collect", fake_collect)
+    db = tempfile.mktemp(suffix=".db")
+    s = Storage(db)
+    try:
+        cfg = Config(targets=["smoke.invalid"], db_path=db, scope_confirmed=True,
+                     collectors=CollectorsConfig(
+                         subdomains=False, wildcard=False, dns=False, dns_records=False,
+                         http=False, favicon=False, tls=False, takeover=False, ports=False))
+        asyncio.run(Engine(cfg, s).scan_target("smoke.invalid"))
+        assert chamadas == []
+    finally:
+        s.close()
+        os.remove(db)
