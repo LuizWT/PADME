@@ -48,7 +48,9 @@ te chama quando a paisagem muda.
 - **Amortecimento de flapping**: chave que oscila para de spammar (segue no
   histórico). **Validação forte de config** (falha cedo com mensagem clara).
 - **Aviso de expiração de certificado TLS** (antes de virar incidente).
-- **Bruteforce de subdomínios** por wordlist (opcional) + CT logs.
+- **Descoberta de subdomínios** em várias fontes: CT logs (crt.sh, crt.name,
+  certspotter), DNS passivo (AlienVault OTX), Wayback Machine e, com chave,
+  SecurityTrails e VirusTotal — mais bruteforce por wordlist (opcional).
 - **Qualidade de sinal**: subdomínio `live`/`quiet` + **detecção de wildcard DNS**
   (suprime a inundação de falso-positivo do bruteforce em apex catch-all).
   Registros DNS são **agregados por host e tipo** (`host|A` = conjunto de IPs):
@@ -80,7 +82,7 @@ te chama quando a paisagem muda.
 ## Como funciona?
 
 ```
-subdomains (CT logs)  ─┐                                          ┌─► Telegram (nível próprio)
+subdomains (CT+fontes) ─┐                                          ┌─► Telegram (nível próprio)
 dns  A/AAAA/CNAME/MX   ─┤                                          ├─► Discord  (nível próprio)
 http status/server     ─┼─► Records + escopos observados ─► diff ─┤
 tls  emissor/validade  ─┤        vs. estado (SQLite)     ─► eventos├─► Webhook  (nível próprio)
@@ -125,9 +127,35 @@ e cada evento carrega **proveniência** (`_source`/vantage, `_collector`).
 > alvo como *dados parciais*; **inconclusivo** (sem resposta, estado preservado)
 > não, mas aparece no painel e no `doctor` — ex.: *coleta ok · 3 inconclusivos*.
 
-Fontes de subdomínio (passivas, Certificate Transparency):
-`crt.name` e `crt.sh`. O parser é defensivo — extrai hostnames válidos sob o
-apex independente do formato exato da resposta.
+Fontes de subdomínio:
+
+| Fonte | Tipo | Chave | Padrão |
+|---|---|---|---|
+| `crt.name`, `crt.sh` | Certificate Transparency | não | sempre (`collectors.subdomains`) |
+| `certspotter` | Certificate Transparency (outro agregador) | não | ligada |
+| `otx` | DNS passivo (AlienVault) | opcional, mais cota | ligada |
+| `wayback` | URLs arquivadas (Wayback Machine) | não | ligada |
+| `hackertarget` | DNS passivo | não (cota diária pequena) | desligada |
+| `securitytrails` | DNS passivo | sim | desligada |
+| `virustotal` | DNS passivo | sim | desligada |
+
+As fontes além do CT (`collectors.passive_sources`) seguem regras próprias para
+não trazer ruído:
+
+- **Só entra nome que resolve agora** (A/AAAA) e não só para o curinga de DNS.
+  Fonte histórica traz muito nome morto; sem essa prova, cada um viraria um
+  subdomínio "quiet" para sempre.
+- **Suplementares:** nada sai do estado por ausência nelas (a remoção continua
+  exigindo prova de DNS), e uma fonte fora do ar não deixa a coleta "parcial"
+  nem adia a baseline. A saúde delas aparece como o collector `passive`.
+- **No máximo a cada `passive_every_hours`** (padrão 24h) por alvo: elas mudam
+  devagar e têm cota.
+- **Cliente HTTP próprio, com verificação de TLS** (o cliente dos alvos roda com
+  `verify=False`), porque leva chave de API. As chaves vão em `passive_keys` com
+  `${VAR}` do `.env` e são mascaradas no log.
+
+O parser é defensivo: extrai hostnames válidos sob o apex independente do
+formato exato da resposta.
 
 ### Sinais de postura (headers, tech, favicon)
 
@@ -794,7 +822,8 @@ padme/
 │   ├── api.py            # API REST/JSON read-only e versionada (/api/v1), mesma auth Bearer
 │   ├── panel_metrics.py  # dados dos cartões: problemas, priorização, KPIs §27 (sem HTML)
 │   ├── panel_assets.py   # CSS e JS do painel (strings estáticas)
-│   ├── collectors/       # subdomains, bruteforce, wildcard, dns, dnsrecon (NS/SPF/DMARC),
+│   ├── collectors/       # subdomains (CT), passive (OTX/Wayback/…), bruteforce, wildcard,
+│   │                     #   dns, dnsrecon (NS/SPF/DMARC),
 │   │                     #   http (+ headers de segurança/tech), favicon (hash), tls,
 │   │                     #   takeover, ports (com banner-grab)
 │   ├── data/             # takeover_fingerprints.json (gerada do can-i-take-over-xyz)
@@ -816,6 +845,6 @@ padme/
 ├── requirements.txt      # lock com versões fixas (Docker/CI)
 ├── requirements-dev.txt  # lock + ferramentas de teste/lint/auditoria
 ├── pyproject.toml
-└── tests/                # 477 testes: unitários + reliability + netpolicy +
+└── tests/                # 485 testes: unitários + reliability + netpolicy +
                           # logredact + dispatch/retry + collectors_ok + integração
 ```

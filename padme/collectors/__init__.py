@@ -1,6 +1,8 @@
 """Collectors: cada um observa uma faceta da superfície de ataque.
 
 - subdomains: passivo, via Certificate Transparency logs (crt.sh)
+- passive:    passivo, outras fontes (certspotter, OTX, Wayback, SecurityTrails…);
+              só entra nome que resolve agora
 - wildcard:   detecta curinga de DNS (catch-all) p/ filtrar falso-positivo
 - dns:        passivo, resolução A/AAAA/CNAME/MX
 - http:       ativo leve, um GET por host (status, server, título)

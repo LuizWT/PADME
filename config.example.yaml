@@ -46,6 +46,20 @@ collectors:
   ports: false        # ativo — connect-scan (ligue com consciência)
   ports_banner: true  # banner-grab leve nas portas abertas (SSH/SMTP/FTP…)
   ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
+  # Fontes passivas além do CT. Nome de fonte só entra se RESOLVE agora (fora do
+  # curinga): fonte histórica traz muito nome morto. Suplementar: nada sai do
+  # estado por ausência aqui, e fonte fora do ar não deixa a coleta "parcial".
+  #   sem chave: certspotter, otx, wayback, hackertarget (cota diária pequena)
+  #   com chave: securitytrails, virustotal (otx aceita chave opcional)
+  passive: true
+  passive_sources: [certspotter, otx, wayback]
+  passive_keys: {}
+  #  securitytrails: ${PADME_SECURITYTRAILS_KEY}
+  #  virustotal: ${PADME_VIRUSTOTAL_KEY}
+  #  otx: ${PADME_OTX_KEY}
+  passive_every_hours: 24     # consulta no máx. a cada N horas por alvo (cota das APIs)
+  passive_timeout: 30         # s por fonte (wayback é lento em domínio grande)
+  passive_max_candidates: 2000  # teto de nomes novos resolvidos por consulta
 
 # Política de rede (padrão SEGURO — anti-SSRF / rede interna).
 network:
