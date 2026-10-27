@@ -177,13 +177,21 @@ class ScanResult:
     # coletas INCONCLUSIVAS: collector respondeu ok=False sem exceção (timeout,
     # fonte sem resposta) — estado preservado. Diferente de `errors` (quebrou).
     inconclusive: int = 0
+    # collectors CONSULTIVOS (fontes externas suplementares, ex.: passive): a
+    # saúde deles aparece no painel, mas falha não torna a coleta incompleta —
+    # serviço de terceiro fora do ar não deve adiar a baseline do alvo.
+    advisory: set[str] = field(default_factory=set)
 
-    def mark_collector(self, name: str, ok: bool) -> None:
+    def mark_collector(self, name: str, ok: bool, advisory: bool = False) -> None:
         s = self.collector_stats.setdefault(name, {"ok": 0, "fail": 0})
         s["ok" if ok else "fail"] += 1
+        if advisory:
+            self.advisory.add(name)
 
     @property
     def complete(self) -> bool:
         """Coleta sem nenhuma falha: nem exceção (`errors`) nem collector que
-        voltou inconclusivo (`ok=False`, ex.: timeout — que não gera exceção)."""
-        return not self.errors and not any(s.get("fail") for s in self.collector_stats.values())
+        voltou inconclusivo (`ok=False`, ex.: timeout — que não gera exceção).
+        Collectors consultivos não contam."""
+        return not self.errors and not any(
+            s.get("fail") for name, s in self.collector_stats.items() if name not in self.advisory)

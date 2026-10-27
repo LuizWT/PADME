@@ -31,6 +31,7 @@ from .collectors import (
     dnsrecon,
     favicon,
     http,
+    passive,
     ports,
     subdomains,
     takeover,
@@ -48,6 +49,7 @@ from .storage import Storage
 log = logging.getLogger("padme")
 
 _USER_AGENT = "Padme-ASM/0.1 (+attack-surface-monitor)"
+_PASSIVE_META = "passive.fetched_at:"  # meta: última consulta às fontes passivas, por alvo
 
 # collector -> Kind do escopo que ele observa (a "célula" onde ausência = remoção real).
 # Não confundir com models._SCOPE_KIND (kind de um RECORD -> kind do escopo).
@@ -169,6 +171,26 @@ class Engine:
                 except Exception as exc:  # noqa: BLE001
                     result.mark_collector("bruteforce", False)
                     result.errors.append(f"bruteforce: {exc}")
+            col = self.cfg.collectors
+            # segue o interruptor da descoberta: `subdomains: false` desliga tudo
+            if (col.subdomains and col.passive and col.passive_sources
+                    and self._passive_due(target)):
+                try:
+                    cr = await passive.collect(
+                        target, col.passive_sources, col.passive_keys, col.passive_timeout,
+                        self.cfg.timeout, self.cfg.concurrency, wildcard=wc,
+                        pace=self._rate.acquire, skip=hosts | set(known_subs),
+                        max_candidates=col.passive_max_candidates)
+                    result.records.extend(cr.records)
+                    hosts |= cr.hosts
+                    result.mark_collector("passive", cr.ok, advisory=True)
+                    if cr.ok:  # alguma fonte respondeu: só volta a consultar depois do intervalo
+                        self.storage.set_meta(_PASSIVE_META + target, str(time.time()))
+                    # suplementar (como o bruteforce): não marca o escopo de subdomínio, e
+                    # consultivo: fonte externa fora do ar não deixa a coleta incompleta
+                except Exception as exc:  # noqa: BLE001
+                    result.mark_collector("passive", False, advisory=True)
+                    log.warning("[%s] fontes passivas falharam: %s", target, type(exc).__name__)
             hosts |= set(known_subs)  # conhecidos seguem monitorados mesmo sem descoberta
             log.info("[%s] %d host(s) para inspecionar", target, len(hosts))
 
@@ -190,6 +212,16 @@ class Engine:
                  target, len(hosts), len(result.records), len(result.errors),
                  int((time.monotonic() - t0) * 1000))
         return result
+
+    def _passive_due(self, target: str) -> bool:
+        """Fontes passivas mudam devagar e têm cota: no máx. uma consulta a cada
+        `passive_every_hours` por alvo. Sem registro (ou ilegível) -> consulta."""
+        raw = self.storage.get_meta(_PASSIVE_META + target)
+        try:
+            last = float(raw)
+        except (TypeError, ValueError):
+            return True
+        return time.time() - last >= self.cfg.collectors.passive_every_hours * 3600
 
     async def _scan_host(
         self, host: str, client: httpx.AsyncClient, result: ScanResult

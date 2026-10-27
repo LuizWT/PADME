@@ -11,6 +11,8 @@ from pathlib import Path
 
 import yaml
 
+from .collectors.passive import DEFAULT_SOURCES as _PASSIVE_DEFAULT
+from .collectors.passive import SOURCES as _PASSIVE_SOURCES
 from .context import AssetContext, ContextConfig
 from .digest import WEEKDAYS as _WEEKDAYS
 from .findings import DEFAULT_SLA_HOURS
@@ -44,6 +46,14 @@ def _as_int(v: object, name: str, default: int) -> int:
         return int(v)
     except (TypeError, ValueError):
         raise ValueError(f"{name}: inteiro inválido: {v!r}") from None
+
+
+def _str_list(v: object, default: list[str]) -> list[str]:
+    """Lista de nomes do YAML (aceita string única); normaliza p/ minúsculas."""
+    if v is None:
+        return default
+    items = [v] if isinstance(v, str) else list(v)
+    return [str(x).strip().lower() for x in items if str(x).strip()]
 
 
 def _as_float(v: object, name: str, default: float) -> float:
@@ -288,6 +298,13 @@ class CollectorsConfig:
     ports_list: list[int] = field(
         default_factory=lambda: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
     )
+    # fontes passivas além do CT (só entra nome que RESOLVE agora; ver collectors/passive.py)
+    passive: bool = True
+    passive_sources: list[str] = field(default_factory=lambda: list(_PASSIVE_DEFAULT))
+    passive_keys: dict[str, str] = field(default_factory=dict)  # securitytrails/virustotal/otx
+    passive_every_hours: int = 24     # consulta no máx. a cada N horas por alvo (cota)
+    passive_timeout: float = 20.0     # s, prazo TOTAL por fonte (consultadas em paralelo)
+    passive_max_candidates: int = 2000  # teto de nomes novos resolvidos por consulta
 
 
 @dataclass
@@ -395,6 +412,15 @@ class Config:
                 ports_banner=_as_bool(col.get("ports_banner"), True),
                 ports_list=[_as_int(p, "collectors.ports_list", 0)
                             for p in col.get("ports_list", CollectorsConfig().ports_list)],
+                passive=_as_bool(col.get("passive"), True),
+                passive_sources=_str_list(col.get("passive_sources"), list(_PASSIVE_DEFAULT)),
+                passive_keys={str(k).strip().lower(): _expand(str(v or "")).strip()
+                              for k, v in (col.get("passive_keys") or {}).items()},
+                passive_every_hours=_as_int(col.get("passive_every_hours"),
+                                            "collectors.passive_every_hours", 24),
+                passive_timeout=_as_float(col.get("passive_timeout"), "collectors.passive_timeout", 20.0),
+                passive_max_candidates=_as_int(col.get("passive_max_candidates"),
+                                               "collectors.passive_max_candidates", 2000),
             ),
             network=NetworkConfig(
                 allow_private_ips=_as_bool(net.get("allow_private_ips"), False),
@@ -561,6 +587,22 @@ def _validate(cfg: "Config") -> None:
     for p in c.ports_list:
         if not (1 <= p <= 65535):
             errs.append(f"collectors.ports_list: porta fora de 1..65535: {p}")
+    if c.passive:
+        bad = [n for n in c.passive_sources if n not in _PASSIVE_SOURCES]
+        if bad:
+            errs.append(f"collectors.passive_sources: fonte desconhecida {bad} "
+                        f"(use {', '.join(_PASSIVE_SOURCES)})")
+        for n in c.passive_sources:
+            src = _PASSIVE_SOURCES.get(n)
+            if src and src.key_required and not c.passive_keys.get(n):
+                errs.append(f"collectors.passive_sources: '{n}' precisa de chave em "
+                            f"collectors.passive_keys.{n} (ex.: ${{PADME_{n.upper()}_KEY}})")
+        if c.passive_every_hours < 1:
+            errs.append("collectors.passive_every_hours deve ser >= 1")
+        if c.passive_timeout <= 0:
+            errs.append("collectors.passive_timeout deve ser > 0")
+        if c.passive_max_candidates < 1:
+            errs.append("collectors.passive_max_candidates deve ser >= 1")
     if cfg.network.max_parallel_connects <= 0:
         errs.append("network.max_parallel_connects deve ser > 0")
     if cfg.storage.event_retention_days < 0:

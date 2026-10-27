@@ -31,6 +31,9 @@ padme = ["data/*.json", "data/*.png"]   # base de takeover + logo do painel
 # com ModuleNotFoundError: No module named 'padme'.
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "passive_sources: o teste usa as fontes passivas (com MockTransport) em vez do bloqueio padrão",
+]
 
 [tool.ruff.lint]
 # Conjunto enxuto e de alto valor: pyflakes (bugs reais: nomes indefinidos,

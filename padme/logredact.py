@@ -9,7 +9,8 @@ Duas linhas de defesa:
      descuidado não vaza token/secret.
 
 O que é mascarado: bot token do Telegram, secret de webhook do Discord,
-header Authorization/Bearer, e query params sensíveis (token/key/secret/...).
+header Authorization/Bearer, headers de chave de API (APIKEY/x-apikey) e
+query params sensíveis (token/key/secret/...).
 Nunca reproduzimos o segredo — sempre trocamos por REDACTED.
 """
 
@@ -32,6 +33,8 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # Authorization: [Bearer] <token>  -> mascara o valor inteiro
     (re.compile(r"(?i)(authorization\s*[:=]\s*)(?:bearer\s+)?\S+"), r"\1" + _REDACTED),
     (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9_\-\.=]+"), r"\1" + _REDACTED),
+    # Header de chave de API (fontes passivas): APIKEY: ..., x-apikey: ..., X-OTX-API-KEY: ...
+    (re.compile(r"(?i)\b((?:x-)?(?:otx-)?api-?key['\"]?\s*[:=]\s*['\"]?)[^\s'\",}]+"), r"\1" + _REDACTED),
     # Query params sensíveis: ?token=...  &api_key=...  &secret=...  &signature=...
     (re.compile(r"(?i)([?&](?:token|api[_-]?key|key|secret|signature|sig|access[_-]?token|auth)=)[^&\s]+"),
      r"\1" + _REDACTED),

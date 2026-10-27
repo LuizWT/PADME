@@ -84,16 +84,16 @@ async def _resolve_ips(resolver, host: str) -> set[str]:
     return ips
 
 
-async def collect(target: str, words: list[str], timeout: float,
-                  concurrency: int = 50,
-                  wildcard: Wildcard | None = None, pace=None) -> CollectionResult:
+async def resolve_hosts(candidates, timeout: float, concurrency: int = 50,
+                        wildcard: Wildcard | None = None, pace=None) -> set[str] | None:
+    """Dos `candidates`, os que resolvem (A/AAAA) e NÃO só para o curinga.
+    None se não há resolvedor (dnspython ausente). Usado pelo bruteforce e
+    pelas fontes passivas: nome só vira subdomínio com prova de que existe."""
     if not _HAS_DNS:
-        return CollectionResult(records=[], ok=False)
+        return None
     resolver = dns.asyncresolver.Resolver()
     resolver.lifetime = timeout
     sem = asyncio.Semaphore(concurrency)
-    apex = target.lower().lstrip(".")
-    candidates = sorted({f"{w.lower()}.{apex}" for w in words if w.strip()})
     found: set[str] = set()
 
     async def check(host: str) -> None:
@@ -109,7 +109,18 @@ async def collect(target: str, words: list[str], timeout: float,
                 return
             found.add(host)
 
-    await asyncio.gather(*(check(h) for h in candidates))
+    await asyncio.gather(*(check(h) for h in sorted(set(candidates))))
+    return found
+
+
+async def collect(target: str, words: list[str], timeout: float,
+                  concurrency: int = 50,
+                  wildcard: Wildcard | None = None, pace=None) -> CollectionResult:
+    apex = target.lower().lstrip(".")
+    candidates = {f"{w.lower()}.{apex}" for w in words if w.strip()}
+    found = await resolve_hosts(candidates, timeout, concurrency, wildcard, pace)
+    if found is None:
+        return CollectionResult(records=[], ok=False)
     records = [Record(Kind.SUBDOMAIN, h) for h in sorted(found)]
     # bruteforce é SUPLEMENTAR: enriquece a descoberta, mas não é autoritativo
     # sobre o escopo de subdomínio (só cobre a wordlist). Quem decide se o
