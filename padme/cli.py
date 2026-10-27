@@ -13,6 +13,7 @@ Comandos:
   padme health       -> o monitor está varrendo? (exit 0/1, p/ HEALTHCHECK/cron)
   padme test-notify  -> testa todos os canais configurados
   padme finding      -> problemas abertos: listar, reconhecer, silenciar, aceitar, reabrir
+  padme digest       -> resumo do período agora (--print só mostra; sem ele, envia)
 
 Uso responsável: monitore apenas ativos que você é dono ou tem autorização
 explícita para testar.
@@ -492,6 +493,39 @@ async def _cmd_finding(cfg: Config, args) -> int:
         storage.close()
 
 
+async def _cmd_digest(cfg: Config, args) -> int:
+    """Resumo do período agora: `--print` só mostra; sem ele, envia aos canais
+    (digest.channels, ou todos) e marca o envio — o agendado continua daí."""
+    from . import digest
+    from .notify import NotificationManager
+
+    storage = Storage(cfg.db_path)
+    try:
+        now = time.time()
+        if args.hours:
+            start = now - args.hours * 3600
+        else:  # desde o último resumo; sem nenhum, o período padrão da agenda
+            last = storage.get_meta("digest.last_sent_at")
+            span = digest.SCHEDULES[cfg.digest.schedule].total_seconds()
+            start = float(last) if last else now - span
+        if args.print:
+            title, text = digest.render(digest.build(cfg, storage, start, now))
+            print(title)
+            print(text)
+            return 0
+        notifier = NotificationManager(build_notifiers(cfg))
+        if not notifier:
+            print("nenhum canal de notificação configurado — use --print para ver o resumo.",
+                  file=sys.stderr)
+            return 1
+        results = await digest.send(cfg, storage, notifier, start, now, force=True)
+        for r in results or []:
+            print(f"  {'OK ' if r.ok else 'ERRO'}  {r.channel}" + (f" ({r.error})" if r.error else ""))
+        return 0 if results and all(r.ok for r in results) else 1
+    finally:
+        storage.close()
+
+
 async def _cmd_test_notify(cfg: Config, args) -> int:
     notifiers = build_notifiers(cfg)
     if not notifiers:
@@ -583,6 +617,11 @@ def build_parser() -> argparse.ArgumentParser:
     fp.add_argument("--all", action="store_true", help="list: inclui tratados e resolvidos")
     fp.set_defaults(func=_cmd_finding)
 
+    dg = sub.add_parser("digest", help="resumo do período agora (mudanças, problemas, coleta)")
+    dg.add_argument("--print", action="store_true", help="só mostra no terminal (não envia nem marca)")
+    dg.add_argument("--hours", type=float, help="período: últimas N horas (padrão: desde o último resumo)")
+    dg.set_defaults(func=_cmd_digest)
+
     mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
     mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
     mg.add_argument("--out", default=None, help="grava a consolidação em JSON (padrão: resumo no stdout)")
@@ -614,7 +653,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # comandos que não varrem alvos não exigem confirmação de escopo
     read_only = args.command in ("events", "export", "test-notify", "web", "api", "doctor", "merge", "backup",
-                                 "health", "finding")
+                                 "health", "finding", "digest")
     if not cfg.scope_confirmed and not read_only:
         print(
             "⚠️  scope_confirmed=false no config.\n"

@@ -150,3 +150,6 @@ class TelegramNotifier:
 
     async def announce(self, msg: str) -> NotificationResult:
         return await self.send(f"🛰️ <b>Padmé</b> — {_esc(msg)}")
+
+    async def send_digest(self, title: str, text: str, data: dict) -> NotificationResult:
+        return await self.send(f"🛰️ <b>Padmé · {_esc(title)}</b>\n\n{_esc(text)}")

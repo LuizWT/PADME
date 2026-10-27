@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from . import digest
 from .alerts import damp_flapping
 from .config import Config
 from .engine import Engine, build_notifiers, summarize_health
@@ -209,6 +210,31 @@ def _cancel_on_sigterm() -> bool:
     return True
 
 
+async def _digest_safe(cfg: Config, storage: Storage, notifier: NotificationManager) -> None:
+    """Resumo periódico, se estiver na hora. Falha aqui nunca derruba o monitor."""
+    try:
+        await digest.maybe_send(cfg, storage, notifier)
+    except Exception as exc:  # noqa: BLE001 — o resumo é acessório; o scan é o serviço
+        log.error("Resumo periódico falhou: %s", type(exc).__name__)
+
+
+async def _sleep_until_next_scan(cfg: Config, storage: Storage,
+                                 notifier: NotificationManager, interval: float) -> None:
+    """Dorme até a próxima varredura, acordando no horário do resumo se ele
+    cair no meio — com `interval_seconds` de horas, o resumo não atrasa."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + interval
+    while True:
+        left = deadline - loop.time()
+        if left <= 0:
+            return
+        until_digest = digest.seconds_until_next(cfg)
+        wait = left if until_digest is None else min(left, until_digest + 1)
+        await asyncio.sleep(wait)
+        if wait < left:
+            await _digest_safe(cfg, storage, notifier)
+
+
 async def run_monitor(cfg: Config, once: bool = False) -> None:
     sigterm = _cancel_on_sigterm()
     storage = Storage(cfg.db_path)
@@ -245,6 +271,7 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
             if pruned:
                 log.info("Retenção: %d evento(s) antigos removidos (> %dd).",
                          pruned, cfg.storage.event_retention_days)
+            await _digest_safe(cfg, storage, notifier)
 
             if once:
                 log.info("Ciclo único concluído (%s).", "ok" if cycle_ok else "com falhas")
@@ -254,7 +281,7 @@ async def run_monitor(cfg: Config, once: bool = False) -> None:
             log.info("Ciclo #%d %s. Próxima varredura às %s.",
                      cycle, "ok" if cycle_ok else "com falhas",
                      next_run.strftime("%H:%M:%S"))
-            await asyncio.sleep(interval)
+            await _sleep_until_next_scan(cfg, storage, notifier, interval)
     except (KeyboardInterrupt, asyncio.CancelledError):
         task = asyncio.current_task()
         if task is not None and hasattr(task, "uncancel"):

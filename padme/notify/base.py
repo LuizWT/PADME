@@ -200,12 +200,33 @@ class NotificationManager:
         async def one(n: Notifier) -> NotificationResult:
             return await n.announce(msg)
 
-        raw = await asyncio.gather(*(one(n) for n in self.notifiers), return_exceptions=True)
+        return await self._each(self.notifiers, one)
+
+    async def digest(self, title: str, text: str, data: dict,
+                     channels: list[str] | None = None) -> list[NotificationResult]:
+        """Resumo periódico para os canais escolhidos (todos se `channels` vazio).
+        Ignora o `level` do canal: é um resumo, não um alerta. Canal sem
+        `send_digest` próprio recebe o texto como anúncio."""
+        chosen = [n for n in self.notifiers
+                  if not channels or getattr(n, "name", "") in channels]
+
+        async def one(n) -> NotificationResult:
+            if hasattr(n, "send_digest"):
+                return await n.send_digest(title, text, data)
+            return await n.announce(f"{title}\n{text}")
+
+        results = await self._each(chosen, one)
+        for r in results:
+            _log_result(r)
+        return results
+
+    async def _each(self, notifiers: list, fn) -> list[NotificationResult]:
+        raw = await asyncio.gather(*(fn(n) for n in notifiers), return_exceptions=True)
         out: list[NotificationResult] = []
-        for n, r in zip(self.notifiers, raw):
+        for n, r in zip(notifiers, raw):
             name = getattr(n, "name", type(n).__name__)
             if isinstance(r, Exception):
-                log.debug("announce.%s falhou: %s", name, redact(str(r)))
+                log.debug("notification.%s falhou (anúncio/resumo): %s", name, redact(str(r)))
                 out.append(NotificationResult(name, ok=False, error=type(r).__name__))
             else:
                 out.append(r)

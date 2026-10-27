@@ -137,6 +137,13 @@ CREATE TABLE IF NOT EXISTS finding_history (
     actor       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_finding_history ON finding_history (finding_id, ts);
+-- chave/valor de operação do processo que escreve (ex.: quando saiu o último
+-- resumo periódico). Só o monitor/CLI lê e escreve; o painel read-only nunca
+-- consulta, então não precisa de versão de schema própria.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 # v7: pending_notifications; v8: DNS agregado; v9: findings + finding_history
@@ -608,6 +615,15 @@ class Storage:
         if collectors is not None:
             self._conn.execute("UPDATE targets SET collectors_health=? WHERE target=?",
                                (_jdump(collectors), target))
+        self._conn.commit()
+
+    # -- meta (chave/valor) --------------------------------------------------
+    def get_meta(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))
         self._conn.commit()
 
     # -- findings (ciclo de vida) -------------------------------------------

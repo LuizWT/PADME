@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from .context import AssetContext, ContextConfig
+from .digest import WEEKDAYS as _WEEKDAYS
 from .findings import DEFAULT_SLA_HOURS
 
 _TRUE = {"true", "1", "yes", "y", "on", "sim"}
@@ -206,6 +207,24 @@ class WebConfig:
 
 
 @dataclass
+class DigestConfig:
+    """Resumo periódico nos canais: mudanças do período, problemas abertos,
+    prazos estourados e saúde da coleta. Desligado por padrão.
+
+    `schedule`: daily | weekly · `hour`: hora LOCAL (0-23) · `weekday`: dia do
+    semanal (mon..sun) · `channels`: subconjunto de telegram/discord/webhook/
+    email (vazio = todos os configurados; o resumo ignora o `level` do canal) ·
+    `send_if_quiet`: manda mesmo sem novidade (o "está tudo bem" também é
+    informação)."""
+    enabled: bool = False
+    schedule: str = "daily"
+    hour: int = 9
+    weekday: str = "mon"
+    channels: list[str] = field(default_factory=list)
+    send_if_quiet: bool = True
+
+
+@dataclass
 class FindingsConfig:
     """Ciclo de vida de finding. `sla_hours`: prazo para tratar, por severidade,
     contado desde a (re)abertura; 0 = sem prazo. Reconhecer (ack) não para o
@@ -287,6 +306,7 @@ class Config:
     web: WebConfig = field(default_factory=WebConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
     findings: FindingsConfig = field(default_factory=FindingsConfig)
+    digest: DigestConfig = field(default_factory=DigestConfig)
     context: ContextConfig = field(default_factory=ContextConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
@@ -330,6 +350,10 @@ class Config:
         web = raw.get("web") or {}
         api = raw.get("api") or {}
         fnd = raw.get("findings") or {}
+        dg = raw.get("digest") or {}
+        dg_ch = dg.get("channels") or []
+        if isinstance(dg_ch, str):
+            dg_ch = [dg_ch]
         ctx = raw.get("context") or {}
         tg = raw.get("telegram") or {}
         dc = raw.get("discord") or {}
@@ -402,6 +426,14 @@ class Config:
                 token=str(api.get("token", "")),
             ).resolved(),
             findings=FindingsConfig(sla_hours=_parse_sla(fnd.get("sla_hours"))),
+            digest=DigestConfig(
+                enabled=_as_bool(dg.get("enabled"), False),
+                schedule=str(dg.get("schedule", "daily")).strip().lower(),
+                hour=_as_int(dg.get("hour"), "digest.hour", 9),
+                weekday=str(dg.get("weekday", "mon")).strip().lower()[:3],
+                channels=[str(c).strip().lower() for c in dg_ch if str(c).strip()],
+                send_if_quiet=_as_bool(dg.get("send_if_quiet"), True),
+            ),
             context=_parse_context(ctx),
             telegram=TelegramConfig(
                 enabled=_as_bool(tg.get("enabled"), False),
@@ -464,6 +496,7 @@ def _parse_sla(raw) -> dict[str, int]:
 
 
 _CRITICALITY = {"low", "medium", "high", "critical", "unknown"}
+_CHANNELS = ("telegram", "discord", "webhook", "email")
 _EXPOSURE = {"internet", "internal", "unknown"}
 
 
@@ -538,6 +571,16 @@ def _validate(cfg: "Config") -> None:
         errs.append("alerts.flap_window_minutes deve ser > 0")
     if not (1 <= cfg.email.smtp_port <= 65535):
         errs.append(f"email.smtp_port fora de 1..65535: {cfg.email.smtp_port}")
+    d = cfg.digest
+    if d.schedule not in ("daily", "weekly"):
+        errs.append(f"digest.schedule deve ser daily ou weekly: {d.schedule!r}")
+    if not (0 <= d.hour <= 23):
+        errs.append(f"digest.hour fora de 0..23: {d.hour}")
+    if d.weekday not in _WEEKDAYS:
+        errs.append(f"digest.weekday inválido: {d.weekday!r} (use {', '.join(_WEEKDAYS)})")
+    bad = [c for c in d.channels if c not in _CHANNELS]
+    if bad:
+        errs.append(f"digest.channels: canal desconhecido {bad} (use {', '.join(_CHANNELS)})")
     if not (1 <= cfg.web.port <= 65535):
         errs.append(f"web.port fora de 1..65535: {cfg.web.port}")
     for name, lvl in (("telegram", cfg.telegram.level), ("discord", cfg.discord.level),
@@ -573,6 +616,7 @@ _SECTIONS: dict[str, set[str]] = {
     "web": _names(WebConfig),
     "api": _names(ApiConfig),
     "findings": _names(FindingsConfig),
+    "digest": _names(DigestConfig),
     "context": {"assets"},
     "telegram": _names(TelegramConfig),
     "discord": _names(DiscordConfig),

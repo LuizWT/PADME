@@ -177,6 +177,18 @@ heartbeat:
   every_cycles: 1               # emite o sinal a cada N ciclos
   file: ""                      # ex.: /tmp/padme.alive (opcional)
 
+# Resumo periódico nos canais: mudanças do período (sem DNS), problemas
+# abertos por severidade, prazos estourados, destaques graves e saúde da coleta.
+# O período é "desde o último resumo" (gravado no banco: reiniciar não duplica).
+# No primeiro uso só agenda; `padme digest --print` mostra um na hora.
+digest:
+  enabled: false
+  schedule: daily        # daily | weekly
+  hour: 9                # hora LOCAL (0-23)
+  weekday: mon           # só no weekly: mon..sun
+  channels: []           # vazio = todos os configurados (ignora o `level` do canal)
+  send_if_quiet: true    # manda mesmo sem novidade ("está tudo bem" também informa)
+
 # E-mail (SMTP com STARTTLS). Para Gmail, use uma "App Password".
 email:
   enabled: false
