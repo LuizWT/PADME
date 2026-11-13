@@ -47,7 +47,7 @@ Ou, numa pasta clonada: `sh install.sh`.
 
 ### O que o instalador faz
 
-- Procura um Python 3.10 ou mais novo. No Windows, se não houver, oferece
+- Procura um Python 3.11 ou mais novo. No Windows, se não houver, oferece
   instalar pelo `winget`.
 - Instala o Padmé num ambiente isolado, sem mexer no Python do sistema e sem
   pedir administrador ou `sudo`.

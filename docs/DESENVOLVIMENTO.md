@@ -27,7 +27,7 @@ O CI (`.github/workflows/`) roda:
 
 | Workflow | Quando | O quê |
 |---|---|---|
-| `tests` | push, PR e toda segunda | ruff, pytest em Python 3.10 a 3.14, pip-audit, build e smoke test da imagem Docker |
+| `tests` | push, PR e toda segunda | ruff, pytest em Python 3.11 a 3.14, pip-audit, build e smoke test da imagem Docker |
 | `install` | push e PR que mexem no instalador ou no pacote | os instaladores de verdade em Ubuntu, macOS e Windows (incluindo o modo `irm \| iex`) |
 | `takeover base` | dia 1 de cada mês | regenera a base de takeover e abre PR se o upstream mudou |
 

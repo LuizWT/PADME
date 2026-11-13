@@ -31,7 +31,7 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # 3.13+ fica fora do que o CI testa (matriz 3.10-3.12): troca manual
+      # só o digest é automático; trocar a versão do Python da imagem é manual
       - dependency-name: "python"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:

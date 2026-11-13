@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/LuizWT/PADME/main/install.sh | sh
 #   sh install.sh --uninstall     # remove o programa (mantém config e banco)
 #
-# O que faz: acha um Python 3.10+, cria um ambiente isolado em
+# O que faz: acha um Python 3.11+, cria um ambiente isolado em
 # ~/.local/share/padme, instala o Padmé nele, cria o comando `padme` em
 # ~/.local/bin (e põe essa pasta no PATH) e, se ainda não houver config, roda
 # o `padme init`. Não usa sudo e não mexe no Python do sistema.
@@ -33,17 +33,17 @@ fi
 
 say "== Instalando o Padmé =="
 
-# 1) Python 3.10 ou mais novo
+# 1) Python 3.11 ou mais novo
 PY=""
-for c in python3.14 python3.13 python3.12 python3.11 python3.10 python3 python; do
+for c in python3.14 python3.13 python3.12 python3.11 python3 python; do
     if command -v "$c" >/dev/null 2>&1 &&
-        "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
         PY="$c"
         break
     fi
 done
 if [ -z "$PY" ]; then
-    say "Não achei o Python 3.10 ou mais novo. Instale e rode este instalador de novo:"
+    say "Não achei o Python 3.11 ou mais novo. Instale e rode este instalador de novo:"
     say "  Debian/Ubuntu:  sudo apt install python3 python3-venv"
     say "  Fedora:         sudo dnf install python3"
     say "  Arch:           sudo pacman -S python"

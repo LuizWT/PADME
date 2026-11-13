@@ -7,7 +7,7 @@
   Remover:           install.bat -Uninstall   (mantem config e banco)
                      ou: $env:PADME_UNINSTALL=1; irm <mesmo endereco> | iex
 
-  O que faz: acha o Python 3.10+ (ou instala pelo winget, se voce aceitar),
+  O que faz: acha o Python 3.11+ (ou instala pelo winget, se voce aceitar),
   cria um ambiente isolado em %LOCALAPPDATA%\padme, instala o Padme nele, cria
   o comando `padme` e o coloca no PATH do seu usuario, e roda o `padme init`
   se ainda nao houver config. Nao precisa de administrador.
@@ -68,12 +68,12 @@ if ($Uninstall) {
 
 Say '== Instalando o Padme =='
 
-# 1) Python 3.10 ou mais novo (o "python" falso da Microsoft Store nao conta)
+# 1) Python 3.11 ou mais novo (o "python" falso da Microsoft Store nao conta)
 function Test-Python($Exe, $Extra) {
     $old = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $out = & $Exe @Extra -c 'import sys; print(sys.version.split()[0]) if sys.version_info >= (3, 10) else sys.exit(1)' 2>$null
+        $out = & $Exe @Extra -c 'import sys; print(sys.version.split()[0]) if sys.version_info >= (3, 11) else sys.exit(1)' 2>$null
         return ($LASTEXITCODE -eq 0 -and $out)
     } catch {
         return $false
@@ -93,7 +93,7 @@ function Find-Python {
 
 $Py = Find-Python
 if (-not $Py) {
-    Say 'Nao achei o Python 3.10 ou mais novo.'
+    Say 'Nao achei o Python 3.11 ou mais novo.'
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         $ans = Read-Host 'Instalar o Python 3.12 agora pelo winget (so para o seu usuario)? [S/n]'
         if ($ans -eq '' -or $ans -match '^[sSyY]') {
@@ -103,7 +103,7 @@ if (-not $Py) {
         }
     }
     if (-not $Py) {
-        Fail 'Instale o Python 3.10+ em https://www.python.org/downloads/ (marque "Add python.exe to PATH") e rode o instalador de novo.'
+        Fail 'Instale o Python 3.11+ em https://www.python.org/downloads/ (marque "Add python.exe to PATH") e rode o instalador de novo.'
     }
 }
 $PyExtra = $Py.Extra
