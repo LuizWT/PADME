@@ -191,6 +191,35 @@ def test_init_sem_terminal_e_sem_alvo_falha_claro(tmp_path, monkeypatch, capsys)
     assert "--target" in capsys.readouterr().err
 
 
+def test_init_com_entrada_encerrada_nao_fica_em_loop(tmp_path, monkeypatch, capsys):
+    # Windows: stdin = NUL passa no isatty, mas cada input() dá EOF
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def eof(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    cfg = tmp_path / "config.yaml"
+    assert initcfg.run(cfg) == 2
+    assert not cfg.exists()
+    assert "cancelada" in capsys.readouterr().err
+
+
+def test_init_ctrl_c_cancela_sem_traceback(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    respostas = iter(["a.com"])
+
+    def ask(prompt=""):
+        try:
+            return next(respostas)
+        except StopIteration:
+            raise KeyboardInterrupt from None
+
+    monkeypatch.setattr("builtins.input", ask)
+    assert initcfg.run(tmp_path / "config.yaml") == 2
+    assert not (tmp_path / "config.yaml").exists()
+
+
 def test_env_ao_lado_do_config_e_lido(tmp_path, monkeypatch):
     p = _cfg_file(tmp_path, "telegram:\n  enabled: true\n  bot_token: ${PADME_TG_T}\n  chat_id: '1'\n")
     (tmp_path / ".env").write_text("PADME_TG_T=segredo123\n", encoding="utf-8")
@@ -243,10 +272,12 @@ def test_update_pip_baixa_o_commit_exato_e_so_deps_faltantes(monkeypatch, tmp_pa
     monkeypatch.setattr(updater, "data_dir", lambda: tmp_path)
     monkeypatch.setattr(updater, "_running_from_exe", lambda: False)
     monkeypatch.setattr(updater, "_pip", lambda *a: chamadas.append(a) or 0)
+    monkeypatch.setattr(updater, "_new_requirements", lambda: ["httpx>=0.27", "dnspython>=2.9"])
     assert updater.run() == 0
     primeiro = chamadas[0]
     assert "--force-reinstall" in primeiro and "--no-deps" in primeiro
     assert primeiro[-1] == f"https://github.com/LuizWT/PADME/archive/{'c' * 40}.zip"
+    assert chamadas[1][-2:] == ("httpx>=0.27", "dnspython>=2.9")     # só o que falta
     assert "--upgrade" not in chamadas[1] and "--force-reinstall" not in chamadas[1]
     assert updater.installed_commit() == "c" * 40
 
@@ -282,8 +313,16 @@ def test_update_no_windows_pelo_exe_continua_em_processo_filho(monkeypatch):
     assert args[1:] == ["-m", "padme", "--update"] and env[updater._CHILD_ENV] == "1"
 
 
+def test_dependencias_da_versao_nova_sem_extras(monkeypatch):
+    class R:
+        stdout = 'httpx>=0.27\ndnspython>=2.9\npytest>=8; extra == "dev"\n\n'
+    monkeypatch.setattr(updater.subprocess, "run", lambda *a, **k: R())
+    assert updater._new_requirements() == ["httpx>=0.27", "dnspython>=2.9"]
+
+
 def test_update_sem_api_cai_para_o_branch(monkeypatch, tmp_path):
     chamadas = []
+    monkeypatch.setattr(updater, "_new_requirements", lambda: [])
     monkeypatch.setattr(updater, "_in_docker", lambda: False)
     monkeypatch.setattr(updater, "install_kind", lambda: ("pip", None))
     monkeypatch.setattr(updater, "latest_commit", lambda timeout=10.0: None)

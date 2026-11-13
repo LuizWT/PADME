@@ -49,11 +49,16 @@ telegram:
 """
 
 
+class _Closed(Exception):
+    """A entrada acabou no meio das perguntas (Ctrl+D/Ctrl+Z, ou stdin que
+    parece terminal mas não é: no Windows, o NUL passa no isatty)."""
+
+
 def _ask(prompt: str, default: str = "") -> str:
     try:
         ans = input(prompt).strip()
     except EOFError:
-        return default
+        raise _Closed from None
     return ans or default
 
 
@@ -86,6 +91,15 @@ def _write_env(env_path: Path, key: str, value: str) -> None:
 
 def run(path: Path, targets: list[str] | None = None, yes: bool = False,
         force: bool = False) -> int:
+    try:
+        return _run(path, targets, yes, force)
+    except (_Closed, KeyboardInterrupt):
+        print("\nConfiguração cancelada; nada foi criado. Rode `padme init` de novo quando quiser.",
+              file=sys.stderr)
+        return 2
+
+
+def _run(path: Path, targets: list[str] | None, yes: bool, force: bool) -> int:
     path = path.expanduser()
     if path.exists() and not force:
         print(f"Já existe um config em {path}.")
@@ -123,7 +137,10 @@ def run(path: Path, targets: list[str] | None = None, yes: bool = False,
     telegram = ""
     token = ""
     if interactive and _yes("Receber alertas no Telegram?"):
-        token = getpass.getpass("  Token do bot (não aparece ao digitar): ").strip()
+        try:
+            token = getpass.getpass("  Token do bot (não aparece ao digitar): ").strip()
+        except EOFError:
+            raise _Closed from None
         chat_id = _ask("  Chat ID: ")
         if token and chat_id:
             telegram = _TELEGRAM.format(chat_id=chat_id.replace('"', ""))

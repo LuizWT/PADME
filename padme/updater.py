@@ -108,6 +108,16 @@ def _running_from_exe() -> bool:
     return os.name == "nt" and Path(sys.argv[0]).suffix.lower() == ".exe"
 
 
+def _new_requirements() -> list[str]:
+    """Dependências da versão recém-instalada (sem extras). Lidas num processo
+    novo: este aqui ainda enxerga os metadados da versão antiga."""
+    out = subprocess.run(
+        [sys.executable, "-c",
+         f"from importlib.metadata import requires; print('\\n'.join(requires('{DIST}') or []))"],
+        capture_output=True, text=True).stdout
+    return [r.strip() for r in out.split("\n") if r.strip() and "extra ==" not in r]
+
+
 def run(force: bool = False) -> int:
     if _in_docker():
         print("Na imagem Docker a atualização é pela imagem:\n"
@@ -153,11 +163,7 @@ def run(force: bool = False) -> int:
     if rc != 0:
         print("Falha ao baixar/instalar a versão nova. A versão atual continua instalada.")
         return rc
-    reqs = subprocess.run(
-        [sys.executable, "-c",
-         f"from importlib.metadata import requires; print('\\n'.join(requires('{DIST}') or []))"],
-        capture_output=True, text=True).stdout.split("\n")
-    reqs = [r.strip() for r in reqs if r.strip() and "extra ==" not in r]
+    reqs = _new_requirements()
     if reqs and _pip("install", "--quiet", *reqs) != 0:
         print("Pacote atualizado, mas alguma dependência falhou: rode `padme --update --force`.")
         return 1
