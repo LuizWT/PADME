@@ -1,7 +1,7 @@
 # ─────────────────────────────────────────────────────────────
-#  Padmé — Attack Surface Monitoring
-#  Copie para config.yaml e ajuste. Monitore SOMENTE ativos seus
-#  ou que você tem autorização explícita para testar.
+#  Padmé — Attack Surface Monitoring: TODAS as opções, comentadas.
+#  O `padme init` cria um config curto; copie daqui só o que precisar.
+#  Monitore SOMENTE ativos seus ou que você tem autorização para testar.
 # ─────────────────────────────────────────────────────────────
 
 # Confirmação de escopo — precisa ser true para o Padmé rodar.
@@ -94,8 +94,8 @@ alerts:
 web:
   bind: 127.0.0.1           # NUNCA 0.0.0.0 sem intenção; --host sobrescreve
   port: 8787
-  # Token opcional. Se definido, o painel exige `Authorization: Bearer <token>`
-  # em TODAS as rotas (/, /export, /vantage). Mantenha FORA do repositório:
+  # Token opcional. Se definido, o painel exige o token em TODAS as rotas
+  # (navegador: login com o token como senha; scripts: Bearer). Mantenha FORA do repositório:
   # use ${PADME_WEB_TOKEN} (ou só a env var — a CLI a lê mesmo sem esta linha).
   token: ${PADME_WEB_TOKEN}
   # Diretório com exports .json de OUTRAS fontes (multi-vantage). O painel os
@@ -154,10 +154,8 @@ telegram:
   #   high     = porta nova / subdomínio novo
   #   critical = só subdomain takeover
   level: medium
-  # Dica: use variáveis de ambiente para não versionar segredos:
-  #   bot_token: ${PADME_TG_TOKEN}
-  #   chat_id:   ${PADME_TG_CHAT}
-  bot_token: "SEU_BOT_TOKEN_AQUI"
+  # O token fica no .env ao lado deste arquivo (PADME_TELEGRAM_TOKEN=...).
+  bot_token: ${PADME_TELEGRAM_TOKEN}
   chat_id: "SEU_CHAT_ID_AQUI"
 
 # Cada canal tem seu PRÓPRIO limiar de severidade (política por canal): o
@@ -178,7 +176,7 @@ webhook:
   headers: {}           # opcional — auth do seu endpoint, ex.: {X-Padme-Token: "${PADME_WEBHOOK_TOKEN}"}
   # opcional — assina cada POST: X-Padme-Timestamp + X-Padme-Signature
   # (sha256=HMAC-SHA256 de "<timestamp>.<corpo>"). O destino confere origem e
-  # integridade e recusa timestamp velho (replay). Ver README.
+  # integridade e recusa timestamp velho (replay). Ver docs/NOTIFICACOES.md.
   secret: ${PADME_WEBHOOK_SECRET}
 
 # Heartbeat / dead-man's switch — a Padmé avisa que está viva a cada N ciclos.

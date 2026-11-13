@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-padme = "padme.cli:main"
+padme = "padme.__main__:run"   # entrada leve: --update antes de importar a CLI
 
 [tool.setuptools.packages.find]
 include = ["padme*"]

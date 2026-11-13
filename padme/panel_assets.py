@@ -75,6 +75,11 @@ code{font-family:var(--mono);background:rgba(255,255,255,.06);padding:0 4px;bord
 .sidefoot .row2{display:flex;justify-content:space-between;gap:8px}
 .sidefoot b{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
 .pill{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:2px 9px}
+.pill .ldot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
+  vertical-align:middle;background:var(--muted)}
+.pill.live-on{color:#90d9b1}.pill.live-on .ldot{background:var(--ok);box-shadow:0 0 0 3px rgba(47,179,109,.18)}
+.pill.live-wait{color:#f0cf8a}.pill.live-wait .ldot{background:var(--warn)}
+.pill.live-err{color:#f2a3a3}.pill.live-err .ldot{background:var(--crit)}
 .pill b{color:var(--ink2);font-weight:600}
 
 .main{min-width:0;padding:24px 28px 48px;max-width:1440px}
@@ -342,98 +347,136 @@ _TREND_JS = """<script>
         p+='<text x="'+cx.toFixed(1)+'" y="'+(H-6)+'" text-anchor="'+anc+'" font-size="9" fill="#7c8696">'+lab+'</text>'; }); }
     return p+'</svg>';
   }
-  // lembra aberto/fechado de cada <details> entre os auto-refreshes de 30s
-  document.querySelectorAll('details[data-persist]').forEach(function(d){
-    var key='padme:'+d.getAttribute('data-persist');
-    try{ if(localStorage.getItem(key)==='1') d.open=true; }catch(e){}
-    d.addEventListener('toggle', function(){
-      try{ localStorage.setItem(key, d.open?'1':'0'); }catch(e){}
-    });
-  });
 
-  // busca local por categoria: filtra as linhas (host/porta/kind/valor) e
-  // esconde grupos sem match; abre o <details> ao digitar. O texto é lembrado
-  // (localStorage) e re-aplicado — e enquanto houver filtro o auto-refresh pausa,
-  // então a filtragem não é apagada.
-  function anyFilterActive(){
-    return Array.prototype.some.call(document.querySelectorAll('.kfilter'),
-      function(i){ return i.value.trim()!==''; });
-  }
-  document.querySelectorAll('.kfilter').forEach(function(inp){
-    var det=inp.closest('details');
-    var key='padme:f-'+(det&&det.getAttribute('data-persist')||'');
-    function apply(){
-      var q=inp.value.trim().toLowerCase();
-      if(q && det) det.open=true;
-      var any=false;
-      det.querySelectorAll('.kind').forEach(function(g){
-        var kind=(g.getAttribute('data-kind')||'').toLowerCase();
-        var shown=0;
-        g.querySelectorAll('.row').forEach(function(r){
-          var hit=!q || kind.indexOf(q)!==-1 || r.textContent.toLowerCase().indexOf(q)!==-1;
-          r.classList.toggle('hide', !hit);
-          if(hit) shown++;
-        });
-        g.classList.toggle('hide', shown===0);
-        if(shown) any=true;
+  var charts=[];          // redesenho no resize (um listener só, não um por atualização)
+  var legend={};          // séries ligadas/desligadas por gráfico, sobrevivem à atualização
+  window.addEventListener('resize', function(){ charts.forEach(function(f){ f(); }); });
+
+  // Liga o comportamento do conteúdo. Roda no carregamento e de novo a cada
+  // atualização ao vivo (o conteúdo é trocado, os listeners precisam voltar).
+  function initPage(){
+    // aberto/fechado de cada <details> lembrado entre atualizações
+    document.querySelectorAll('details[data-persist]').forEach(function(d){
+      var key='padme:'+d.getAttribute('data-persist');
+      try{ if(localStorage.getItem(key)==='1') d.open=true; }catch(e){}
+      d.addEventListener('toggle', function(){
+        try{ localStorage.setItem(key, d.open?'1':'0'); }catch(e){}
       });
-      inp.classList.toggle('nomatch', !!q && !any);
-    }
-    try{ var saved=localStorage.getItem(key); if(saved){ inp.value=saved; } }catch(e){}
-    inp.addEventListener('input', function(){
-      try{ localStorage.setItem(key, inp.value); }catch(e){}
-      apply();
     });
-    if(inp.value) apply();   // re-aplica o filtro lembrado após o refresh
-  });
 
-  // auto-refresh por JS: recarrega a cada N s, mas PAUSA enquanto você filtra ou
-  // está com o foco num campo — assim o refresh não apaga a filtragem. (N é o
-  // refresh do PAINEL, fixo; não tem relação com interval_seconds do scan.)
-  (function(){
-    var pill=document.getElementById('autopill');
-    var secs=pill ? parseInt(pill.getAttribute('data-secs'),10)||30 : 30;
-    function interacting(){
-      var a=document.activeElement;
-      var typing=a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA');
-      // menu de ação aberto: o refresh fecharia o formulário no meio da ação
-      return typing || anyFilterActive() || !!document.querySelector('details.act[open]');
-    }
-    setInterval(function(){
-      if(interacting()){
-        if(pill) pill.innerHTML='auto <b>pausado</b>';
-        return;
+    // busca local por categoria: filtra as linhas e esconde grupos sem match.
+    // O texto é lembrado e reaplicado depois de cada atualização ao vivo.
+    document.querySelectorAll('.kfilter').forEach(function(inp){
+      var det=inp.closest('details');
+      var key='padme:f-'+(det&&det.getAttribute('data-persist')||'');
+      function apply(){
+        var q=inp.value.trim().toLowerCase();
+        if(q && det) det.open=true;
+        var any=false;
+        det.querySelectorAll('.kind').forEach(function(g){
+          var kind=(g.getAttribute('data-kind')||'').toLowerCase();
+          var shown=0;
+          g.querySelectorAll('.row').forEach(function(r){
+            var hit=!q || kind.indexOf(q)!==-1 || r.textContent.toLowerCase().indexOf(q)!==-1;
+            r.classList.toggle('hide', !hit);
+            if(hit) shown++;
+          });
+          g.classList.toggle('hide', shown===0);
+          if(shown) any=true;
+        });
+        inp.classList.toggle('nomatch', !!q && !any);
       }
-      location.reload();
-    }, secs*1000);
-  })();
+      try{ var saved=localStorage.getItem(key); if(saved){ inp.value=saved; } }catch(e){}
+      inp.addEventListener('input', function(){
+        try{ localStorage.setItem(key, inp.value); }catch(e){}
+        apply();
+      });
+      if(inp.value) apply();
+    });
 
-  // falso positivo / aceitar risco exigem motivo (o servidor também valida):
-  // avisa antes de enviar em vez de mostrar a página de erro.
-  document.querySelectorAll('form.actf').forEach(function(f){
-    f.addEventListener('submit', function(ev){
-      var btn=ev.submitter, r=f.querySelector('.actr');
-      var need=btn && (btn.value==='suppress'||btn.value==='accept');
-      if(need && r && !r.value.trim()){
-        ev.preventDefault(); r.classList.add('need'); r.focus();
+    // falso positivo / aceitar risco exigem motivo (o servidor também valida)
+    document.querySelectorAll('form.actf').forEach(function(f){
+      f.addEventListener('submit', function(ev){
+        var btn=ev.submitter, r=f.querySelector('.actr');
+        var need=btn && (btn.value==='suppress'||btn.value==='accept');
+        if(need && r && !r.value.trim()){
+          ev.preventDefault(); r.classList.add('need'); r.focus();
+        }
+      });
+    });
+
+    charts=[];
+    document.querySelectorAll('.trend').forEach(function(el, i){
+      var dataEl=el.querySelector('.tdata'), chart=el.querySelector('.chart');
+      if(!dataEl||!chart) return;
+      var series; try{ series=JSON.parse(dataEl.textContent); }catch(e){ return; }
+      var id=(el.getAttribute('data-days')||'')+':'+i;
+      if(legend[id]) el.querySelectorAll('.lg').forEach(function(b){
+        b.classList.toggle('on', legend[id].indexOf(b.dataset.t)!==-1); });
+      function redraw(){
+        var active=new Set();
+        el.querySelectorAll('.lg.on').forEach(function(b){active.add(b.dataset.t);});
+        legend[id]=Array.from(active);
+        chart.innerHTML=svg(series, active, chart.clientWidth);
       }
+      el.querySelectorAll('.lg').forEach(function(b){
+        b.addEventListener('click', function(){ b.classList.toggle('on'); redraw(); });
+      });
+      redraw();
+      charts.push(redraw);
     });
-  });
+  }
+  initPage();
 
-  document.querySelectorAll('.trend').forEach(function(el){
-    var dataEl=el.querySelector('.tdata'), chart=el.querySelector('.chart');
-    if(!dataEl||!chart) return;
-    var series; try{ series=JSON.parse(dataEl.textContent); }catch(e){ return; }
-    function redraw(){
-      var active=new Set();
-      el.querySelectorAll('.lg.on').forEach(function(b){active.add(b.dataset.t);});
-      chart.innerHTML=svg(series, active, chart.clientWidth);
-    }
-    el.querySelectorAll('.lg').forEach(function(b){
-      b.addEventListener('click', function(){ b.classList.toggle('on'); redraw(); });
-    });
-    redraw();
-    window.addEventListener('resize', redraw);
-  });
+  // ── ao vivo ───────────────────────────────────────────────────────────────
+  // O servidor avisa por /live (Server-Sent Events) quando o banco muda; aqui a
+  // página é buscada de novo e só o conteúdo é trocado: sem recarregar, sem
+  // perder a rolagem, o filtro ou o que estava aberto. Espera só enquanto você
+  // digita ou está com um menu de ação aberto. Sem /live (navegador antigo ou
+  // proxy que corta a conexão), cai para atualizar a cada 30 s.
+  function pill(state, text){
+    var p=document.getElementById('autopill');
+    if(!p) return;
+    p.className='pill live-'+state;
+    p.innerHTML='<span class=ldot></span>'+text;
+  }
+  function interacting(){
+    var a=document.activeElement;
+    var typing=a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT');
+    return typing || !!document.querySelector('details.act[open]');
+  }
+  var pending=false, busy=false, last=0, broken=0;
+  function refresh(){
+    if(busy) return;
+    if(interacting()){ pill('wait','em espera'); return; }
+    busy=true; pending=false;
+    fetch(location.href, {cache:'no-store', credentials:'same-origin'})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html, 'text/html');
+        var fresh=doc.querySelector('.app'), cur=document.querySelector('.app');
+        if(!fresh||!cur) throw new Error('sem conteúdo');
+        var y=window.scrollY;
+        cur.replaceWith(fresh);
+        initPage();
+        window.scrollTo(0, y);
+        last=Date.now();
+        pill('on', broken ? 'atualizando a cada 30 s' : 'ao vivo');
+      })
+      .catch(function(){ pill('err','sem conexão'); pending=true; })
+      .then(function(){ busy=false; });
+  }
+  setInterval(function(){
+    if(pending && Date.now()-last > 1500) refresh();       // agrupa rajadas de mudança
+    else if(broken && Date.now()-broken > 30000){ broken=Date.now(); refresh(); }
+  }, 1000);
+  if('EventSource' in window){
+    var es=new EventSource('/live');
+    es.addEventListener('change', function(){ pending=true; });
+    es.onopen=function(){ broken=0; pill('on','ao vivo'); };
+    es.onerror=function(){ if(!broken) broken=Date.now(); pill('err','reconectando'); };
+  } else {
+    broken=Date.now(); pill('on','atualizando a cada 30 s');
+  }
 })();
 </script>"""

@@ -1,0 +1,88 @@
+name: install
+
+# Roda os instaladores de verdade, como um usuário faria, nos três sistemas:
+# instala a partir do checkout, confere que o comando `padme` funciona sem
+# "python" na frente, cria um config sem perguntas e desinstala.
+on:
+  push:
+    paths: ["install.*", "padme/**", "pyproject.toml", ".github/workflows/install.yml"]
+  pull_request:
+    paths: ["install.*", "padme/**", "pyproject.toml", ".github/workflows/install.yml"]
+  workflow_dispatch:
+
+jobs:
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Instalar (sh install.sh)
+        run: sh install.sh < /dev/null
+      - name: Comando padme sem python na frente
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          cd "$RUNNER_TEMP"
+          padme --version
+          padme -h | grep -q "monitor"
+          padme init --target example.com --yes
+          padme doctor || true
+          test -f "$HOME/.config/padme/config.yaml"
+      - name: Desinstalar
+        run: |
+          sh install.sh --uninstall
+          test ! -e "$HOME/.local/bin/padme"
+          test -f "$HOME/.config/padme/config.yaml"   # config fica
+
+  windows:
+    runs-on: windows-latest
+    env:
+      PADME_NO_PAUSE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Instalar (install.bat, como no duplo clique)
+        shell: cmd
+        run: install.bat < NUL
+      - name: Comando padme sem python na frente
+        shell: pwsh
+        run: |
+          $bin = Join-Path $env:LOCALAPPDATA 'padme\bin'
+          $userPath = (Get-ItemProperty 'HKCU:\Environment').Path
+          if (-not ($userPath -split ';' | Where-Object { $_.TrimEnd('\') -eq $bin })) { throw "PATH do usuario sem $bin" }
+          $env:Path = "$env:Path;$bin"
+          Set-Location $env:RUNNER_TEMP
+          padme --version
+          if (-not ((padme -h) -match 'monitor')) { throw 'ajuda sem os comandos' }
+          padme init --target example.com --yes
+          if ($LASTEXITCODE -ne 0) { throw 'init falhou' }
+          if (-not (Test-Path (Join-Path $env:APPDATA 'padme\config.yaml'))) { throw 'config nao criado' }
+      - name: Comando padme no Prompt de Comando
+        shell: cmd
+        run: |
+          set "PATH=%PATH%;%LOCALAPPDATA%\padme\bin"
+          padme --version
+      - name: Reinstalar pelo modo "irm | iex" (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $env:PADME_SRC = $env:GITHUB_WORKSPACE   # o código deste checkout, não o do main
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          & (Join-Path $env:LOCALAPPDATA 'padme\bin\padme.cmd') --version
+          if ($LASTEXITCODE -ne 0) { throw 'padme nao roda depois do modo iex' }
+      - name: Desinstalar
+        shell: cmd
+        run: install.bat -Uninstall < NUL
+      - name: Conferir remoção
+        shell: pwsh
+        run: |
+          if (Test-Path (Join-Path $env:LOCALAPPDATA 'padme\bin\padme.cmd')) { throw 'comando ficou' }
+          $userPath = (Get-ItemProperty 'HKCU:\Environment').Path
+          if ($userPath -match [regex]::Escape((Join-Path $env:LOCALAPPDATA 'padme\bin'))) { throw 'PATH ficou' }
+          if (-not (Test-Path (Join-Path $env:APPDATA 'padme\config.yaml'))) { throw 'config devia ficar' }

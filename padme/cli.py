@@ -1,19 +1,8 @@
-"""CLI do Padmé.
+"""CLI do Padmé. `padme -h` lista todos os comandos e opções.
 
-Comandos:
-  padme scan         -> um ciclo avulso (grava/atualiza baseline) e imprime as mudanças
-  padme monitor      -> modo sentinela: varre em loop e notifica (--once p/ cron)
-  padme events       -> últimos eventos gravados de cada alvo
-  padme export       -> estado atual em JSON/CSV
-  padme merge        -> consolida exports de várias fontes (multi-vantage)
-  padme web          -> painel (leitura + ações de finding com CSRF)
-  padme api          -> API REST/JSON read-only (/api/v1)
-  padme doctor       -> integridade do banco, saúde dos scans e avisos de config
-  padme backup       -> backup online consistente do SQLite
-  padme health       -> o monitor está varrendo? (exit 0/1, p/ HEALTHCHECK/cron)
-  padme test-notify  -> testa todos os canais configurados
-  padme finding      -> problemas abertos: listar, reconhecer, silenciar, aceitar, reabrir
-  padme digest       -> resumo do período agora (--print só mostra; sem ele, envia)
+Sem comando, `padme` roda o monitor com o painel web junto (um terminal só).
+Comandos: monitor, init, web, scan, finding, digest, events, export, doctor,
+health, backup, api, merge. Opções gerais: -c/--config, -v, --update, --version.
 
 Uso responsável: monitore apenas ativos que você é dono ou tem autorização
 explícita para testar.
@@ -46,6 +35,7 @@ from .engine import Engine, build_notifiers
 from .findings import ACTIONS, ACTIVE, STATUS_LABEL, STATUSES, human_hours, sla_info
 from .logredact import install_secret_redaction
 from .models import Event
+from .paths import find_config
 from .risk import Level
 from .scheduler import run_monitor
 from .storage import Storage, StorageOutdated
@@ -116,17 +106,39 @@ async def _cmd_scan(cfg: Config, args) -> int:
     return 0
 
 
+def _start_panel(cfg: Config, args) -> None:
+    """Painel web numa thread do próprio monitor: um terminal só. Se não der
+    para abrir (porta ocupada, exposto sem token), avisa e o monitor segue."""
+    from .webpanel import start_background
+    target = _panel_target(cfg, args.web_host, args.web_port, args.allow_no_auth)
+    if isinstance(target, str):
+        print(target + "\n  O monitor segue sem o painel.", file=sys.stderr)
+        return
+    host, port, token, exposed = target
+    try:
+        start_background(cfg, host, port, exposed=exposed, token=token or None)
+    except OSError as exc:
+        print(f"AVISO: o painel não abriu em {host}:{port} ({exc.strerror or exc}). "
+              "O monitor segue sem ele; mude web.port no config ou use --web-port.",
+              file=sys.stderr)
+        return
+    shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    print(f"Painel: http://{shown}:{port}" + (" (com token)" if token else ""), flush=True)
+
+
 async def _cmd_monitor(cfg: Config, args) -> int:
     if args.interval:
         cfg.interval_seconds = args.interval
     _override_levels(cfg, args.level)
+    if not args.once and not args.no_web:
+        await asyncio.to_thread(_start_panel, cfg, args)
     if args.lock:
         from .singleton import AlreadyRunning, single_instance
         try:
             with single_instance(args.lock):
                 await run_monitor(cfg, once=args.once)
         except AlreadyRunning as exc:
-            print(f"⏭️  {exc} — pulando esta execução.", file=sys.stderr)
+            print(f"{exc} — pulando esta execução.", file=sys.stderr)
             return 4
     else:
         await run_monitor(cfg, once=args.once)
@@ -233,28 +245,34 @@ def _resolve_web_token(cfg: Config) -> str:
     return (cfg.web.token or os.environ.get("PADME_WEB_TOKEN", "")).strip()
 
 
-async def _cmd_web(cfg: Config, args) -> int:
-    from .webpanel import serve
-    host = args.host if args.host is not None else cfg.web.bind
-    port = args.port if args.port is not None else cfg.web.port
+def _panel_target(cfg: Config, host: str | None, port: int | None,
+                  allow_no_auth: bool) -> tuple[str, int, str, bool] | str:
+    """(host, porta, token, exposto) do painel, ou a mensagem de recusa: fora
+    de localhost SEM token o painel expõe sua superfície de ataque à rede."""
+    host = host if host is not None else cfg.web.bind
+    port = port if port is not None else cfg.web.port
     token = _resolve_web_token(cfg)
     exposed = host not in _LOOPBACK
-
-    if exposed and not token and not args.allow_no_auth:
-        print(
-            f"⛔ Recusando servir em {host} (fora de localhost) SEM autenticação.\n"
-            "    Isso expõe sua superfície de ataque a qualquer um na rede. Escolha uma:\n"
-            "      • defina o token:  export PADME_WEB_TOKEN=... (ou web.token no config)\n"
-            "      • sirva local:     padme web            (bind em 127.0.0.1)\n"
-            "      • ciente do risco: padme web --host " + host + " --allow-no-auth",
-            file=sys.stderr,
-        )
-        return 3
+    if exposed and not token and not allow_no_auth:
+        return (f"Recusando abrir o painel em {host} (fora de localhost) SEM autenticação:\n"
+                "  qualquer um na rede veria sua superfície de ataque. Escolha uma:\n"
+                "    - defina o token: PADME_WEB_TOKEN no .env (ou web.token no config)\n"
+                "    - use só nesta máquina: web.bind: 127.0.0.1 (padrão)\n"
+                "    - ciente do risco: --allow-no-auth")
     if exposed:
-        detail = ("protegido por token (Authorization: Bearer)." if token
-                  else "SEM autenticação (--allow-no-auth). Só em rede confiável / atrás de proxy.")
-        print(f"⚠️  Servindo o painel em {host} (fora de localhost) — {detail}", file=sys.stderr)
+        detail = ("protegido por token." if token
+                  else "SEM autenticação (--allow-no-auth). Só em rede confiável.")
+        print(f"AVISO: painel em {host} (fora de localhost) — {detail}", file=sys.stderr)
+    return host, port, token, exposed
 
+
+async def _cmd_web(cfg: Config, args) -> int:
+    from .webpanel import serve
+    target = _panel_target(cfg, args.host, args.port, args.allow_no_auth)
+    if isinstance(target, str):
+        print(target, file=sys.stderr)
+        return 3
+    host, port, token, exposed = target
     serve(cfg, host, port, exposed=exposed, token=token or None)
     return 0
 
@@ -526,114 +544,283 @@ async def _cmd_digest(cfg: Config, args) -> int:
         storage.close()
 
 
-async def _cmd_test_notify(cfg: Config, args) -> int:
-    notifiers = build_notifiers(cfg)
-    if not notifiers:
-        print("Nenhum canal habilitado/configurado (telegram/discord/webhook/email).")
-        return 1
-    all_ok = True
-    for n in notifiers:
-        res = await n.announce("teste de conexão OK.")
-        all_ok = all_ok and res.ok
-        detail = "" if res.ok else f" ({res.error or res.status})"
-        print(f"  {getattr(n, 'name', type(n).__name__)}: {'enviado' if res.ok else 'FALHOU'}{detail}")
-    return 0 if all_ok else 1
+class _PtFormatter(argparse.HelpFormatter):
+    """Ajuda do argparse em português ("uso:" em vez de "usage:")."""
+
+    def add_usage(self, usage, actions, groups, prefix=None):
+        return super().add_usage(usage, actions, groups, "uso: " if prefix is None else prefix)
+
+
+class _Parser(argparse.ArgumentParser):
+    def __init__(self, *a, **k):
+        k.setdefault("formatter_class", _PtFormatter)
+        k["add_help"] = False
+        super().__init__(*a, **k)
+        self._positionals.title = "argumentos"
+        self._optionals.title = "opções"
+
+    def error(self, message):  # noqa: D401 — mesma assinatura do argparse
+        for en, pt in _ARGPARSE_PT:
+            message = message.replace(en, pt)
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: erro: {message}\n"
+                     f"Veja todas as opções com: padme -h\n")
+
+
+# mensagens do argparse que o usuário vê, em português
+_ARGPARSE_PT = (
+    ("the following arguments are required", "faltam os argumentos"),
+    ("unrecognized arguments", "opção desconhecida"),
+    ("expected one argument", "falta o valor"),
+    ("invalid choice", "valor inválido"),
+    ("choose from", "escolha entre"),
+    ("invalid int value", "número inválido"),
+    ("invalid float value", "número inválido"),
+    ("argument ", "argumento "),
+)
+
+
+# ordem em que os comandos aparecem no `padme -h`
+_COMMAND_ORDER = ["monitor", "init", "web", "scan", "finding", "digest", "events",
+                  "export", "doctor", "health", "backup", "api", "merge"]
+
+_EXAMPLES = """\
+Exemplos:
+  padme                         monitora os alvos e abre o painel (http://127.0.0.1:8787)
+  padme init                    cria o config com algumas perguntas
+  padme --no-web --once         uma varredura, sem painel, e sai (para cron)
+  padme scan                    uma varredura agora, mostrando o que mudou
+  padme finding list            problemas abertos
+  padme finding suppress ID --reason "falso positivo"
+  padme digest --print          resumo do período no terminal
+  padme --update                atualiza para a versão mais recente do GitHub
+"""
+
+
+def _action_line(a: argparse.Action) -> tuple[str, str]:
+    if a.option_strings:
+        names = ", ".join(a.option_strings)
+        if a.nargs != 0:
+            names += " " + (a.metavar or (("{" + ",".join(map(str, a.choices)) + "}")
+                                          if a.choices else a.dest.upper()))
+    else:
+        names = a.metavar or (("{" + ",".join(map(str, a.choices)) + "}")
+                              if a.choices else a.dest)
+    return names, (a.help or "").replace("%%", "%")
+
+
+class _FullHelp(argparse.Action):
+    """`padme -h`: TODOS os comandos com TODAS as opções, numa tela só."""
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS,
+                 help=None):  # noqa: A002 — nome do argparse
+        super().__init__(option_strings, dest=dest, default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(full_help(parser))
+        parser.exit()
+
+
+def full_help(parser: argparse.ArgumentParser) -> str:
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    helps = {ca.dest: ca.help for ca in sub._choices_actions}
+    out = ["Padmé — monitoramento da superfície de ataque dos SEUS domínios.", "",
+           "uso: padme [opções gerais] [comando] [opções do comando]", "",
+           "Sem comando, o padme monitora os alvos e abre o painel web (= padme monitor);",
+           "as opções do monitor valem direto, ex.: padme --no-web --interval 600.", "",
+           "Comandos:"]
+    for name in _COMMAND_ORDER:
+        sp = sub.choices[name]
+        out.append(f"  {name:<12}{helps.get(name, '')}")
+        for a in sp._actions:
+            if isinstance(a, argparse._HelpAction):
+                continue
+            names, text = _action_line(a)
+            out.append(f"      {names:<26}{text}" if len(names) < 26
+                       else f"      {names}\n      {'':<26}{text}")
+    out += ["", "Opções gerais:"]
+    for a in parser._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            continue
+        names, text = _action_line(a)
+        out.append(f"  {names:<28}{text}")
+    out += ["", _EXAMPLES,
+            f"Config em uso: {find_config(None)} (mude com -c ou PADME_CONFIG)",
+            "Cada comando também tem ajuda própria: padme COMANDO -h"]
+    return "\n".join(out)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="padme",
-        description="Padmé — Attack Surface Monitoring com alertas multi-canal.",
-    )
-    p.add_argument("--version", action="version", version=f"padme {__version__}")
-    p.add_argument("-c", "--config", default="config.yaml", help="caminho do config YAML")
+    p = _Parser(prog="padme",
+                description="Padmé — monitoramento da superfície de ataque dos SEUS domínios.")
+    p.add_argument("-h", "--help", action=_FullHelp, help="mostra esta ajuda (todos os comandos e opções)")
+    p.add_argument("-c", "--config", default=None, metavar="ARQUIVO",
+                   help="config YAML (padrão: PADME_CONFIG, ./config.yaml ou a pasta do usuário)")
     p.add_argument("-v", "--verbose", action="store_true", help="log detalhado")
+    p.add_argument("--update", action="store_true",
+                   help="atualiza o padme para a versão mais recente do GitHub")
+    p.add_argument("--force", action="store_true", help="com --update: reinstala mesmo se já estiver atualizado")
+    p.add_argument("--version", action="version", version=f"padme {__version__}",
+                   help="mostra a versão")
 
-    sub = p.add_subparsers(dest="command", required=True)
+    sub = p.add_subparsers(dest="command", metavar="comando", parser_class=_Parser)
 
-    sp = sub.add_parser("scan", help="scan único (grava/atualiza baseline)")
-    sp.add_argument("--notify", action="store_true", help="também envia mudanças aos canais de notificação configurados")
-    sp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
-                    help="limiar de severidade de TODOS os canais (sobrescreve o config)")
-    sp.set_defaults(func=_cmd_scan)
+    def cmd(name: str, text: str) -> argparse.ArgumentParser:
+        sp = sub.add_parser(name, help=text, description=text)
+        sp.add_argument("-h", "--help", action="help", help="mostra a ajuda deste comando")
+        return sp
 
-    mp = sub.add_parser("monitor", help="modo sentinela: varre em loop e alerta nos canais configurados")
-    mp.add_argument("--interval", type=int, default=None, help="sobrescreve interval_seconds")
+    mp = cmd("monitor", "monitora em loop, alerta nos canais e serve o painel web (comando padrão)")
+    mp.add_argument("--no-web", action="store_true", help="não abre o painel web junto")
+    mp.add_argument("--web-host", default=None, metavar="HOST",
+                    help="endereço do painel (padrão: web.bind do config, 127.0.0.1)")
+    mp.add_argument("--web-port", type=int, default=None, metavar="PORTA",
+                    help="porta do painel (padrão: web.port do config, 8787)")
+    mp.add_argument("--allow-no-auth", action="store_true",
+                    help="painel fora de localhost SEM token (decisão consciente)")
+    mp.add_argument("--interval", type=int, default=None, metavar="SEG",
+                    help="segundos entre varreduras (sobrescreve interval_seconds)")
     mp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
-                    help="limiar de severidade de TODOS os canais (sobrescreve o config)")
-    mp.add_argument("--once", action="store_true",
-                    help="roda um único ciclo e sai (ideal p/ cron)")
-    mp.add_argument("--lock", default=None, metavar="PATH",
-                    help="lock de instância única (flock); sai se já houver uma rodando")
+                    help="severidade mínima enviada aos canais (sobrescreve o config)")
+    mp.add_argument("--once", action="store_true", help="uma varredura e sai, sem painel (para cron)")
+    mp.add_argument("--lock", default=None, metavar="ARQUIVO",
+                    help="trava de instância única: sai se já houver um padme rodando")
     mp.set_defaults(func=_cmd_monitor)
 
-    ep = sub.add_parser("events", help="lista eventos gravados")
-    ep.add_argument("--limit", type=int, default=30)
-    ep.set_defaults(func=_cmd_events)
+    ip = cmd("init", "cria o config com algumas perguntas (domínios, autorização, Telegram)")
+    ip.add_argument("--target", action="append", metavar="DOMINIO",
+                    help="domínio a monitorar, sem perguntas (repita para vários)")
+    ip.add_argument("--yes", action="store_true",
+                    help="com --target: confirma que você tem autorização para monitorar")
+    ip.add_argument("--force", action="store_true", help="sobrescreve um config existente")
 
-    xp = sub.add_parser("export", help="exporta o estado atual (JSON/CSV)")
-    xp.add_argument("--format", choices=["json", "csv"], default="json")
-    xp.add_argument("--out", default=None, help="arquivo de saída (padrão: stdout)")
-    xp.set_defaults(func=_cmd_export)
-
-    tn = sub.add_parser("test-notify", help="testa TODOS os canais configurados")
-    tn.set_defaults(func=_cmd_test_notify)
-
-    wb = sub.add_parser("web", help="painel web read-only do estado/histórico")
-    wb.add_argument("--host", default=None, help="bind (padrão: web.bind do config ou 127.0.0.1)")
-    wb.add_argument("--port", type=int, default=None, help="porta (padrão: web.port do config ou 8787)")
+    wb = cmd("web", "só o painel web, sem monitorar (ex.: em outra máquina)")
+    wb.add_argument("--host", default=None, help="endereço (padrão: web.bind do config, 127.0.0.1)")
+    wb.add_argument("--port", type=int, default=None, metavar="PORTA",
+                    help="porta (padrão: web.port do config, 8787)")
     wb.add_argument("--allow-no-auth", action="store_true",
                     help="permite servir fora de localhost SEM token (decisão consciente)")
     wb.set_defaults(func=_cmd_web)
 
-    ap = sub.add_parser("api", help="API REST/JSON read-only e versionada (/api/v1)")
-    ap.add_argument("--host", default=None, help="bind (padrão: api.bind do config ou 127.0.0.1)")
-    ap.add_argument("--port", type=int, default=None, help="porta (padrão: api.port do config ou 8788)")
-    ap.add_argument("--allow-no-auth", action="store_true",
-                    help="permite servir fora de localhost SEM token (decisão consciente)")
-    ap.set_defaults(func=_cmd_api)
+    sp = cmd("scan", "uma varredura agora, mostrando o que mudou")
+    sp.add_argument("--notify", action="store_true", help="também envia as mudanças aos canais")
+    sp.add_argument("--level", choices=_LEVEL_CHOICES, default=None,
+                    help="severidade mínima enviada aos canais (sobrescreve o config)")
+    sp.set_defaults(func=_cmd_scan)
 
-    dp = sub.add_parser("doctor", help="diagnóstico: integridade do banco, saúde dos scans e config")
-    dp.set_defaults(func=_cmd_doctor)
-
-    bk = sub.add_parser("backup", help="backup online consistente do banco SQLite (seguro com o monitor rodando)")
-    bk.add_argument("--out", default=None, metavar="ARQUIVO",
-                    help="destino do backup (padrão: padme-backup-<timestamp>.db)")
-    bk.set_defaults(func=_cmd_backup)
-
-    hp = sub.add_parser("health", help="liveness do monitor pelo banco (exit 0/1; HEALTHCHECK/cron)")
-    hp.add_argument("--max-age", type=int, default=None, metavar="SEG",
-                    help="idade máxima do último scan (padrão: 2*interval_seconds + 600)")
-    hp.set_defaults(func=_cmd_health)
-
-    fp = sub.add_parser("finding", help="ciclo de vida dos problemas: list/show/ack/suppress/accept/reopen")
-    fp.add_argument("action", choices=["list", "show", *ACTIONS],
-                    help="list (padrão: só ativos) | show <id> | ack | suppress | accept | reopen <id>")
-    fp.add_argument("id", nargs="?", help="id do finding (ou prefixo único com 6+ caracteres)")
-    fp.add_argument("--reason", help="motivo (obrigatório em suppress/accept; vai p/ a auditoria)")
-    fp.add_argument("--by", help="quem está agindo (padrão: usuário do sistema)")
-    fp.add_argument("--target", help="list: só este alvo")
+    fp = cmd("finding", "problemas abertos: listar, reconhecer, silenciar, aceitar, reabrir")
+    fp.add_argument("action", choices=["list", "show", *ACTIONS], metavar="ação",
+                    help="list | show ID | ack ID | suppress ID | accept ID | reopen ID")
+    fp.add_argument("id", nargs="?", metavar="ID", help="id do problema (ou os 6+ primeiros caracteres)")
+    fp.add_argument("--reason", metavar="TEXTO", help="motivo (obrigatório em suppress e accept)")
+    fp.add_argument("--by", metavar="NOME", help="quem está agindo (padrão: usuário do sistema)")
+    fp.add_argument("--target", metavar="DOMINIO", help="list: só este alvo")
     fp.add_argument("--status", choices=list(STATUSES), help="list: só este status")
     fp.add_argument("--all", action="store_true", help="list: inclui tratados e resolvidos")
     fp.set_defaults(func=_cmd_finding)
 
-    dg = sub.add_parser("digest", help="resumo do período agora (mudanças, problemas, coleta)")
-    dg.add_argument("--print", action="store_true", help="só mostra no terminal (não envia nem marca)")
-    dg.add_argument("--hours", type=float, help="período: últimas N horas (padrão: desde o último resumo)")
+    dg = cmd("digest", "resumo do período: mudanças, problemas abertos, saúde da coleta")
+    dg.add_argument("--print", action="store_true", help="só mostra no terminal (não envia)")
+    dg.add_argument("--hours", type=float, metavar="N", help="últimas N horas (padrão: desde o último resumo)")
     dg.set_defaults(func=_cmd_digest)
 
-    mg = sub.add_parser("merge", help="consolida exports de várias fontes (multi-vantage) e mostra divergências")
-    mg.add_argument("files", nargs="+", help="arquivos JSON de export (um por fonte/ponto de observação)")
-    mg.add_argument("--out", default=None, help="grava a consolidação em JSON (padrão: resumo no stdout)")
+    ep = cmd("events", "histórico de mudanças gravado")
+    ep.add_argument("--limit", type=int, default=30, metavar="N", help="quantos eventos por alvo (padrão 30)")
+    ep.set_defaults(func=_cmd_events)
+
+    xp = cmd("export", "exporta o estado atual em JSON ou CSV")
+    xp.add_argument("--format", choices=["json", "csv"], default="json", help="formato (padrão json)")
+    xp.add_argument("--out", default=None, metavar="ARQUIVO", help="arquivo de saída (padrão: tela)")
+    xp.set_defaults(func=_cmd_export)
+
+    dp = cmd("doctor", "diagnóstico: banco, saúde das varreduras, config e rede")
+    dp.set_defaults(func=_cmd_doctor)
+
+    hp = cmd("health", "o monitor está varrendo? (sai com 0 ou 1; para Docker/cron)")
+    hp.add_argument("--max-age", type=int, default=None, metavar="SEG",
+                    help="idade máxima da última varredura (padrão: 2x o intervalo + 10 min)")
+    hp.set_defaults(func=_cmd_health)
+
+    bk = cmd("backup", "cópia consistente do banco (pode rodar com o monitor ligado)")
+    bk.add_argument("--out", default=None, metavar="ARQUIVO",
+                    help="destino (padrão: padme-backup-<data>.db)")
+    bk.set_defaults(func=_cmd_backup)
+
+    ap = cmd("api", "API JSON somente leitura para automação (/api/v1)")
+    ap.add_argument("--host", default=None, help="endereço (padrão: api.bind do config, 127.0.0.1)")
+    ap.add_argument("--port", type=int, default=None, metavar="PORTA",
+                    help="porta (padrão: api.port do config, 8788)")
+    ap.add_argument("--allow-no-auth", action="store_true",
+                    help="permite servir fora de localhost SEM token (decisão consciente)")
+    ap.set_defaults(func=_cmd_api)
+
+    mg = cmd("merge", "compara exports de várias máquinas (multi-vantage)")
+    mg.add_argument("files", nargs="+", metavar="ARQUIVO", help="exports JSON, um por máquina")
+    mg.add_argument("--out", default=None, metavar="ARQUIVO", help="grava a consolidação em JSON")
     mg.set_defaults(func=_cmd_merge)
 
     return p
 
 
+# comandos que não varrem alvos não exigem a confirmação de escopo
+_NO_SCOPE = {"events", "export", "web", "api", "doctor", "merge", "backup", "health",
+             "finding", "digest"}
+
+
+def _load_env(config_path: Path) -> None:
+    """Segredos do `.env`: o que está ao lado do config e o da pasta atual."""
+    if not load_dotenv:
+        return
+    beside = config_path.parent / ".env"
+    if beside.is_file():
+        load_dotenv(beside)
+    load_dotenv(os.path.join(os.getcwd(), ".env"))
+
+
+_GLOBAL_FLAGS = {"-v", "--verbose", "--update", "--force"}
+_GLOBAL_WITH_VALUE = {"-c", "--config"}
+
+
+def _with_default_command(argv: list[str]) -> list[str]:
+    """Sem comando, o comando é `monitor`: `padme`, `padme --no-web` e
+    `padme -c x.yaml --level high` viram `padme ... monitor ...`.
+
+    Pula as opções gerais do começo; se o que vem depois é uma opção (ou nada),
+    insere `monitor` ali. Uma palavra solta continua indo para o argparse, para
+    um comando digitado errado dar "comando inválido" e não virar monitor.
+    """
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in _GLOBAL_WITH_VALUE:
+            i += 2
+        elif a in _GLOBAL_FLAGS or a.startswith("--config=") or (a.startswith("-c") and len(a) > 2):
+            i += 1
+        else:
+            break
+    if i > len(argv) or (i < len(argv) and (not argv[i].startswith("-")
+                                            or argv[i] in ("-h", "--help", "--version"))):
+        return argv   # `-c` sem valor, comando escrito ou ajuda: o argparse decide
+    return [*argv[:i], "monitor", *argv[i:]]
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    if load_dotenv:
-        load_dotenv()  # carrega o .env para os ${VAR} do config
+    argv = sys.argv[1:] if argv is None else list(argv)
+    parser = build_parser()
+    args = parser.parse_args(_with_default_command(argv))
+    if args.update:
+        from .updater import run as update
+        return update(force=args.force)
+    if args.command is None:
+        parser.print_help()
+        return 2
+
+    config_path = find_config(args.config)
+    if args.command == "init":
+        from .initcfg import run as init
+        return init(config_path, targets=args.target, yes=args.yes, force=args.force)
+
+    _load_env(config_path)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -642,23 +829,33 @@ def main(argv: list[str] | None = None) -> int:
     # nunca vaza token/secret no log (mesmo com -v): sobe httpx p/ WARNING e
     # mascara segredos conhecidos em qualquer mensagem.
     install_secret_redaction()
+
+    if not config_path.is_file():
+        if args.command == "monitor" and not args.once and sys.stdin.isatty():
+            print("Nenhum config encontrado. Vamos criar um agora.\n")
+            from .initcfg import run as init
+            if init(config_path) != 0:
+                return 2
+            print()
+            _load_env(config_path)
+        else:
+            print(f"Nenhum config encontrado (procurado em {config_path}).\n"
+                  "Crie um com:  padme init", file=sys.stderr)
+            return 2
     try:
-        cfg = Config.load(args.config)
+        cfg = Config.load(config_path)
     except (FileNotFoundError, ValueError) as exc:
-        print(f"Erro de config: {exc}", file=sys.stderr)
+        print(f"Erro no config {config_path}: {exc}", file=sys.stderr)
         return 2
 
     for w in cfg.warnings:  # typo no YAML: avisa em vez de ignorar calado
         print(f"aviso de config: {w}", file=sys.stderr)
 
-    # comandos que não varrem alvos não exigem confirmação de escopo
-    read_only = args.command in ("events", "export", "test-notify", "web", "api", "doctor", "merge", "backup",
-                                 "health", "finding", "digest")
-    if not cfg.scope_confirmed and not read_only:
+    if not cfg.scope_confirmed and args.command not in _NO_SCOPE:
         print(
-            "⚠️  scope_confirmed=false no config.\n"
-            "    Confirme que você é dono ou tem AUTORIZAÇÃO para monitorar os alvos\n"
-            "    e ajuste 'scope_confirmed: true' no config.yaml para prosseguir.",
+            "AVISO: scope_confirmed está false no config.\n"
+            "  Confirme que você é dono ou tem AUTORIZAÇÃO para monitorar os alvos\n"
+            f"  e coloque 'scope_confirmed: true' em {config_path} para prosseguir.",
             file=sys.stderr,
         )
         return 3
