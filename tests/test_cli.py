@@ -20,15 +20,20 @@ def test_version_action(capsys):
 
 def test_subcomandos_esperados():
     parser = build_parser()
-    for cmd in ("scan", "monitor", "events", "export", "test-notify", "web"):
+    for cmd in ("scan", "monitor", "events", "export", "web", "doctor", "health"):
         args = parser.parse_args([cmd])
         assert hasattr(args, "func")
 
 
-def test_sem_subcomando_exige_um(capsys):
-    parser = build_parser()
+def test_test_notify_foi_removido(capsys):
     with pytest.raises(SystemExit):
-        parser.parse_args([])
+        build_parser().parse_args(["test-notify"])
+    assert "erro" in capsys.readouterr().err
+
+
+def test_sem_subcomando_vira_monitor_no_main():
+    # o parser aceita vazio; quem decide que vazio = monitor é o main()
+    assert build_parser().parse_args([]).command is None
 
 
 def test_monitor_once_e_lock():

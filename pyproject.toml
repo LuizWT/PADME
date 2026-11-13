@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "padme-asm"
 version = "0.1.0"
 description = "Padmé — Attack Surface Monitoring com alertas multi-canal"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27",
-    "dnspython>=2.6",
+    "dnspython>=2.9.2",   # versões anteriores têm CVE-2026-114605 e CVE-2026-128089
     "PyYAML>=6.0",
     "cryptography>=42.0",
     "python-dotenv>=1.0",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-padme = "padme.cli:main"
+padme = "padme.__main__:run"   # entrada leve: --update antes de importar a CLI
 
 [tool.setuptools.packages.find]
 include = ["padme*"]

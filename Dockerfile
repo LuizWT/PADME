@@ -1,9 +1,9 @@
 # Padmé — imagem para rodar o sentinela 24/7.
 #
 #   docker build -t padme .
-#   docker run --rm  -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme test-notify
 #   docker run -d --name padme --restart unless-stopped \
-#       -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme monitor
+#       -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme
+#   docker run --rm -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme finding list
 #
 # Espera a config em /data/config.yaml e grava o estado em /data/padme.db,
 # então monte um volume em /data (o .env em /data também é lido sozinho).

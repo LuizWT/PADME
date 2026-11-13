@@ -19,3 +19,8 @@ services:
     volumes:
       - ./data:/data
     command: ["monitor"]
+    # Painel no navegador do host: em data/config.yaml use web.bind: 0.0.0.0 e
+    # web.token: ${PADME_WEB_TOKEN}, defina PADME_WEB_TOKEN em data/.env e
+    # descomente as linhas abaixo. Sem token o painel não sobe (o monitor sim).
+    # ports:
+    #   - "127.0.0.1:8787:8787"

@@ -276,9 +276,10 @@ def test_render_tem_filtro_e_details_persistente():
     assert "data-persist='k-a-com'" in out       # estado do <details> persiste no refresh
     assert "class=kfilter" in out                # caixa de busca por categoria
     assert "data-kind='port'" in out             # grupo marcado p/ a busca casar o kind
-    # auto-refresh é por JS (pausável), NÃO <meta refresh> (que apagava o filtro)
+    # atualização ao vivo por JS (/live + troca do conteúdo), NÃO <meta refresh>
+    # (que recarregava a página e apagava o filtro)
     assert "http-equiv=refresh" not in out
-    assert "id=autopill" in out and "data-secs=30" in out
+    assert "id=autopill" in out and "data-live=1" in out and "EventSource('/live')" in out
 
 
 def test_collector_table_degradado_primeiro():

@@ -1,8 +1,18 @@
 # Runbook operacional — Padmé
 
-Operação real do sentinela: rodar 24/7, backup, rotação de segredos, exposição
-do painel e manutenção. Tudo alinhado ao funcionamento atual (`padme monitor`,
-SQLite em WAL, `.env`, variáveis `PADME_*`, lock de instância única).
+[Voltar ao README](../README.md)
+
+Para rodar num servidor 24/7: systemd, Docker, backup, rotação de segredos,
+painel atrás de proxy com TLS e manutenção. Num computador pessoal, o
+instalador e o comando `padme` bastam; este guia é para servidor.
+
+- [1. systemd](#1-systemd-sentinela-247)
+- [2. Docker](#2-docker)
+- [3. Backup do SQLite](#3-backup-do-sqlite)
+- [4. Rotação de segredos](#4-rotação-de-segredos)
+- [5. Painel atrás de proxy (TLS)](#5-painel-web-atrás-de-proxy-tls)
+- [6. Manutenção do banco](#6-manutenção-do-banco)
+- [7. Manutenção periódica](#7-manutenção-periódica-dependências-e-base-de-detecção)
 
 Convenção usada aqui (ajuste aos seus caminhos):
 
@@ -16,8 +26,8 @@ Convenção usada aqui (ajuste aos seus caminhos):
 sudo useradd --system --home-dir /var/lib/padme --shell /usr/sbin/nologin padme
 sudo mkdir -p /opt/padme /var/lib/padme
 sudo python3 -m venv /opt/padme/.venv
-sudo /opt/padme/.venv/bin/pip install /caminho/do/repo   # ou: pip install "git+https://github.com/LuizWT/PADME.git"
-sudo cp config.example.yaml /var/lib/padme/config.yaml    # e edite (scope_confirmed: true, targets)
+sudo /opt/padme/.venv/bin/pip install "https://github.com/LuizWT/PADME/archive/main.zip"
+sudo /opt/padme/.venv/bin/padme -c /var/lib/padme/config.yaml init   # ou copie e edite o config.example.yaml
 sudo chown -R padme:padme /var/lib/padme
 sudo chmod 750 /var/lib/padme
 ```
@@ -27,8 +37,7 @@ CLI. Permissão restrita:
 
 ```bash
 sudo tee /var/lib/padme/.env >/dev/null <<'EOF'
-PADME_TG_TOKEN=...
-PADME_TG_CHAT=...
+PADME_TELEGRAM_TOKEN=...
 PADME_DISCORD_WEBHOOK=...
 PADME_WEBHOOK_URL=...
 PADME_WEBHOOK_TOKEN=...
@@ -61,6 +70,7 @@ User=padme
 Group=padme
 WorkingDirectory=/var/lib/padme
 EnvironmentFile=/var/lib/padme/.env
+# o monitor já serve o painel em 127.0.0.1:8787; --no-web se não quiser
 ExecStart=/opt/padme/.venv/bin/padme -c /var/lib/padme/config.yaml monitor
 Restart=always
 RestartSec=10
@@ -100,7 +110,8 @@ journalctl -u padme -f            # logs (sem segredos — são mascarados)
 ### Variante cron-like (sem processo vivo)
 
 Se preferir um ciclo por vez em vez de processo residente, use um `.timer` com
-`monitor --once --lock` (o lock evita sobreposição se um ciclo demora):
+`monitor --once --lock` (o lock evita sobreposição se um ciclo demora; o
+`--once` não abre painel):
 
 `/etc/systemd/system/padme.service` (Type=oneshot):
 
@@ -130,9 +141,58 @@ WantedBy=timers.target
 sudo systemctl enable --now padme.timer
 ```
 
+Com cron puro, o equivalente é:
+
+```cron
+0 * * * *  /opt/padme/.venv/bin/padme -c /var/lib/padme/config.yaml monitor --once --lock /var/lib/padme/padme.lock
+```
+
 ---
 
-## 2. Backup do SQLite
+## 2. Docker
+
+A config, o `.env` e o banco ficam numa pasta montada em `/data`.
+
+```bash
+mkdir -p data
+cp config.example.yaml data/config.yaml     # edite: scope_confirmed, targets, canais
+docker compose up -d                        # restart automático já configurado
+docker compose logs -f
+```
+
+Sem compose:
+
+```bash
+docker build -t padme .
+docker run -d --name padme --restart unless-stopped \
+    -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme
+```
+
+- Outros comandos usam a mesma imagem: `docker compose run --rm padme finding list`.
+- `--user "$(id -u):$(id -g)"` faz o `padme.db` ficar com o seu usuário. No
+  compose, ajuste `user:` se o seu `id -u`/`id -g` não for `1000`.
+- A imagem tem `HEALTHCHECK` (`padme health`): o container fica `unhealthy` se a
+  última varredura passou de `2*interval_seconds + 10min`.
+- `docker stop` encerra limpo: avisa "monitoramento encerrado" nos canais e
+  fecha o banco.
+- Atualizar: `git pull && docker compose build --pull && docker compose up -d`
+  (o `padme --update` não se aplica à imagem).
+
+**Painel no navegador do host.** Dentro do container, o painel precisa escutar
+em todas as interfaces, e isso exige token. Em `data/config.yaml`:
+
+```yaml
+web:
+  bind: 0.0.0.0
+  token: ${PADME_WEB_TOKEN}
+```
+
+Defina `PADME_WEB_TOKEN` em `data/.env` e descomente `ports:` no
+`docker-compose.yml`. Sem token, o monitor roda normalmente, só sem painel.
+
+---
+
+## 3. Backup do SQLite
 
 O banco fica em **WAL**, então **não** copie o `.db` com `cp` durante a escrita
 (pode pegar um snapshot inconsistente, sem o que ainda está no `-wal`). Use o
@@ -179,7 +239,7 @@ padme -c /var/lib/padme/config.yaml doctor   # confirma integridade
 
 ---
 
-## 3. Rotação de segredos
+## 4. Rotação de segredos
 
 Todos os segredos vivem no `.env` (`PADME_*`) — nada no `config.yaml` versionado.
 Para trocar qualquer um:
@@ -187,16 +247,17 @@ Para trocar qualquer um:
 1. Gere o novo segredo no provedor (BotFather, Discord, SMTP, etc.).
 2. Edite `/var/lib/padme/.env` com o valor novo.
 3. Reinicie o serviço: `sudo systemctl restart padme` (o `.env` é relido no start).
-4. Valide: `padme -c /var/lib/padme/config.yaml test-notify` (testa todos os canais).
+4. Valide: `padme -c /var/lib/padme/config.yaml digest` manda o resumo agora e
+   mostra `OK` ou `ERRO` por canal.
 5. **Revogue o antigo** no provedor (senão ele continua válido).
 
 | segredo | variável | onde trocar | como revogar o antigo |
 |---|---|---|---|
-| Telegram bot | `PADME_TG_TOKEN` | @BotFather → `/revoke` gera novo | o `/revoke` já invalida o anterior |
+| Telegram bot | `PADME_TELEGRAM_TOKEN` | @BotFather → `/revoke` gera novo | o `/revoke` já invalida o anterior |
 | Discord webhook | `PADME_DISCORD_WEBHOOK` | Config. do canal → Integrações | apague o webhook antigo |
 | Webhook (n8n/próprio) | `PADME_WEBHOOK_URL` / `PADME_WEBHOOK_TOKEN` | seu endpoint | rejeite o token antigo no endpoint |
 | SMTP | `PADME_SMTP_USER` / `PADME_SMTP_PASS` | provedor (Gmail: App Password) | remova a App Password antiga |
-| Painel web | `PADME_WEB_TOKEN` | gere um novo (`openssl rand -hex 32`) | reinicie o `padme web` |
+| Painel web | `PADME_WEB_TOKEN` | gere um novo (`openssl rand -hex 32`) | reinicie o serviço |
 | Heartbeat | `PADME_HEARTBEAT_URL` | watchdog (healthchecks.io…) | apague o check antigo |
 
 > O log nunca imprime segredos (httpx silenciado + filtro de redação, mesmo com
@@ -204,19 +265,18 @@ Para trocar qualquer um:
 
 ---
 
-## 4. Painel web atrás de proxy (TLS)
+## 5. Painel web atrás de proxy (TLS)
 
-O `padme web` **não** faz TLS e, por padrão, escuta só em `127.0.0.1`. Expor
-`0.0.0.0:8787` direto na internet entrega sua superfície de ataque a qualquer um
-— por isso o Padmé **recusa** servir fora de localhost sem token (a menos de
-`--allow-no-auth`, decisão consciente). O caminho correto é:
+O painel (que sobe junto com o `padme monitor`, ou sozinho com `padme web`)
+**não** faz TLS e, por padrão, escuta só em `127.0.0.1`. Expor `0.0.0.0:8787`
+direto na internet entrega sua superfície de ataque a qualquer um; por isso o
+Padmé **recusa** servir fora de localhost sem token (a menos de
+`--allow-no-auth`). O caminho correto é:
 
 **Padmé em loopback + token → proxy reverso termina o TLS → repassa o header.**
 
-```bash
-export PADME_WEB_TOKEN="$(openssl rand -hex 32)"
-padme -c /var/lib/padme/config.yaml web        # 127.0.0.1:8787, exige Bearer
-```
+Coloque `PADME_WEB_TOKEN` no `.env` (gere com `openssl rand -hex 32`) e
+reinicie o serviço: o painel continua em `127.0.0.1:8787`, agora exigindo o token.
 
 O TLS termina no proxy; o token do Padmé continua valendo porque o proxy
 **repassa** o `Authorization`. nginx:
@@ -232,6 +292,12 @@ server {
         proxy_pass http://127.0.0.1:8787;
         proxy_set_header Host $host;
         proxy_set_header Authorization $http_authorization;   # repassa o Bearer
+    }
+    location /live {                     # atualização em tempo real (SSE)
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header Authorization $http_authorization;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
     }
 }
 ```
@@ -259,7 +325,7 @@ o prompt Basic do navegador), é o alvo natural para SIEM/ticketing/cron.
 
 ---
 
-## 5. Manutenção do banco
+## 6. Manutenção do banco
 
 - **Diagnóstico:** `padme -c .../config.yaml doctor` mostra integridade
   (`PRAGMA integrity_check`), contagens, **tamanho do banco (db + WAL)**, a
@@ -279,11 +345,11 @@ o prompt Basic do navegador), é o alvo natural para SIEM/ticketing/cron.
   ```
 
 - **Corrupção:** se o `doctor` não retornar `ok`, restaure o último backup bom
-  (seção 2) — não tente reparar o arquivo em produção.
+  (seção 3) — não tente reparar o arquivo em produção.
 
 ---
 
-## 6. Manutenção periódica (dependências e base de detecção)
+## 7. Manutenção periódica (dependências e base de detecção)
 
 - **PRs do Dependabot (semanal):** lock Python (`requirements*.txt`), GitHub
   Actions e digest da imagem `python:3.12-slim`. Só faça merge com o CI verde —

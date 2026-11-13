@@ -26,6 +26,7 @@ import html
 import http.server
 import io
 import json
+import os
 import secrets
 import socketserver
 import sqlite3
@@ -931,7 +932,7 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
     if not shown:
         body.append("<section class=card id=targets><div class=empty>nenhum alvo"
                     + (f" casa com o filtro '{_esc(only)}'." if only
-                       else " ainda — rode <code>padme scan</code> ou <code>padme monitor</code>.")
+                       else " ainda — rode <code>padme</code> ou <code>padme scan</code>.")
                     + "</div></section>")
     else:
         body.append(_targets_table(shown, by_target, meta, trend, problems))
@@ -944,12 +945,13 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
                 if csrf else "painel read-only · lê o padme.db, não altera nada") + "</footer>")
 
     hot = any(p["cls"] in ("s-crit", "s-serious") for p in problems)
-    # auto-refresh é feito por JS (não <meta refresh>): ele PAUSA enquanto você
-    # filtra/foca um campo, para não apagar a filtragem a cada 30s.
+    # ao vivo: /live avisa quando o banco muda e o JS troca o conteúdo da página
+    # (sem recarregar); o indicador mostra se está ao vivo, em espera ou sem conexão
     foot = (f"<div class=row2><span>último ciclo</span><b>{_esc(last_cycle)}</b></div>"
             f"<div class=row2><span>atualizado</span><b>{datetime.now():%H:%M:%S}</b></div>"
-            "<div class=row2><span>refresh</span>"
-            "<span class=pill id=autopill data-secs=30>auto <b>30s</b></span></div>")
+            "<div class=row2><span>painel</span>"
+            "<span class='pill live-on' id=autopill data-live=1><span class=ldot></span>"
+            "ao vivo</span></div>")
     side = _sidebar("overview", n_problems=len(problems), n_targets=len(shown), hot=hot,
                     vantage=bool(cfg.web.vantage_dir),
                     targets_nav=[(t, _host_level(by_target.get(t, {}), meta.get(t))[0])
@@ -999,13 +1001,38 @@ def _auth_ok(header: str | None, token: str) -> bool:
     return hmac.compare_digest(password.encode("utf-8"), token.encode("utf-8"))
 
 
-_ROUTES = ("/", "/export", "/vantage")  # rotas conhecidas (após auth)
+_ROUTES = ("/", "/export", "/vantage", "/live")  # rotas conhecidas (após auth)
+
+# /live: de quanto em quanto tempo olha o banco, ping que mantém a conexão viva
+# atrás de proxy e vida máxima da conexão (o navegador reconecta sozinho; assim
+# uma aba esquecida não segura uma vaga do servidor para sempre).
+_LIVE_POLL = 1.0
+_LIVE_PING = 15.0
+_LIVE_MAX = 600.0
+
+
+def _db_stamp(db_path: str) -> tuple:
+    """Assinatura barata do banco: (mtime, tamanho) do arquivo e do -wal. Toda
+    gravação do monitor (WAL) muda o -wal. Um -wal VAZIO conta como ausente: a
+    própria leitura do painel cria um vazio quando não há, e isso não é mudança."""
+    out = []
+    for suffix in ("", "-wal"):
+        try:
+            st = os.stat(db_path + suffix)
+        except OSError:
+            out.append(None)
+            continue
+        out.append(None if suffix and st.st_size == 0 else (st.st_mtime_ns, st.st_size))
+    return tuple(out)
 
 # CSP compatível com o HTML real do painel: <style>/<script> e style="" inline
 # (daí 'unsafe-inline'), ícones/imagens só como data:, formulários (filtro GET,
 # ações POST) só p/ a mesma origem. Sem fontes/JS externos — 100% self-contained.
+# `connect-src 'self'`: o JS só conversa com o próprio painel (/live e a busca
+# do conteúdo novo).
 _CSP = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-        "img-src data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+        "img-src data:; connect-src 'self'; form-action 'self'; base-uri 'none'; "
+        "frame-ancestors 'none'")
 _SEC_RESPONSE_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -1157,11 +1184,44 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             if route not in _ROUTES:
                 self._write(404, "text/plain; charset=utf-8", b"404 Not Found\n")
                 return
+            if route == "/live":
+                self._live()
+                return
             try:
                 self._route(route, urllib.parse.parse_qs(parsed.query))
             except StorageOutdated as exc:
                 # o painel só LÊ: quem migra o schema é o monitor/scan/doctor
                 self._write(503, "text/plain; charset=utf-8", f"503 {exc}\n".encode("utf-8"))
+
+        def _live(self):
+            """Server-Sent Events: `event: change` quando o banco muda. Só avisa;
+            o navegador busca a página de novo (mesma auth, mesmo render)."""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("X-Accel-Buffering", "no")   # nginx: não segurar o stream
+            for k, v in _SEC_RESPONSE_HEADERS.items():
+                self.send_header(k, v)
+            self.end_headers()
+            db = str(page_cfg.db_path)
+            last = _db_stamp(db)
+            started = pinged = time.monotonic()
+            try:
+                self.wfile.write(b"retry: 3000\n\n")
+                self.wfile.flush()
+                while time.monotonic() - started < _LIVE_MAX:
+                    time.sleep(_LIVE_POLL)
+                    cur = _db_stamp(db)
+                    if cur != last:
+                        last = cur
+                        self.wfile.write(b"event: change\ndata: 1\n\n")
+                    elif time.monotonic() - pinged >= _LIVE_PING:
+                        self.wfile.write(b": ping\n\n")
+                    else:
+                        continue
+                    pinged = time.monotonic()
+                    self.wfile.flush()
+            except OSError:
+                return   # aba fechada / conexão caiu: o navegador reconecta se quiser
 
         def do_POST(self):
             if auth_token is not None and not _auth_ok(
@@ -1237,6 +1297,15 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             pass  # nunca loga requests (evita vazar o token de um header em log)
 
     return Handler
+
+
+def start_background(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
+                     token: str | None = None) -> PanelServer:
+    """Sobe o painel numa thread daemon (o monitor o serve junto, num terminal
+    só) e devolve o servidor. Porta ocupada -> OSError para quem chamou."""
+    httpd = PanelServer((host, port), make_handler(cfg, exposed, token or None))
+    threading.Thread(target=httpd.serve_forever, name="padme-painel", daemon=True).start()
+    return httpd
 
 
 def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
