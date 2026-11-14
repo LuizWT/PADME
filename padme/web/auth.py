@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import hmac
 import urllib.parse
+from typing import Protocol
 
 
 def _bearer_ok(header: str | None, token: str) -> bool:
@@ -50,7 +51,14 @@ def _auth_ok(header: str | None, token: str) -> bool:
     return hmac.compare_digest(password.encode("utf-8"), token.encode("utf-8"))
 
 
-def _same_origin(headers) -> bool:
+class _Headers(Protocol):
+    """O que a checagem de origem lê dos cabeçalhos: o `Message` do handler ou,
+    nos testes, um dict."""
+
+    def get(self, name: str, /) -> str | None: ...
+
+
+def _same_origin(headers: _Headers) -> bool:
     """CSRF em camadas, além do token: navegador moderno manda `Sec-Fetch-Site`
     e/ou `Origin` num POST — origem cruzada (ou opaca, 'null') é recusada. Sem
     nenhum dos dois (curl, navegador antigo) quem decide é o token de CSRF."""

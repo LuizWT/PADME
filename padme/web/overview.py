@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any
 
 from ..findings import (
     DEFAULT_SLA_HOURS,
@@ -26,14 +27,14 @@ from .problems import (
 
 
 # ── KPIs globais ────────────────────────────────────────────────────────────
-def _kpi(n, label: str, sub: str = "", cls: str = "") -> str:
+def _kpi(n: object, label: str, sub: str = "", cls: str = "") -> str:
     sub_html = f"<div class=s>{_esc(sub)}</div>" if sub else ""
     return (f"<div class='kpi {cls}'><div class=l>{_esc(label)}</div>"
             f"<div class=n>{_esc(n)}</div>{sub_html}</div>")
 
 
-def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: int,
-                 explain: dict | None = None, sla_hours: dict | None = None) -> str:
+def _global_kpis(by_target: dict[str, Any], meta: dict[str, Any], problems: list[dict[str, Any]], n_targets: int,
+                 explain: dict[str, Any] | None = None, sla_hours: dict[str, Any] | None = None) -> str:
     assets = sum(len(v) for kinds in by_target.values() for v in kinds.values())
     crit = sum(1 for p in problems if p["cls"] in ("s-crit", "s-serious"))
     now = time.time()
@@ -74,13 +75,13 @@ def _global_kpis(by_target: dict, meta: dict, problems: list[dict], n_targets: i
 
 
 # ── stat tiles por alvo ─────────────────────────────────────────────────────
-def _tile(num, lab: str, sub: str = "", cls: str = "") -> str:
+def _tile(num: object, lab: str, sub: str = "", cls: str = "") -> str:
     sub_html = f"<div class=sub>{_esc(sub)}</div>" if sub else ""
     return (f"<div class='tile {cls}'><div class=num>{_esc(num)}</div>"
             f"<div class=lab>{_esc(lab)}</div>{sub_html}</div>")
 
 
-def _stat_tiles(kinds: dict) -> str:
+def _stat_tiles(kinds: dict[str, Any]) -> str:
     subs = kinds.get("subdomain", [])
     live = sum(1 for s in subs if s["value"] == "live")
     quiet = sum(1 for s in subs if s["value"] == "quiet")
@@ -100,7 +101,7 @@ def _stat_tiles(kinds: dict) -> str:
 
 
 # ── tendência (barras empilhadas add/chg/rem por dia) ───────────────────────
-def _trend_svg(series: list[dict], days: int) -> str:
+def _trend_svg(series: list[dict[str, Any]], days: int) -> str:
     W, H = 720.0, 132.0
     pad_l, pad_r, pad_t, pad_b = 26.0, 8.0, 10.0, 20.0
     plot_w, plot_h = W - pad_l - pad_r, H - pad_t - pad_b
@@ -118,7 +119,7 @@ def _trend_svg(series: list[dict], days: int) -> str:
     bar_w = max(1.0, slot - 2.0)
     scale = (plot_h / max_total) if max_total > 0 else 0.0
 
-    def seg(x, yb, h, color):
+    def seg(x: float, yb: float, h: float, color: str) -> str:
         drawn = h - 2 if h > 2 else h
         return (f'<rect x="{x:.1f}" y="{yb - drawn:.1f}" width="{bar_w:.1f}" '
                 f'height="{drawn:.1f}" fill="{color}" rx="1.5"/>')
@@ -145,7 +146,7 @@ def _trend_svg(series: list[dict], days: int) -> str:
     return "".join(parts)
 
 
-def _trend(serie: list[dict], days: int, title: str = "tendência") -> str:
+def _trend(serie: list[dict[str, Any]], days: int, title: str = "tendência") -> str:
     total = sum(d["total"] for d in serie)
     added = sum(d["added"] for d in serie)
     removed = sum(d["removed"] for d in serie)
@@ -173,9 +174,9 @@ def _trend(serie: list[dict], days: int, title: str = "tendência") -> str:
     return "".join(out)
 
 
-def _activity(trend: dict, days: int) -> str:
+def _activity(trend: dict[str, Any], days: int) -> str:
     """Atividade de TODOS os alvos exibidos: soma as séries diárias por dia."""
-    agg: dict[str, dict] = {}
+    agg: dict[str, dict[str, Any]] = {}
     for serie in trend.values():
         for d in serie:
             a = agg.setdefault(d["day"], {"day": d["day"], "added": 0, "removed": 0,
@@ -189,7 +190,7 @@ def _activity(trend: dict, days: int) -> str:
 _HEALTH_CLS = {"ok": "s-ok", "partial": "s-warn", "error": "s-crit"}
 
 
-def _collectors_card(meta: dict) -> str:
+def _collectors_card(meta: dict[str, Any]) -> str:
     """Tabela de saúde por collector (consolidada entre alvos). Some quando não
     há saúde gravada — sem card vazio."""
     rows = _collector_table(meta)
@@ -212,7 +213,7 @@ def _collectors_card(meta: dict) -> str:
 
 
 # ── saúde da coleta por alvo ────────────────────────────────────────────────
-def _health(meta: dict | None) -> str:
+def _health(meta: dict[str, Any] | None) -> str:
     if not meta:
         return "<div class=health><span class=lghint>sem scan registrado ainda.</span></div>"
     errs = meta.get("last_error_count")

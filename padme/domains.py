@@ -159,7 +159,7 @@ async def check_registrable(name: str, ns_nxdomain: NsNxdomain,
 # ── cliente RDAP concreto (httpx), resiliente: qualquer falha vira UNKNOWN ─────
 def make_rdap(*, timeout: float = 10.0, verify: bool = True,
               bootstrap_url: str = IANA_RDAP_BOOTSTRAP,
-              transport: "httpx.BaseTransport | None" = None) -> Rdap:
+              transport: "httpx.AsyncBaseTransport | None" = None) -> Rdap:
     """Devolve um callable `rdap(domínio) -> Availability` que consulta o RDAP
     público do TLD (via bootstrap da IANA, cacheado em memória por processo).
 

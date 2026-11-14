@@ -7,7 +7,7 @@
 ```bash
 git clone https://github.com/LuizWT/PADME.git && cd PADME
 python3 -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt                # versões fixas + pytest, ruff, pip-audit
+pip install -r requirements-dev.txt                # versões fixas + pytest, ruff, mypy, pip-audit
 pip install -e .                                    # comando `padme` apontando para o código
 ```
 
@@ -17,6 +17,7 @@ Com `pip install -e .`, o `padme --update` atualiza o clone com `git pull`.
 
 ```bash
 ruff check padme tests scripts
+mypy                                                # tipos (config no pyproject.toml)
 pytest -q
 pip-audit -r requirements.txt                       # CVEs nas dependências fixas
 docker build -t padme:ci . && sh scripts/docker-smoke.sh padme:ci
@@ -27,9 +28,26 @@ O CI (`.github/workflows/`) roda:
 
 | Workflow | Quando | O quê |
 |---|---|---|
-| `tests` | push, PR e toda segunda | ruff, pytest em Python 3.11 a 3.14, pip-audit, build e smoke test da imagem Docker |
-| `install` | push e PR que mexem no instalador ou no pacote | os instaladores de verdade em Ubuntu, macOS e Windows (incluindo o modo `irm \| iex`) |
+| `tests` | push, PR e toda segunda | ruff, mypy, pytest em Python 3.11 a 3.14, pip-audit, build e smoke test da imagem Docker |
+| `install` | push e PR que mexem no instalador ou no pacote | os instaladores de verdade em Ubuntu, macOS e Windows (incluindo o modo `irm \| iex` e a trava de instância única do Windows) |
 | `takeover base` | dia 1 de cada mês | regenera a base de takeover e abre PR se o upstream mudou |
+
+### Tipos
+
+O `mypy` checa o pacote inteiro. Os módulos `padme.web`, `paths`, `updater` e
+`initcfg` rodam no modo estrito (toda função anotada, genéricos com tipo); os
+outros entram nessa lista do `[tool.mypy]` do `pyproject.toml` aos poucos. Para
+conferir os ramos de outro sistema: `mypy --platform win32`.
+
+### Fotos do painel
+
+`tests/test_painel_fotos.py` renderiza as páginas do painel a partir de um banco
+fixo, com relógio congelado, e compara byte a byte com `tests/fotos_painel/`.
+Uma mudança visual intencional regrava as fotos, e o diff delas vai na PR:
+
+```bash
+PADME_REGRAVAR_FOTOS=1 pytest tests/test_painel_fotos.py
+```
 
 ## Dependências
 
@@ -82,9 +100,18 @@ padme/
 ├── findings.py        ciclo de vida dos problemas e prazos
 ├── digest.py          resumo periódico
 ├── storage.py         SQLite: estado, histórico, saúde, migrações
-├── webpanel.py        painel web (+ /live em tempo real)
-├── panel_metrics.py   números dos cartões do painel
-├── panel_assets.py    CSS e JS do painel
+├── web/               painel web (só stdlib)
+│   ├── html.py        peças comuns: escape, chips, datas, diff
+│   ├── problems.py    painel de problemas e menu de ações
+│   ├── overview.py    KPIs, tendência, atividade, saúde dos collectors
+│   ├── targets.py     tabela de alvos e dossiê por alvo
+│   ├── layout.py      moldura da página
+│   ├── pages.py       páginas completas: visão geral, export, multi-vantage
+│   ├── auth.py        Bearer, Basic e checagem de origem
+│   ├── server.py      servidor HTTP, ações POST e /live em tempo real
+│   ├── metrics.py     números dos cartões (sem HTML)
+│   └── assets.py      CSS, JS e logo
+├── webpanel.py        fachada antiga (reexporta padme.web; sai numa próxima versão)
 ├── api.py             API JSON /api/v1
 ├── merge.py           padme merge (multi-vantage)
 ├── mailpolicy.py      SPF efetivo e DMARC

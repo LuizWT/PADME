@@ -81,9 +81,10 @@ def _state_file() -> Path:
 
 def installed_commit() -> str | None:
     try:
-        return json.loads(_state_file().read_text(encoding="utf-8")).get("sha")
+        sha = json.loads(_state_file().read_text(encoding="utf-8")).get("sha")
     except Exception:  # noqa: BLE001
         return None
+    return sha if isinstance(sha, str) else None
 
 
 def _save_commit(sha: str) -> None:

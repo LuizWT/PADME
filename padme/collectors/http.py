@@ -80,7 +80,8 @@ def _title(html: str) -> str:
 def _security_posture(headers, scheme: str) -> tuple[list[str], list[str]]:
     """(presentes, ausentes) dos cabeçalhos de postura. Header presente mas
     vazio conta como AUSENTE. HSTS só entra em https."""
-    present, missing = [], []
+    present: list[str] = []
+    missing: list[str] = []
     for short, name in _SEC_HEADERS:
         if short == "hsts" and scheme != "https":
             continue

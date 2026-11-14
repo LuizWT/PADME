@@ -4,6 +4,10 @@ inventário.
 
 from __future__ import annotations
 
+from typing import Any
+
+from ..models import Event
+from ..risk import RiskAssessment
 from .html import (
     _ARROW,
     _KIND_LABEL,
@@ -28,7 +32,7 @@ from .overview import (
 )
 
 
-def _host_level(kinds: dict, meta: dict | None) -> tuple[str, str]:
+def _host_level(kinds: dict[str, Any], meta: dict[str, Any] | None) -> tuple[str, str]:
     """(classe de status, rótulo) do alvo — o mesmo no dossiê, na tabela e na sidebar."""
     if kinds.get("takeover"):
         return "s-crit", "takeover"
@@ -41,7 +45,7 @@ def _host_level(kinds: dict, meta: dict | None) -> tuple[str, str]:
     return "s-ok", "ok"
 
 
-def _host_status(kinds: dict, meta: dict | None) -> str:
+def _host_status(kinds: dict[str, Any], meta: dict[str, Any] | None) -> str:
     return _chip(*_host_level(kinds, meta))
 
 
@@ -55,7 +59,7 @@ _EV_LEVEL = {"s-crit": "lv-crit", "s-serious": "lv-serious", "s-warn": "lv-warn"
 _EVENTS_VISIBLE = 6
 
 
-def _event_html(e, risk) -> str:
+def _event_html(e: Event, risk: RiskAssessment) -> str:
     t = e.event_type.value
     val = e.new_value if t != "removed" else e.old_value
     when = (e.detected_at or "")[5:16].replace("T", " ")
@@ -91,7 +95,7 @@ def _event_html(e, risk) -> str:
             f"{diff_html}{meta_html}</div>")
 
 
-def _timeline(target: str, events: list) -> str:
+def _timeline(target: str, events: list[Event]) -> str:
     out = ["<div class=panehd><h4>Timeline priorizada</h4>"
            f"<span>{len(events)} evento(s) recentes · mais relevante primeiro</span></div>"]
     if not events:
@@ -106,7 +110,7 @@ def _timeline(target: str, events: list) -> str:
     return "".join(out)
 
 
-def _risk_block(probs: list[dict]) -> str:
+def _risk_block(probs: list[dict[str, Any]]) -> str:
     if not probs:
         return "<div class=risk>" + _chip("s-ok", "nenhum") + "</div>"
     items = [f"<div class=ri><span class='dot {p['cls']}'></span><div>"
@@ -117,7 +121,7 @@ def _risk_block(probs: list[dict]) -> str:
     return "<div class=risk>" + "".join(items) + "</div>"
 
 
-def _assets(target: str, kinds: dict, total: int) -> str:
+def _assets(target: str, kinds: dict[str, Any], total: int) -> str:
     # detalhe completo por categoria. `data-persist`: a JS lembra aberto/
     # fechado entre os auto-refreshes de 30s (senão recolhia sozinho).
     det = [f"<details class=kinds data-persist='k-{_slug(target)}'>"
@@ -140,8 +144,8 @@ def _assets(target: str, kinds: dict, total: int) -> str:
     return "".join(det)
 
 
-def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
-               meta: dict | None, trend_days: int, problems: list[dict] | None = None) -> str:
+def _host_card(target: str, kinds: dict[str, Any], events: list[Event], serie: list[dict[str, Any]],
+               meta: dict[str, Any] | None, trend_days: int, problems: list[dict[str, Any]] | None = None) -> str:
     """Dossiê do alvo: à esquerda o resumo (risco, saúde, cobertura); à direita
     a timeline priorizada com diff, a tendência e o inventário filtrável."""
     total = sum(len(v) for v in kinds.values())
@@ -166,8 +170,8 @@ def _host_card(target: str, kinds: dict, events: list, serie: list[dict],
             f"<div class=dosbody>{''.join(side)}{''.join(main)}</div></section>")
 
 
-def _targets_table(shown: list[str], by_target: dict, meta: dict, trend: dict,
-                   problems: list[dict]) -> str:
+def _targets_table(shown: list[str], by_target: dict[str, Any], meta: dict[str, Any], trend: dict[str, Any],
+                   problems: list[dict[str, Any]]) -> str:
     rows = []
     for t in shown:
         kinds = by_target.get(t, {})

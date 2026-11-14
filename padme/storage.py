@@ -378,7 +378,8 @@ class Storage:
         aqui (é derivada por `risk.assess`, não armazenada): quem precisa dela
         filtra em Python. Devolve até `cap`+1 linhas, p/ quem chama detectar
         truncamento sem carregar o histórico inteiro."""
-        where, params = [], []
+        where: list[str] = []
+        params: list[object] = []
         for col, vals in (("target", targets), ("kind", kinds), ("event_type", event_types)):
             if vals:
                 where.append(f"{col} IN ({','.join('?' * len(vals))})")
@@ -686,7 +687,8 @@ class Storage:
 
     def finding_rows(self, targets: list[str] | None = None) -> dict[str, dict]:
         """{finding_id: linha} (todos os status), opcionalmente por alvo."""
-        q, params = "SELECT * FROM findings", ()
+        q = "SELECT * FROM findings"
+        params: tuple[str, ...] = ()
         if targets:
             q += f" WHERE target IN ({','.join('?' * len(targets))})"
             params = tuple(targets)
@@ -745,7 +747,10 @@ class Storage:
             " WHERE finding_id=?", (to, reason or None, actor, now, opened, row["finding_id"]))
         self._finding_history(row["finding_id"], now, row["status"], to, reason, actor)
         self._conn.commit()
-        return self.get_finding(row["finding_id"])
+        updated = self.get_finding(row["finding_id"])
+        if updated is None:  # acabou de ser gravada: só some se trocarem o banco por baixo
+            raise LookupError(f"problema {row['finding_id']} sumiu do banco")
+        return updated
 
     def finding_history(self, finding_id: str) -> list[dict]:
         return [dict(r) for r in self._conn.execute(

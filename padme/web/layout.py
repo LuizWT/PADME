@@ -41,7 +41,7 @@ def _export_actions(only: str | None) -> str:
 def _sidebar(active: str, *, base: str = "", n_problems: int | None = None,
              n_targets: int | None = None, hot: bool = False, vantage: bool = False,
              targets_nav: list[tuple[str, str]] | None = None, foot: str = "") -> str:
-    def link(key, href, label, cnt=None, hot_=False):
+    def link(key: str, href: str, label: str, cnt: int | None = None, hot_: bool = False) -> str:
         on = " class=on" if key == active else ""
         c = (f"<span class='cnt{' hot' if hot_ else ''}'>{cnt}</span>" if cnt is not None else "")
         return f"<a href='{href}'{on}>{_icon(key)}<span>{label}</span>{c}</a>"

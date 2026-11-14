@@ -9,7 +9,9 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+from ..config import Config
 from ..merge import merge_exports
 from ..storage import Storage
 from .assets import _TREND_JS
@@ -44,7 +46,7 @@ from .targets import (
 )
 
 
-def _open_ro(cfg) -> Storage | None:
+def _open_ro(cfg: Config) -> Storage | None:
     """Abre o banco SÓ PARA LEITURA (o painel nunca escreve/migra). Banco que
     ainda não existe -> None (página vazia, sem criar arquivo)."""
     try:
@@ -53,7 +55,7 @@ def _open_ro(cfg) -> Storage | None:
         return None
 
 
-def _export_rows(cfg, only: str | None) -> list[dict]:
+def _export_rows(cfg: Config, only: str | None) -> list[dict[str, Any]]:
     storage = _open_ro(cfg)
     if storage is None:
         return []
@@ -72,7 +74,7 @@ def _export_rows(cfg, only: str | None) -> list[dict]:
     } for r in rows]
 
 
-def render_export(cfg, only: str | None, fmt: str) -> tuple[str, str]:
+def render_export(cfg: Config, only: str | None, fmt: str) -> tuple[str, str]:
     """Devolve (corpo, content_type) do export — mesmos campos do `padme export`."""
     recs = _export_rows(cfg, only)
     if fmt == "csv":
@@ -87,12 +89,12 @@ def render_export(cfg, only: str | None, fmt: str) -> tuple[str, str]:
 
 
 # ── multi-vantage (consolida exports de várias fontes; reusa padme merge) ────
-def _vantage_exports(cfg) -> tuple[list[list[dict]], list[str]]:
+def _vantage_exports(cfg: Config) -> tuple[list[list[dict[str, Any]]], list[str]]:
     """Junta o estado LOCAL (source=cfg.source) + cada .json em web.vantage_dir.
     Devolve (exports, avisos). A máquina do painel é um ponto de observação; os
     outros vêm de arquivos exportados por `padme export`. Arquivo inválido é
     PULADO com aviso — nunca derruba a página."""
-    exports: list[list[dict]] = [_export_rows(cfg, None)]  # já traz source=cfg.source
+    exports: list[list[dict[str, Any]]] = [_export_rows(cfg, None)]  # já traz source=cfg.source
     warnings: list[str] = []
     raw = cfg.web.vantage_dir
     if not raw:
@@ -115,7 +117,7 @@ def _vantage_exports(cfg) -> tuple[list[list[dict]], list[str]]:
     return exports, warnings
 
 
-def render_vantage(cfg) -> str:
+def render_vantage(cfg: Config) -> str:
     exports, warnings = _vantage_exports(cfg)
     merged = merge_exports(exports)
     sources = merged["sources"]
@@ -161,15 +163,15 @@ def render_vantage(cfg) -> str:
                     + "<span>ativos presentes em todas as fontes têm o mesmo valor.</span></div></section>")
     else:
         head = "".join(f"<th>{_esc(s)}</th>" for s in sources)
-        rows = []
+        linhas = []
         for a in value:
             vals = a.get("values", {})
             cells = "".join(f"<td class=mono>{_esc(vals[s]) if vals.get(s) is not None else '—'}</td>"
                             for s in sources)
-            rows.append(f"<tr><td><div class=who><span class=kd>{_esc(a['kind'].upper())}</span>"
+            linhas.append(f"<tr><td><div class=who><span class=kd>{_esc(a['kind'].upper())}</span>"
                         f"{_esc(a['key'])}</div><div class=tgt>{_esc(a['target'])}</div></td>{cells}</tr>")
         body.append("<section class=card><div class=scroll><table class=t><thead><tr><th>ativo</th>"
-                    + head + "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div></section>")
+                    + head + "</tr></thead><tbody>" + "".join(linhas) + "</tbody></table></div></section>")
 
     body.append("<footer>Padmé · multi-vantage · painel read-only</footer>")
     side = _sidebar("vantage", base="/", vantage=True,
@@ -178,7 +180,7 @@ def render_vantage(cfg) -> str:
     return _page("Padmé — multi-vantage", side, "".join(body))
 
 
-def _render(cfg, exposed: bool = False, only: str | None = None,
+def _render(cfg: Config, exposed: bool = False, only: str | None = None,
             authed: bool = False, csrf: str = "") -> str:
     """Página principal. `csrf` não-vazio = ações de finding ligadas (o handler
     só passa o token quando `web.actions` está on e o painel não está exposto
@@ -207,7 +209,7 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
         if storage:
             storage.close()
 
-    by_target: dict[str, dict[str, list]] = {t: {} for t in shown}
+    by_target: dict[str, dict[str, list[Any]]] = {t: {} for t in shown}
     for r in rows:
         if r["target"] in by_target:
             by_target[r["target"]].setdefault(r["kind"], []).append(r)
@@ -217,7 +219,7 @@ def _render(cfg, exposed: bool = False, only: str | None = None,
     explain = _explainability(events)
     sla_hours = cfg.findings.sla_hours
     act = {"csrf": csrf, "target": only or ""} if csrf else None
-    scans = [m.get("last_scan_at") for m in meta.values() if m and m.get("last_scan_at")]
+    scans = [float(m["last_scan_at"]) for m in meta.values() if m and m.get("last_scan_at")]
     last_cycle = _ts_human(max(scans)) if scans else "—"
 
     body = []

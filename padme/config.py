@@ -8,6 +8,7 @@ import re
 import socket
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -39,7 +40,7 @@ def _as_bool(v: object, default: bool) -> bool:
     raise ValueError(f"valor booleano inválido: {v!r} (use true/false)")
 
 
-def _as_int(v: object, name: str, default: int) -> int:
+def _as_int(v: Any, name: str, default: int) -> int:
     if v is None:
         return default
     try:
@@ -48,7 +49,7 @@ def _as_int(v: object, name: str, default: int) -> int:
         raise ValueError(f"{name}: inteiro inválido: {v!r}") from None
 
 
-def _str_list(v: object, default: list[str]) -> list[str]:
+def _str_list(v: Any, default: list[str]) -> list[str]:
     """Lista de nomes do YAML (aceita string única); normaliza p/ minúsculas."""
     if v is None:
         return default
@@ -56,7 +57,7 @@ def _str_list(v: object, default: list[str]) -> list[str]:
     return [str(x).strip().lower() for x in items if str(x).strip()]
 
 
-def _as_float(v: object, name: str, default: float) -> float:
+def _as_float(v: Any, name: str, default: float) -> float:
     if v is None:
         return default
     try:

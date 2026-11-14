@@ -13,7 +13,9 @@ import sqlite3
 import threading
 import time
 import urllib.parse
+from typing import Any
 
+from ..config import Config
 from ..findings import (
     ACTIONS,
 )
@@ -50,11 +52,11 @@ _LIVE_PING = 15.0
 _LIVE_MAX = 600.0
 
 
-def _db_stamp(db_path: str) -> tuple:
+def _db_stamp(db_path: str) -> tuple[tuple[float, int] | None, ...]:
     """Assinatura barata do banco: (mtime, tamanho) do arquivo e do -wal. Toda
     gravação do monitor (WAL) muda o -wal. Um -wal VAZIO conta como ausente: a
     própria leitura do painel cria um vazio quando não há, e isso não é mudança."""
-    out = []
+    out: list[tuple[float, int] | None] = []
     for suffix in ("", "-wal"):
         try:
             st = os.stat(db_path + suffix)
@@ -93,11 +95,11 @@ class PanelServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
     max_connections = 32
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._slots = threading.BoundedSemaphore(self.max_connections)
 
-    def process_request(self, request, client_address):
+    def process_request(self, request: Any, client_address: Any) -> None:
         if not self._slots.acquire(blocking=False):
             self.shutdown_request(request)  # lotado: recusa sem abrir thread
             return
@@ -107,7 +109,7 @@ class PanelServer(socketserver.ThreadingTCPServer):
             self._slots.release()
             raise
 
-    def process_request_thread(self, request, client_address):
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
         try:
             super().process_request_thread(request, client_address)
         finally:
@@ -118,7 +120,7 @@ class PanelServer(socketserver.ThreadingTCPServer):
 _MAX_FORM_BYTES = 4096  # um formulário de ação tem id + ação + motivo (<= 500)
 
 
-def _apply_action(cfg, form: dict, actor: str) -> tuple[int, str]:
+def _apply_action(cfg: Config, form: dict[str, list[str]], actor: str) -> tuple[int, str]:
     """Aplica a ação no banco (conexão de ESCRITA só durante o POST; o render
     continua read-only). Devolve (status HTTP, mensagem de erro)."""
     fid = (form.get("id") or [""])[0]
@@ -151,7 +153,8 @@ def _action_error_page(msg: str, target: str) -> bytes:
     return _page("Padmé — ação", "", body).encode("utf-8")
 
 
-def make_handler(page_cfg, exposed: bool, auth_token: str | None):
+def make_handler(page_cfg: Config, exposed: bool,
+                 auth_token: str | None) -> type[http.server.BaseHTTPRequestHandler]:
     """Fábrica do handler HTTP (fecha sobre cfg/exposed/token). Separada de
     `serve` para ser testável sem depender de `serve_forever`.
 
@@ -167,7 +170,8 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
         sys_version = ""
         timeout = 10  # s por operação de socket: conexão lenta não prende a thread
 
-        def _write(self, code: int, ctype: str, body: bytes, extra: dict | None = None):
+        def _write(self, code: int, ctype: str, body: bytes,
+                   extra: dict[str, str] | list[tuple[str, str]] | None = None) -> None:
             """Escreve a resposta SEMPRE com os headers de segurança do painel."""
             self.send_response(code)
             self.send_header("Content-Type", ctype)
@@ -180,14 +184,14 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             self.end_headers()
             self.wfile.write(body)
 
-        def _deny(self):
+        def _deny(self) -> None:
             # 401 mínimo: não revela quais rotas existem nem detalhes internos.
             # Basic primeiro: é o que faz o navegador abrir o prompt de login.
             self._write(401, "text/plain; charset=utf-8", b"401 Unauthorized\n",
                         [("WWW-Authenticate", 'Basic realm="padme", charset="UTF-8"'),
                          ("WWW-Authenticate", 'Bearer realm="padme"')])
 
-        def do_GET(self):
+        def do_GET(self) -> None:
             # auth ANTES do roteamento: cobre /, /export, /vantage e qualquer
             # rota futura de uma vez. Sem token configurado, não exige nada.
             if auth_token is not None and not _auth_ok(
@@ -208,7 +212,7 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
                 # o painel só LÊ: quem migra o schema é o monitor/scan/doctor
                 self._write(503, "text/plain; charset=utf-8", f"503 {exc}\n".encode("utf-8"))
 
-        def _live(self):
+        def _live(self) -> None:
             """Server-Sent Events: `event: change` quando o banco muda. Só avisa;
             o navegador busca a página de novo (mesma auth, mesmo render)."""
             self.send_response(200)
@@ -238,7 +242,7 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             except OSError:
                 return   # aba fechada / conexão caiu: o navegador reconecta se quiser
 
-        def do_POST(self):
+        def do_POST(self) -> None:
             if auth_token is not None and not _auth_ok(
                     self.headers.get("Authorization"), auth_token):
                 self._deny()
@@ -288,7 +292,7 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
             else:
                 self._write(code, "text/html; charset=utf-8", _action_error_page(msg, target))
 
-        def _route(self, route: str, params: dict) -> None:
+        def _route(self, route: str, params: dict[str, list[str]]) -> None:
             only = params.get("target", [None])[0]
             if route == "/export":
                 fmt = (params.get("fmt", ["json"])[0] or "json").lower()
@@ -308,13 +312,13 @@ def make_handler(page_cfg, exposed: bool, auth_token: str | None):
                                authed=auth_token is not None, csrf=csrf).encode("utf-8")
                 self._write(200, "text/html; charset=utf-8", body)
 
-        def log_message(self, *args):
+        def log_message(self, *args: Any) -> None:
             pass  # nunca loga requests (evita vazar o token de um header em log)
 
     return Handler
 
 
-def start_background(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
+def start_background(cfg: Config, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
                      token: str | None = None) -> PanelServer:
     """Sobe o painel numa thread daemon (o monitor o serve junto, num terminal
     só) e devolve o servidor. Porta ocupada -> OSError para quem chamou."""
@@ -323,7 +327,7 @@ def start_background(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bo
     return httpd
 
 
-def serve(cfg, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
+def serve(cfg: Config, host: str = "127.0.0.1", port: int = 8787, exposed: bool = False,
           token: str | None = None) -> None:
     auth_token = token or None  # "" também desliga a auth
     handler = make_handler(cfg, exposed, auth_token)

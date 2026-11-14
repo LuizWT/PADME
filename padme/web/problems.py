@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from ..findings import (
     ACCEPTED,
@@ -29,7 +30,7 @@ _PROBLEMS_VISIBLE = 8  # o resto fica num "mais N" — a lista não engole a pá
 _STATUS_CLS = {OPEN: "s-muted", ACKNOWLEDGED: "s-info", SUPPRESSED: "s-muted", ACCEPTED: "s-muted"}
 
 
-def _sla_of(p: dict, sla_hours: dict, now: float) -> dict | None:
+def _sla_of(p: dict[str, Any], sla_hours: dict[str, Any], now: float) -> dict[str, Any] | None:
     row = p.get("row") or {}
     if not row:
         return None
@@ -37,7 +38,7 @@ def _sla_of(p: dict, sla_hours: dict, now: float) -> dict | None:
                     now, sla_hours)
 
 
-def _status_cell(p: dict, sla_hours: dict, now: float) -> str:
+def _status_cell(p: dict[str, Any], sla_hours: dict[str, Any], now: float) -> str:
     """Estado do finding: status + há quanto tempo + prazo (ou o motivo, se tratado)."""
     if not p.get("id"):  # COLETA: operacional e transitório, sem ciclo de vida
         return "<span class=lghint>transitório</span>"
@@ -62,7 +63,7 @@ def _status_cell(p: dict, sla_hours: dict, now: float) -> str:
     return "".join(bits)
 
 
-def _actions(p: dict, act: dict | None) -> str:
+def _actions(p: dict[str, Any], act: dict[str, Any] | None) -> str:
     """Formulário de ação do finding (POST com token de CSRF). `act` None =
     painel read-only (ações desligadas ou painel exposto sem auth)."""
     if not act or not p.get("id"):
@@ -90,7 +91,7 @@ def _actions(p: dict, act: dict | None) -> str:
             f"{reason}<div class=actb>{btns}</div></form></details>")
 
 
-def _problem_row(p: dict, act: dict | None = None, sla_hours: dict | None = None,
+def _problem_row(p: dict[str, Any], act: dict[str, Any] | None = None, sla_hours: dict[str, Any] | None = None,
                  now: float | None = None) -> str:
     sla_hours = DEFAULT_SLA_HOURS if sla_hours is None else sla_hours
     now = time.time() if now is None else now
@@ -116,12 +117,12 @@ _PROBLEMS_HEAD = (_PROBLEMS_COLS + "<thead><tr><th>severidade</th><th>problema</
                   "<th>estado</th><th>alvo</th></tr></thead>")
 
 
-def _problems_panel(problems: list[dict], treated: list[dict] | None = None,
-                    act: dict | None = None, sla_hours: dict | None = None) -> str:
+def _problems_panel(problems: list[dict[str, Any]], treated: list[dict[str, Any]] | None = None,
+                    act: dict[str, Any] | None = None, sla_hours: dict[str, Any] | None = None) -> str:
     now = time.time()
     treated = treated or []
 
-    def rows(items):
+    def rows(items: list[dict[str, Any]]) -> str:
         return "".join(_problem_row(p, act, sla_hours, now) for p in items)
 
     head = ("<div class=cardhd><h3>Problemas abertos</h3><span class=sub>ordenado por risco</span>"

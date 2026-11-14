@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import html
 from datetime import datetime
+from typing import Any
 
 from ..evidence import evidence_of
+from ..models import Event
 from ..risk import Level
 
 _KIND_ORDER = ["takeover", "cert_expiry", "ns", "mailsec", "wildcard",
@@ -24,24 +26,24 @@ _KIND_LABEL = {
 _ARROW = {"added": "+", "removed": "−", "changed": "~"}
 
 
-def _esc(s) -> str:
+def _esc(s: object) -> str:
     # NÃO use `s or ""`: 0 e False são válidos e viram "" assim (o tile de
     # "portas abertas" com contagem 0 ficava EM BRANCO). Só None é vazio.
     return html.escape("" if s is None else str(s))
 
 
-def _ts_human(ts) -> str:
+def _ts_human(ts: Any) -> str:
     try:
         return datetime.fromtimestamp(float(ts)).strftime("%d/%m %H:%M")
     except Exception:
         return "—"
 
 
-def _changes_html(changes: dict | None) -> str:
+def _changes_html(changes: dict[str, Any] | None) -> str:
     """Detalhe do diff semântico de um CHANGED: campo: old → new."""
     if not changes:
         return ""
-    def fmt(v):  # conjuntos (DNS, SANs do TLS) em texto, não repr de lista
+    def fmt(v: object) -> object:  # conjuntos (DNS, SANs do TLS) em texto, não repr de lista
         return ", ".join(map(str, v)) if isinstance(v, list) else v
 
     bits = [f"{_esc(f)}: {_esc(fmt(ch.get('old')))} → {_esc(fmt(ch.get('new')))}"
@@ -49,7 +51,7 @@ def _changes_html(changes: dict | None) -> str:
     return "<span class=chgdet>" + " · ".join(bits) + "</span>"
 
 
-def _proof_html(e, value: str | None) -> str:
+def _proof_html(e: Event, value: str | None) -> str:
     """Evidência normalizada da observação (§6.3), inline e discreta. Só para
     ADDED/CHANGED — um REMOVED não reafirma uma observação atual. O tipo fica
     visível; os fatos completos no tooltip."""
@@ -64,7 +66,7 @@ def _proof_html(e, value: str | None) -> str:
     return f"<span class=tag title='{_esc(full)}'>prova: {_esc(typ)}</span>"
 
 
-def _port_fp(metadata: dict | None) -> str:
+def _port_fp(metadata: dict[str, Any] | None) -> str:
     """Badges de service/product/version de uma porta (do metadata do record).
     O que hoje só ia na evidência/webhook agora aparece na linha do ativo."""
     md = metadata or {}
@@ -100,7 +102,7 @@ def _slug(s: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in s.lower())
 
 
-def _diff_line(cls: str, mark: str, value) -> str:
+def _diff_line(cls: str, mark: str, value: object) -> str:
     return f"<div class={cls}><span class=mk>{mark}</span>{_esc(value)}</div>"
 
 

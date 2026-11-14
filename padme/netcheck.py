@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 
 try:
-    import dns.resolver  # type: ignore
+    import dns.resolver
     _HAS_DNS = True
 except Exception:  # pragma: no cover
     _HAS_DNS = False
@@ -43,7 +43,7 @@ def _system_resolvers() -> list[str]:
     if not _HAS_DNS:
         return []
     try:
-        return list(dns.resolver.Resolver().nameservers)
+        return [ns for ns in dns.resolver.Resolver().nameservers if isinstance(ns, str)]
     except Exception:
         return []
 
