@@ -1,0 +1,452 @@
+<!doctype html><html lang=pt-br><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Padmé — superfície</title><link rel=icon href='data:image/png;base64,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'><style>
+:root{
+  color-scheme:dark;
+  --bg:#0b0e13; --side:#0d1117; --surface:#121720; --inset:#0e131a; --hover:#18202b;
+  --ink:#e8ebf0; --ink2:#b3bbc7; --muted:#7c8696;
+  --border:#1f2632; --line:#2a3240;
+  --accent:#5b8def;
+  --ok:#2fb36d; --warn:#e5a93b; --serious:#ec835a; --crit:#e5534b; --info:#5b8def;
+  --add:#2fb36d; --chg:#d9a03a; --rem:#e5534b;
+  --r:10px;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink2);font:13.5px/1.5 var(--sans);
+  -webkit-font-smoothing:antialiased}
+a{color:inherit}
+code{font-family:var(--mono);background:rgba(255,255,255,.06);padding:0 4px;border-radius:4px;font-size:.92em}
+.tabnum{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+
+/* ── shell: sidebar + conteúdo ───────────────────────────────────────── */
+.app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--side);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;gap:20px;padding:18px 12px}
+.logo{display:flex;gap:10px;align-items:center;padding:2px 8px 0}
+.logo .mark{width:30px;height:30px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;
+  background:linear-gradient(135deg,#5b8def,#3657a8);color:#fff;font-weight:700;font-size:14px}
+.logo img.mark{width:36px;height:36px;background:none;border-radius:0}
+.logo b{display:block;color:var(--ink);letter-spacing:.14em;font-size:13px}
+.logo small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.navlabel{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+  padding:0 10px;margin:0 0 6px;font-weight:600}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav a{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;
+  color:var(--ink2);text-decoration:none;font-size:13px}
+.nav a:hover{background:var(--hover);color:var(--ink)}
+.nav a.on{background:var(--hover);color:var(--ink);box-shadow:inset 2px 0 0 var(--accent)}
+.nav svg{width:15px;height:15px;flex:0 0 auto;opacity:.75}
+.nav .cnt{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.nav .cnt.hot{color:#fff;background:var(--crit);border-radius:999px;padding:0 7px;font-weight:600}
+.tlist a{font-family:var(--mono);font-size:12px;padding:5px 10px}
+.tlist a .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.tlist a span.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidefoot{margin-top:auto;border:1px solid var(--border);border-radius:var(--r);background:var(--inset);
+  padding:12px;font-size:11.5px;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+.sidefoot .row2{display:flex;justify-content:space-between;gap:8px}
+.sidefoot b{color:var(--ink2);font-weight:600;font-variant-numeric:tabular-nums}
+.pill{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:2px 9px}
+.pill .ldot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
+  vertical-align:middle;background:var(--muted)}
+.pill.live-on{color:#90d9b1}.pill.live-on .ldot{background:var(--ok);box-shadow:0 0 0 3px rgba(47,179,109,.18)}
+.pill.live-wait{color:#f0cf8a}.pill.live-wait .ldot{background:var(--warn)}
+.pill.live-err{color:#f2a3a3}.pill.live-err .ldot{background:var(--crit)}
+.pill b{color:var(--ink2);font-weight:600}
+
+.main{min-width:0;padding:24px 28px 48px;max-width:1440px}
+.pagehead{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.pagehead h1{margin:0;font-size:20px;color:var(--ink);font-weight:650;letter-spacing:-.01em}
+.pagehead p{margin:3px 0 0;color:var(--muted);font-size:12.5px}
+.pagehead .actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sectitle{display:flex;align-items:baseline;gap:10px;margin:30px 0 10px}
+.sectitle h2{margin:0;font-size:14px;color:var(--ink);font-weight:600}
+.sectitle span{font-size:12px;color:var(--muted)}
+
+/* ── KPIs ────────────────────────────────────────────────────────────── */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
+.kpi .l{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}
+.kpi .l::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--line)}
+.kpi.accent .l::before{background:var(--accent)} .kpi.ok .l::before{background:var(--ok)}
+.kpi.warn .l::before{background:var(--warn)} .kpi.crit .l::before{background:var(--crit)}
+.kpi .n{font-size:28px;font-weight:650;color:var(--ink);line-height:1.15;margin-top:6px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.kpi.crit .n{color:#f08a84} .kpi.warn .n{color:#efc06a}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+
+/* ── status chip: ponto + rótulo (nunca cor sozinha) ─────────────────── */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:600;
+  letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;padding:2px 8px;
+  border-radius:999px;background:rgba(255,255,255,.04);border:1px solid var(--border)}
+.chip .dot,.dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;display:inline-block}
+.s-crit{color:#f2a3a3}.s-crit .dot,.dot.s-crit{background:var(--crit)}
+.chip.s-crit{background:rgba(229,83,75,.10);border-color:rgba(229,83,75,.35)}
+.s-serious{color:#f4bea6}.s-serious .dot,.dot.s-serious{background:var(--serious)}
+.chip.s-serious{background:rgba(236,131,90,.10);border-color:rgba(236,131,90,.35)}
+.s-warn{color:#f0cf8a}.s-warn .dot,.dot.s-warn{background:var(--warn)}
+.chip.s-warn{background:rgba(229,169,59,.09);border-color:rgba(229,169,59,.32)}
+.s-info{color:#a9c4f5}.s-info .dot,.dot.s-info{background:var(--info)}
+.s-ok{color:#90d9b1}.s-ok .dot,.dot.s-ok{background:var(--ok)}
+.chip.s-ok{background:rgba(47,179,109,.08);border-color:rgba(47,179,109,.30)}
+.s-muted{color:var(--muted)}.s-muted .dot,.dot.s-muted{background:var(--muted)}
+
+/* ── cards e tabelas ─────────────────────────────────────────────────── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  overflow:hidden;min-width:0}
+.cardhd{display:flex;align-items:baseline;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.cardhd h3{margin:0;font-size:13px;color:var(--ink);font-weight:600}
+.cardhd .sub{font-size:11.5px;color:var(--muted)}
+.cardhd .right{margin-left:auto;font-size:11.5px;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:14px;margin-top:14px;
+  align-items:start}
+.stack{display:flex;flex-direction:column;gap:14px;min-width:0}
+.scroll{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+.t th{text-align:left;font-weight:600;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);padding:8px 16px;border-bottom:1px solid var(--border);background:var(--inset);
+  white-space:nowrap}
+.t td{padding:10px 16px;border-bottom:1px solid var(--border);vertical-align:top}
+.t tbody tr:last-child td{border-bottom:0}
+.t tbody tr:hover td{background:rgba(255,255,255,.015)}
+.t .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.t .nw{white-space:nowrap}
+.t a{color:var(--ink);text-decoration:none}
+.t a:hover{color:var(--accent)}
+.who{font-family:var(--mono);font-size:12.5px;color:var(--ink);word-break:break-all}
+.who .kd{font-family:var(--sans);font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--muted);
+  margin-right:6px}
+.det{font-size:12px;color:var(--ink2);margin-top:1px;word-break:break-word}
+.proof{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px;word-break:break-all}
+.tgt{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.calm{padding:16px;display:flex;align-items:center;gap:10px;color:var(--ink2)}
+.fid{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-left:8px;opacity:.8;
+  white-space:nowrap;display:inline-block;word-break:normal}
+table.pt{table-layout:fixed}
+table.pt col.c-sev{width:118px} table.pt col.c-st{width:230px} table.pt col.c-tgt{width:130px}
+.acth{font-size:10.5px;color:var(--muted)}
+.chip.s-info{background:rgba(91,141,239,.09);border-color:rgba(91,141,239,.32)}
+td.st{min-width:150px}
+@media(max-width:820px){table.pt{table-layout:auto}}
+.stx{font-size:11.5px;color:var(--muted);margin-top:4px}
+.late{color:#f08a84;font-weight:600}
+details.act{margin-top:6px}
+details.act>summary{list-style:none;cursor:pointer;font-size:11.5px;color:var(--accent);user-select:none;
+  display:inline-block}
+details.act>summary::-webkit-details-marker{display:none}
+details.act[open]>summary{color:var(--muted)}
+.actf{margin-top:6px;display:flex;flex-direction:column;gap:6px;min-width:210px}
+.actr{background:var(--inset);border:1px solid var(--border);border-radius:6px;color:var(--ink);
+  font:12px var(--sans);padding:5px 8px}
+.actr:focus{outline:none;border-color:var(--accent)}
+.actr.need{border-color:var(--crit)}
+.actb{display:flex;flex-wrap:wrap;gap:6px}
+.actbtn{background:var(--surface);border:1px solid var(--line);color:var(--ink2);border-radius:6px;
+  font:600 11.5px var(--sans);padding:4px 9px;cursor:pointer}
+.actbtn:hover{border-color:var(--accent);color:var(--ink)}
+.empty{color:var(--muted);padding:16px}
+details.more>summary{list-style:none;cursor:pointer;padding:9px 16px;font-size:12px;color:var(--accent);
+  border-top:1px solid var(--border);user-select:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more[open]>summary{color:var(--muted)}
+.bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--ok)}
+.bar.warn i{background:var(--warn)} .bar.crit i{background:var(--crit)}
+
+/* ── tendência / atividade ───────────────────────────────────────────── */
+.trend{padding:12px 16px 14px}
+.trend .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.trend .hd b{color:var(--ink);font-size:13px;font-weight:600}
+.trend .net{font-size:11.5px;color:var(--muted);margin-left:auto}
+.trend .net b2{color:var(--ink2);font-weight:600}
+.trend svg{width:100%;height:auto;display:block;margin-top:10px}
+.legend{color:var(--muted);font-size:11px;margin-top:6px}
+.lg{background:transparent;border:1px solid var(--border);border-radius:999px;color:var(--muted);
+  font:11px var(--sans);padding:2px 9px;margin-right:6px;cursor:pointer;display:inline-flex;align-items:center}
+.lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;opacity:.35}
+.lg.on{color:var(--ink2);border-color:var(--line)}
+.lg.on i{opacity:1}
+.lghint{font-size:11px;color:var(--muted)}
+
+/* ── dossiê por alvo ─────────────────────────────────────────────────── */
+.dossier{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  margin-top:14px;overflow:hidden;scroll-margin-top:16px}
+.doshd{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);
+  flex-wrap:wrap}
+.doshd .name{font-family:var(--mono);color:var(--ink);font-size:15px;font-weight:600;word-break:break-all}
+.doshd .meta{margin-left:auto;font-size:11.5px;color:var(--muted)}
+.dosbody{display:grid;grid-template-columns:290px minmax(0,1fr)}
+.dosside{border-right:1px solid var(--border);background:var(--inset);min-width:0}
+.dosmain{min-width:0}
+.blk{padding:14px 16px;border-bottom:1px solid var(--border)}
+.blk:last-child{border-bottom:0}
+.blk h4{margin:0 0 10px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  font-weight:600;display:flex;gap:8px;align-items:baseline}
+.blk h4 .c{margin-left:auto;letter-spacing:0;text-transform:none;font-weight:500}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12px;margin:0}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;color:var(--ink2);text-align:right;font-variant-numeric:tabular-nums}
+.health{margin-bottom:10px}
+.collhealth{display:flex;flex-direction:column;gap:5px;margin-top:12px;padding-top:10px;
+  border-top:1px dashed var(--line)}
+.collhealth .chp{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-family:var(--mono);font-size:11.5px;color:var(--ink2)}
+.risk{display:flex;flex-direction:column;gap:8px}
+.risk .ri{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.risk .ri .dot{margin-top:5px}
+.risk .ri .w{font-family:var(--mono);color:var(--ink);word-break:break-all}
+.risk .ri .d{color:var(--muted);font-size:11.5px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 11px}
+.tile .num{font-size:19px;font-weight:650;color:var(--ink);line-height:1.1;font-variant-numeric:tabular-nums}
+.tile .lab{font-size:10.5px;color:var(--muted);margin-top:2px}
+.tile .sub{font-size:10.5px;color:var(--ink2);margin-top:1px}
+.tile.crit{border-color:rgba(229,83,75,.45)}.tile.crit .num{color:#f08a84}
+.tile.warn{border-color:rgba(229,169,59,.4)}.tile.warn .num{color:#efc06a}
+
+.dosmain .trend{border-top:1px solid var(--border)}
+.panehd{display:flex;align-items:baseline;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border)}
+.panehd h4{margin:0;font-size:13px;color:var(--ink);font-weight:600}
+.panehd span{font-size:11.5px;color:var(--muted)}
+.ev{padding:12px 18px;border-bottom:1px solid var(--border);box-shadow:inset 3px 0 0 transparent}
+.ev.lv-crit{box-shadow:inset 3px 0 0 var(--crit)} .ev.lv-serious{box-shadow:inset 3px 0 0 var(--serious)}
+.ev.lv-warn{box-shadow:inset 3px 0 0 var(--warn)}
+.evhd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.evkind{font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.evkey{font-family:var(--mono);color:var(--ink);font-size:12.5px;word-break:break-all}
+.evhd .when{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.diff{margin-top:8px;border:1px solid var(--border);border-radius:6px;overflow:hidden;
+  font-family:var(--mono);font-size:12px}
+.diff>div,.diff .chgdet{padding:3px 10px;white-space:pre-wrap;word-break:break-all}
+.diff .da{background:rgba(47,179,109,.07);color:#a3e2c0}
+.diff .dr{background:rgba(229,83,75,.07);color:#f2b0ab}
+.diff .chgdet{display:block;color:var(--ink2);background:var(--inset);font-size:11.5px;
+  border-top:1px solid var(--border)}
+.diff .mk{display:inline-block;width:14px;opacity:.8}
+.evmeta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tag{font-size:10.5px;border:1px solid var(--border);border-radius:999px;padding:1px 8px;color:var(--muted);
+  white-space:nowrap;font-family:var(--sans)}
+.tag.why{color:#f2aaa5;border-color:rgba(229,83,75,.35)}
+.tag.prov{font-family:var(--mono)}
+
+details.kinds{border-top:1px solid var(--border)}
+details.kinds>summary{list-style:none;cursor:pointer;padding:12px 18px;font-size:13px;color:var(--ink);
+  font-weight:600;user-select:none;display:flex;gap:8px;align-items:center}
+details.kinds>summary::-webkit-details-marker{display:none}
+details.kinds>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--muted);
+  border-bottom:1.5px solid var(--muted);transform:rotate(-45deg);margin-right:4px;transition:transform .15s}
+details.kinds[open]>summary::before{transform:rotate(45deg)}
+details.kinds>summary span{font-weight:400;font-size:11.5px;color:var(--muted)}
+.kfilter{display:block;width:calc(100% - 36px);margin:0 18px 8px;padding:7px 10px;font:inherit;font-size:12.5px;
+  color:var(--ink);background:var(--inset);border:1px solid var(--border);border-radius:7px}
+.kfilter:focus{outline:none;border-color:var(--accent)}
+.kfilter.nomatch{border-color:var(--crit)}
+.kind{padding:6px 18px 10px}
+.kind>b{display:block;color:var(--muted);font-size:10.5px;letter-spacing:.1em;font-weight:600;
+  padding-bottom:4px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.kind.hide,.row.hide{display:none}
+.row{display:flex;gap:10px;align-items:baseline;padding:3px 0;font-family:var(--mono);font-size:12.5px;
+  word-break:break-all}
+.row .k{color:var(--ink)} .row .v{color:var(--muted)}
+.row .fp{margin-left:auto;display:inline-flex;gap:6px;flex:0 0 auto}
+.row .fp .svc{color:var(--accent);font-size:11px}
+.row .fp .prod{color:var(--ink2);font-size:11px}
+
+/* ── controles ───────────────────────────────────────────────────────── */
+.filterform{display:flex;gap:6px;align-items:center}
+.finput{background:var(--inset);border:1px solid var(--border);border-radius:7px;color:var(--ink);
+  font:12.5px var(--mono);padding:6px 11px;min-width:220px}
+.finput:focus{outline:none;border-color:var(--accent)}
+.fbtn{background:var(--accent);border:1px solid var(--accent);color:#fff;border-radius:7px;
+  font:600 12px var(--sans);padding:6px 12px;cursor:pointer}
+.fclear{color:var(--muted);font-size:12px;text-decoration:none}
+.fclear:hover{color:var(--ink2)}
+.exports{display:inline-flex;align-items:center;gap:6px}
+.xbtn{color:var(--ink2);border:1px solid var(--border);background:var(--surface);border-radius:7px;
+  padding:5px 10px;text-decoration:none;font-size:12px}
+.xbtn:hover{border-color:var(--accent);color:var(--ink)}
+.banner,.note{border-radius:var(--r);padding:11px 14px;margin:0 0 16px;font-size:12.5px;
+  display:flex;gap:10px;align-items:flex-start}
+.banner{background:rgba(229,83,75,.08);border:1px solid rgba(229,83,75,.4);color:#f2b0ab}
+.note{background:rgba(91,141,239,.07);border:1px solid rgba(91,141,239,.35);color:#b5cbf5}
+footer{color:var(--muted);font-size:11.5px;margin-top:36px;padding-top:14px;border-top:1px solid var(--border)}
+
+@media(max-width:1100px){
+  .grid2{grid-template-columns:1fr}
+  .dosbody{grid-template-columns:1fr}
+  .dosside{border-right:0;border-bottom:1px solid var(--border)}
+}
+@media(max-width:820px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 16px;
+    padding:12px 16px;border-right:0;border-bottom:1px solid var(--border)}
+  .side .navlabel,.side .tlistwrap{display:none}
+  .nav{flex-direction:row;flex-wrap:wrap}
+  .sidefoot{margin:0;flex-direction:row;flex-wrap:wrap;gap:4px 14px;width:100%}
+  .main{padding:16px}
+  .pagehead .actions{margin-left:0;width:100%}
+  .filterform{flex:1 1 100%}
+  .finput{min-width:0;flex:1}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi .n{font-size:24px}
+  .t th,.t td{padding:8px 10px}
+  .ev,.panehd{padding-left:14px;padding-right:14px}
+}
+</style></head><body><div class=app><aside class=side><div class=logo><img class=mark src='data:image/png;base64,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' alt=''><div><b>PADMÉ</b><small>attack surface monitoring</small></div></div><div><div class=navlabel>monitoração</div><nav class=nav><a href='#overview' class=on><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M3 3h7v7H3zM14 3h7v4h-7zM14 11h7v10h-7zM3 14h7v7H3z'/></svg><span>Visão geral</span></a><a href='#problems'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M12 3 2 21h20L12 3z'/><path d='M12 10v5M12 18v.01'/></svg><span>Problemas</span><span class='cnt hot'>4</span></a><a href='#targets'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><circle cx='12' cy='12' r='9'/><circle cx='12' cy='12' r='4'/></svg><span>Alvos</span><span class='cnt'>3</span></a><a href='/vantage'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M12 3 2 8l10 5 10-5-10-5z'/><path d='M2 16l10 5 10-5'/></svg><span>Multi-vantage</span></a></nav></div><div class=tlistwrap><div class=navlabel>dossiês</div><nav class='nav tlist'><a href='#h-acme-com'><span class='dot s-crit'></span><span class=n>acme.com</span></a><a href='#h-loja-dev'><span class='dot s-ok'></span><span class=n>loja.dev</span></a><a href='#h-sem-scan-org'><span class='dot s-muted'></span><span class=n>sem-scan.org</span></a></nav></div><div class=sidefoot><div class=row2><span>último ciclo</span><b>20/09 14:13</b></div><div class=row2><span>atualizado</span><b>14:13:20</b></div><div class=row2><span>painel</span><span class='pill live-on' id=autopill data-live=1><span class=ldot></span>ao vivo</span></div></div></aside><main class=main><header class=pagehead><div><h1>Centro de operações</h1><p>visão geral · 3 alvo(s) · somente leitura</p></div><div class=actions><form class=filterform method=get action="/"><input class=finput name=target list=targetlist autocomplete=off placeholder="filtrar por domínio…" value=""><datalist id=targetlist><option value="acme.com"><option value="loja.dev"><option value="sem-scan.org"></datalist><button class=fbtn type=submit>filtrar</button></form><span class=exports><a class=xbtn href="/export?fmt=json">exportar JSON</a><a class=xbtn href="/export?fmt=csv">CSV</a></span></div></header><section id=overview class=kpis><div class='kpi accent'><div class=l>alvos monitorados</div><div class=n>3</div><div class=s>3 com dados</div></div><div class='kpi '><div class=l>ativos observados</div><div class=n>14</div><div class=s>subdomínios, portas, serviços…</div></div><div class='kpi crit'><div class=l>problemas abertos</div><div class=n>4</div><div class=s>3 de alta gravidade</div></div><div class='kpi crit'><div class=l>collectors confiáveis</div><div class=n>60%</div><div class=s>3/5 ok · degradado: ports, tls</div></div><div class='kpi warn'><div class=l>alertas explicáveis</div><div class=n>60%</div><div class=s>6/10 HIGH+ · falta razão</div></div></section><div class=grid2><section class=card id=problems><div class=cardhd><h3>Problemas abertos</h3><span class=sub>ordenado por risco</span><span class=right>4</span></div><div class=scroll><table class='t pt'><colgroup><col class=c-sev><col><col class=c-st><col class=c-tgt></colgroup><thead><tr><th>severidade</th><th>problema</th><th>estado</th><th>alvo</th></tr></thead><tbody><tr><td class=nw><span class='chip s-crit'><span class=dot></span>crítico</span></td><td><div class=who><span class=kd>E-MAIL</span>acme.com<span class=fid title='id do finding (padme finding show …)'>7ae1a9e33a</span></div><div class=det>SPF autoriza via domínio vendor-livre.net não registrado (RDAP 404) — registrável agora: registre-o e você envia e-mail autenticado pelo alvo</div><div class=proof>prova: dns_txt — record=spf-orphan · policy=vendor-livre.net (free) via _spf.vendor-livre.net</div></td><td class=st><span class='chip s-muted'><span class=dot></span>aberto</span><div class=stx>há 24h · vence em <1h</div><details class=act><summary>ações</summary><form method=post action='/finding' class=actf><input type=hidden name=csrf value='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'><input type=hidden name=id value='7ae1a9e33a0e2e7f'><input type=hidden name=target value=''><input class=actr name=reason maxlength=500 autocomplete=off placeholder='motivo' aria-label='motivo'><span class=acth>obrigatório para falso positivo e aceitar risco</span><div class=actb><button class=actbtn type=submit name=action value=ack>Reconhecer</button><button class=actbtn type=submit name=action value=suppress>Falso positivo</button><button class=actbtn type=submit name=action value=accept>Aceitar risco</button></div></form></details></td><td class=tgt><a href='#h-acme-com'>acme.com</a></td></tr><tr><td class=nw><span class='chip s-crit'><span class=dot></span>crítico</span></td><td><div class=who><span class=kd>TAKEOVER</span>blog.acme.com<span class=fid title='id do finding (padme finding show …)'>4a3cadf8fc</span></div><div class=det>GitHub Pages</div><div class=proof>prova: takeover_check — cname=acme.github.io · service=GitHub Pages · reason=CNAME dangling (NXDOMAIN)</div></td><td class=st><span class='chip s-muted'><span class=dot></span>aberto</span><div class=stx>há 24h · vence em <1h</div><details class=act><summary>ações</summary><form method=post action='/finding' class=actf><input type=hidden name=csrf value='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'><input type=hidden name=id value='4a3cadf8fc66df11'><input type=hidden name=target value=''><input class=actr name=reason maxlength=500 autocomplete=off placeholder='motivo' aria-label='motivo'><span class=acth>obrigatório para falso positivo e aceitar risco</span><div class=actb><button class=actbtn type=submit name=action value=ack>Reconhecer</button><button class=actbtn type=submit name=action value=suppress>Falso positivo</button><button class=actbtn type=submit name=action value=accept>Aceitar risco</button></div></form></details></td><td class=tgt><a href='#h-acme-com'>acme.com</a></td></tr><tr><td class=nw><span class='chip s-serious'><span class=dot></span>expira</span></td><td><div class=who><span class=kd>CERT</span>api.acme.com:443<span class=fid title='id do finding (padme finding show …)'>cb26fde7a7</span></div><div class=det>expira em 6 dia(s)</div><div class=proof>prova: tls_cert — days_left=6</div></td><td class=st><span class='chip s-info'><span class=dot></span>reconhecido</span><div class=stx>há 24h · vence em 2d</div><details class=act><summary>ações</summary><form method=post action='/finding' class=actf><input type=hidden name=csrf value='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'><input type=hidden name=id value='cb26fde7a7518499'><input type=hidden name=target value=''><input class=actr name=reason maxlength=500 autocomplete=off placeholder='motivo' aria-label='motivo'><span class=acth>obrigatório para falso positivo e aceitar risco</span><div class=actb><button class=actbtn type=submit name=action value=suppress>Falso positivo</button><button class=actbtn type=submit name=action value=accept>Aceitar risco</button><button class=actbtn type=submit name=action value=reopen>Reabrir</button></div></form></details></td><td class=tgt><a href='#h-acme-com'>acme.com</a></td></tr><tr><td class=nw><span class='chip s-warn'><span class=dot></span>atenção</span></td><td><div class=who><span class=kd>COLETA</span>acme.com</div><div class=det>coleta parcial — 1 erro(s) de collector</div></td><td class=st><span class=lghint>transitório</span></td><td class=tgt><a href='#h-acme-com'>acme.com</a></td></tr></tbody></table></div><details class=more data-persist='problems-treated'><summary>1 tratado(s) · falso positivo ou risco aceito</summary><div class=scroll><table class='t pt'><colgroup><col class=c-sev><col><col class=c-st><col class=c-tgt></colgroup><tbody><tr><td class=nw><span class='chip s-warn'><span class=dot></span>atenção</span></td><td><div class=who><span class=kd>WILDCARD</span>*.acme.com<span class=fid title='id do finding (padme finding show …)'>5d9a787e7e</span></div><div class=det>catch-all 198.51.100.7</div><div class=proof>prova: dns_wildcard — ips=198.51.100.7</div></td><td class=st><span class='chip s-muted'><span class=dot></span>risco aceito</span><div class=stx>curinga do CDN · por ana</div><details class=act><summary>ações</summary><form method=post action='/finding' class=actf><input type=hidden name=csrf value='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'><input type=hidden name=id value='5d9a787e7ed08e89'><input type=hidden name=target value=''><div class=actb><button class=actbtn type=submit name=action value=reopen>Reabrir</button></div></form></details></td><td class=tgt><a href='#h-acme-com'>acme.com</a></td></tr></tbody></table></div></details></section><div class=stack><section class=card><div class=trend data-days="30"><div class=hd><b>atividade · 30d</b><span class=lghint>sem registros DNS</span></div><div class=empty>sem eventos nos últimos 30 dias.</div></div></section><section class=card><div class=cardhd><h3>Saúde dos collectors</h3><span class=sub>último scan, por alvo</span></div><div class=scroll><table class=t><thead><tr><th>collector</th><th></th><th class=r>ok</th><th class=r>pior</th></tr></thead><tbody><tr><td class=mono>ports</td><td><div class='bar crit'><i style='width:0%'></i></div></td><td class=r>0/1</td><td class=r><span class='chip s-crit'><span class=dot></span>error</span></td></tr><tr><td class=mono>tls</td><td><div class='bar warn'><i style='width:0%'></i></div></td><td class=r>0/1</td><td class=r><span class='chip s-warn'><span class=dot></span>partial</span></td></tr><tr><td class=mono>dns</td><td><div class='bar '><i style='width:100%'></i></div></td><td class=r>1/1</td><td class=r><span class='chip s-ok'><span class=dot></span>ok</span></td></tr><tr><td class=mono>http</td><td><div class='bar '><i style='width:100%'></i></div></td><td class=r>2/2</td><td class=r><span class='chip s-ok'><span class=dot></span>ok</span></td></tr></tbody></table></div></section></div></div><div class=sectitle><h2>Alvos</h2><span>3 no escopo</span></div><section class=card id=targets><div class=scroll><table class=t><thead><tr><th>alvo</th><th>estado</th><th class=r>ativos</th><th class=r>problemas</th><th class=r>eventos 30d</th><th class=r>último scan</th></tr></thead><tbody><tr><td><a class=mono href='#h-acme-com'>acme.com</a></td><td><span class='chip s-crit'><span class=dot></span>takeover</span></td><td class=r>13</td><td class=r>4</td><td class=r>0</td><td class=r>20/09 14:13</td></tr><tr><td><a class=mono href='#h-loja-dev'>loja.dev</a></td><td><span class='chip s-ok'><span class=dot></span>ok</span></td><td class=r>1</td><td class=r>0</td><td class=r>0</td><td class=r>20/09 14:13</td></tr><tr><td><a class=mono href='#h-sem-scan-org'>sem-scan.org</a></td><td><span class='chip s-muted'><span class=dot></span>sem dados</span></td><td class=r>0</td><td class=r>0</td><td class=r>0</td><td class=r>—</td></tr></tbody></table></div></section><div class=sectitle><h2>Dossiês</h2><span>resumo, timeline priorizada e inventário por alvo</span></div><section class=dossier id='h-acme-com'><div class=doshd><span class='chip s-crit'><span class=dot></span>takeover</span><span class=name>acme.com</span><span class=meta>13 ativo(s) · último scan 20/09 14:13</span></div><div class=dosbody><aside class=dosside><div class=blk><h4>risco aberto<span class=c>4</span></h4><div class=risk><div class=ri><span class='dot s-crit'></span><div><div class=w>E-MAIL · acme.com</div><div class=d>SPF autoriza via domínio vendor-livre.net não registrado (RDAP 404) — registrável agora: registre-o e você envia e-mail autenticado pelo alvo</div></div></div><div class=ri><span class='dot s-crit'></span><div><div class=w>TAKEOVER · blog.acme.com</div><div class=d>GitHub Pages</div></div></div><div class=ri><span class='dot s-serious'></span><div><div class=w>CERT · api.acme.com:443</div><div class=d>expira em 6 dia(s)</div></div></div><div class=ri><span class='dot s-warn'></span><div><div class=w>COLETA · acme.com</div><div class=d>coleta parcial — 1 erro(s) de collector</div></div></div></div></div><div class=blk><h4>saúde da coleta</h4><div class=health><span class='chip s-warn'><span class=dot></span>dados parciais</span></div><dl class=kv><dt>último scan</dt><dd>20/09 14:13</dd><dt>último scan ok</dt><dd>—</dd><dt>erros</dt><dd>1</dd><dt>duração</dt><dd>1234 ms</dd></dl><div class=collhealth><span class=chp>dns <span class='chip s-ok'><span class=dot></span>ok</span></span><span class=chp>http <span class='chip s-ok'><span class=dot></span>ok</span></span><span class=chp>ports <span class='chip s-crit'><span class=dot></span>error</span></span><span class=chp>tls <span class='chip s-warn'><span class=dot></span>partial</span></span></div></div><div class=blk><h4>cobertura</h4><div class=tiles><div class='tile '><div class=num>3</div><div class=lab>subdomínios</div><div class=sub>2 live · 1 quiet</div></div><div class='tile '><div class=num>1</div><div class=lab>serviços http</div></div><div class='tile '><div class=num>1</div><div class=lab>portas abertas</div></div><div class='tile '><div class=num>1</div><div class=lab>certificados</div></div><div class='tile crit'><div class=num>1</div><div class=lab>takeover</div><div class=sub>crítico</div></div><div class='tile warn'><div class=num>1</div><div class=lab>cert expirando</div></div><div class='tile warn'><div class=num>1</div><div class=lab>wildcard dns</div></div></div></div></aside><div class=dosmain><div class=panehd><h4>Timeline priorizada</h4><span>18 evento(s) recentes · mais relevante primeiro</span></div><div class='ev lv-crit'><div class=evhd><span class='chip s-crit'><span class=dot></span>crítico</span><span class=evkind>takeover · novo</span><span class=evkey>blog.acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>GitHub Pages</div></div><div class=evmeta><span class='tag prov' title='collector'>takeover</span><span class=tag title='takeover_check — cname=acme.github.io · service=GitHub Pages · reason=CNAME dangling (NXDOMAIN)'>prova: takeover_check</span><span class=tag>confiança: high</span></div></div><div class='ev lv-crit'><div class=evhd><span class='chip s-crit'><span class=dot></span>crítico</span><span class=evkind>port · novo</span><span class=evkey>api.acme.com:3389</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>open</div></div><div class=evmeta><span class='tag why' title='porta aberta nova · serviço de acesso remoto'>▲ porta aberta nova +1</span><span class='tag prov' title='collector'>ports</span><span class=tag title='tcp_connect — port=3389 · state=open'>prova: tcp_connect</span></div></div><div class='ev lv-crit'><div class=evhd><span class='chip s-crit'><span class=dot></span>crítico</span><span class=evkind>mailsec · novo</span><span class=evkey>acme.com|SPF-ORPHAN|vendor-livre.net</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>vendor-livre.net (free) via _spf.vendor-livre.net</div></div><div class=evmeta><span class='tag why' title='SPF inclui domínio livre (takeover de e-mail)'>▲ SPF inclui domínio livre (takeover de e-mail)</span><span class='tag prov' title='collector'>dnsrecon</span><span class=tag title='dns_txt — record=spf-orphan · policy=vendor-livre.net (free) via _spf.vendor-livre.net'>prova: dns_txt</span></div></div><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>subdomain · novo</span><span class=evkey>novo.acme.com</span><span class=when>09-20 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>live</div></div><div class=evmeta><span class='tag prov' title='collector'>subdomains</span><span class=tag title='dns_resolve — liveness=live'>prova: dns_resolve</span></div></div><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>wildcard · novo</span><span class=evkey>*.acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>198.51.100.7</div></div><div class=evmeta><span class='tag prov' title='collector'>wildcard</span><span class=tag title='dns_wildcard — ips=198.51.100.7'>prova: dns_wildcard</span></div></div><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>subdomain · novo</span><span class=evkey>blog.acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>quiet</div></div><div class=evmeta><span class='tag prov' title='collector'>subdomains</span><span class=tag title='dns_resolve — liveness=quiet'>prova: dns_resolve</span></div></div><details class=more data-persist='ev-acme-com'><summary>mais 12 evento(s)</summary><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>subdomain · novo</span><span class=evkey>api.acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>live</div></div><div class=evmeta><span class='tag prov' title='collector'>subdomains</span><span class=tag title='dns_resolve — liveness=live'>prova: dns_resolve</span></div></div><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>port · novo</span><span class=evkey>api.acme.com:22</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>open · SSH-2.0-OpenSSH_9.6p1</div></div><div class=evmeta><span class='tag prov' title='collector'>ports</span><span class=tag title='tcp_connect — port=22 · state=open · service=ssh · product=OpenSSH · version=9.6p1'>prova: tcp_connect</span></div></div><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>ns · novo</span><span class=evkey>acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>ns1.dns.net,ns2.dns.net</div></div><div class=evmeta><span class='tag prov' title='collector'>dnsrecon</span><span class=tag title='dns_ns — nameserver=ns1.dns.net,ns2.dns.net'>prova: dns_ns</span></div></div><div class='ev lv-serious'><div class=evhd><span class='chip s-serious'><span class=dot></span>alto</span><span class=evkind>cert_expiry · novo</span><span class=evkey>api.acme.com:443</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>expira em 6 dia(s)</div></div><div class=evmeta><span class='tag prov' title='collector'>tls</span><span class=tag title='tls_cert — days_left=6'>prova: tls_cert</span></div></div><div class='ev lv-warn'><div class=evhd><span class='chip s-warn'><span class=dot></span>médio</span><span class=evkind>http · alterado</span><span class=evkey>api.acme.com</span><span class=when>09-20 14:13</span></div><div class=diff><div class=dr><span class=mk>−</span>200 | nginx | API</div><div class=da><span class=mk>+</span>403 | nginx | Proibido</div><span class=chgdet>status: 200 → 403 · title: API → Proibido</span></div><div class=evmeta><span class='tag prov' title='collector'>http</span><span class=tag title='http_response — status=403 · server=nginx · title=Proibido'>prova: http_response</span></div></div><div class='ev lv-warn'><div class=evhd><span class='chip s-warn'><span class=dot></span>médio</span><span class=evkind>tls · novo</span><span class=evkey>api.acme.com:443</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>LE | 2026-12-01 | ab12</div></div><div class=evmeta><span class='tag prov' title='collector'>tls</span><span class=tag title='tls_handshake — issuer=LE · fingerprint=ab12 · sans=[&#x27;api.acme.com&#x27;]'>prova: tls_handshake</span></div></div><div class='ev lv-warn'><div class=evhd><span class='chip s-warn'><span class=dot></span>médio</span><span class=evkind>http · novo</span><span class=evkey>api.acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>200 | nginx | API</div></div><div class=evmeta><span class='tag prov' title='collector'>http</span><span class=tag title='http_response — status=200 · server=nginx · title=API'>prova: http_response</span></div></div><div class='ev '><div class=evhd><span class='chip s-info'><span class=dot></span>baixo</span><span class=evkind>port · alterado</span><span class=evkey>api.acme.com:22</span><span class=when>09-20 14:13</span></div><div class=diff><div class=dr><span class=mk>−</span>open · SSH-2.0-OpenSSH_9.6p1</div><div class=da><span class=mk>+</span>open · SSH-2.0-OpenSSH_9.7p1</div><span class=chgdet>version: 9.6p1 → 9.7p1</span></div><div class=evmeta><span class='tag prov' title='collector'>ports</span><span class=tag title='tcp_connect — port=22 · state=open · service=ssh · product=OpenSSH · version=9.7p1'>prova: tcp_connect</span></div></div><div class='ev '><div class=evhd><span class='chip s-info'><span class=dot></span>baixo</span><span class=evkind>port · removido</span><span class=evkey>api.acme.com:3389</span><span class=when>09-20 14:13</span></div><div class=diff><div class=dr><span class=mk>−</span>open</div></div><div class=evmeta><span class='tag prov' title='collector'>ports</span></div></div><div class='ev '><div class=evhd><span class='chip s-info'><span class=dot></span>baixo</span><span class=evkind>httpsec · novo</span><span class=evkey>api.acme.com</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>falta: csp, hsts</div></div><div class=evmeta><span class='tag prov' title='collector'>http</span><span class=tag title='http_headers — missing=[&#x27;csp&#x27;, &#x27;hsts&#x27;]'>prova: http_headers</span></div></div><div class='ev '><div class=evhd><span class='chip s-muted'><span class=dot></span>debug</span><span class=evkind>dns · alterado</span><span class=evkey>api.acme.com|A</span><span class=when>09-20 14:13</span></div><div class=diff><div class=dr><span class=mk>−</span>203.0.113.10</div><div class=da><span class=mk>+</span>203.0.113.12</div><span class=chgdet>values: 203.0.113.10, 203.0.113.11 → 203.0.113.12</span></div><div class=evmeta><span class='tag prov' title='collector'>dns</span><span class=tag title='dns_record — record_type=A · value=203.0.113.12'>prova: dns_record</span></div></div><div class='ev '><div class=evhd><span class='chip s-muted'><span class=dot></span>debug</span><span class=evkind>dns · novo</span><span class=evkey>api.acme.com|A</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>203.0.113.10</div></div><div class=evmeta><span class='tag prov' title='collector'>dns</span><span class=tag title='dns_record — record_type=A · value=203.0.113.10'>prova: dns_record</span></div></div></details><div class=trend data-days="30"><div class=hd><b>tendência · 30d</b><span class=lghint>sem registros DNS</span></div><div class=empty>sem eventos nos últimos 30 dias.</div></div><details class=kinds data-persist='k-acme-com'><summary>Ativos por categoria <span>13</span></summary><input class=kfilter type=search autocomplete=off placeholder='filtrar (host, porta, kind, valor)…' aria-label='filtrar ativos'><div class=kind data-kind='takeover'><b>TAKEOVER · 1</b><div class=row><span class=k>blog.acme.com</span><span class=v>GitHub Pages</span></div></div><div class=kind data-kind='cert_expiry'><b>CERT · 1</b><div class=row><span class=k>api.acme.com:443</span><span class=v>expira em 6 dia(s)</span></div></div><div class=kind data-kind='ns'><b>NS · 1</b><div class=row><span class=k>acme.com</span><span class=v>ns1.dns.net,ns2.dns.net</span></div></div><div class=kind data-kind='mailsec'><b>E-MAIL · 1</b><div class=row><span class=k>acme.com|SPF-ORPHAN|vendor-livre.net</span><span class=v>vendor-livre.net (free) via _spf.vendor-livre.net</span></div></div><div class=kind data-kind='wildcard'><b>WILDCARD · 1</b><div class=row><span class=k>*.acme.com</span><span class=v>198.51.100.7</span></div></div><div class=kind data-kind='subdomain'><b>SUBDOMAIN · 3</b><div class=row><span class=k>api.acme.com</span><span class=v>live</span></div><div class=row><span class=k>blog.acme.com</span><span class=v>quiet</span></div><div class=row><span class=k>novo.acme.com</span><span class=v>live</span></div></div><div class=kind data-kind='port'><b>PORT · 1</b><div class=row><span class=k>api.acme.com:22</span><span class=v>open · SSH-2.0-OpenSSH_9.7p1</span><span class=fp><span class=svc>ssh</span><span class=prod>OpenSSH 9.7p1</span></span></div></div><div class=kind data-kind='http'><b>HTTP · 1</b><div class=row><span class=k>api.acme.com</span><span class=v>403 | nginx | Proibido</span></div></div><div class=kind data-kind='httpsec'><b>HEADERS · 1</b><div class=row><span class=k>api.acme.com</span><span class=v>falta: csp, hsts</span></div></div><div class=kind data-kind='tls'><b>TLS · 1</b><div class=row><span class=k>api.acme.com:443</span><span class=v>LE | 2026-12-01 | ab12</span></div></div><div class=kind data-kind='dns'><b>DNS · 1</b><div class=row><span class=k>api.acme.com|A</span><span class=v>203.0.113.12</span></div></div></details></div></div></section><section class=dossier id='h-loja-dev'><div class=doshd><span class='chip s-ok'><span class=dot></span>ok</span><span class=name>loja.dev</span><span class=meta>1 ativo(s) · último scan 20/09 14:13</span></div><div class=dosbody><aside class=dosside><div class=blk><h4>risco aberto<span class=c>0</span></h4><div class=risk><span class='chip s-ok'><span class=dot></span>nenhum</span></div></div><div class=blk><h4>saúde da coleta</h4><div class=health><span class='chip s-ok'><span class=dot></span>dados completos</span></div><dl class=kv><dt>último scan</dt><dd>20/09 14:13</dd><dt>último scan ok</dt><dd>20/09 14:13</dd><dt>erros</dt><dd>0</dd><dt>duração</dt><dd>321 ms</dd></dl><div class=collhealth><span class=chp>http <span class='chip s-ok'><span class=dot></span>ok</span></span></div></div><div class=blk><h4>cobertura</h4><div class=tiles><div class='tile '><div class=num>0</div><div class=lab>subdomínios</div></div><div class='tile '><div class=num>1</div><div class=lab>serviços http</div></div><div class='tile '><div class=num>0</div><div class=lab>portas abertas</div></div><div class='tile '><div class=num>0</div><div class=lab>certificados</div></div></div></div></aside><div class=dosmain><div class=panehd><h4>Timeline priorizada</h4><span>1 evento(s) recentes · mais relevante primeiro</span></div><div class='ev lv-warn'><div class=evhd><span class='chip s-warn'><span class=dot></span>médio</span><span class=evkind>http · novo</span><span class=evkey>loja.dev</span><span class=when>09-16 14:13</span></div><div class=diff><div class=da><span class=mk>+</span>200 | cloudflare | Loja</div></div><div class=evmeta><span class='tag prov' title='collector'>http</span><span class=tag title='http_response — status=200 · server=cloudflare · title=Loja'>prova: http_response</span></div></div><div class=trend data-days="30"><div class=hd><b>tendência · 30d</b><span class=lghint>sem registros DNS</span></div><div class=empty>sem eventos nos últimos 30 dias.</div></div><details class=kinds data-persist='k-loja-dev'><summary>Ativos por categoria <span>1</span></summary><input class=kfilter type=search autocomplete=off placeholder='filtrar (host, porta, kind, valor)…' aria-label='filtrar ativos'><div class=kind data-kind='http'><b>HTTP · 1</b><div class=row><span class=k>loja.dev</span><span class=v>200 | cloudflare | Loja</span></div></div></details></div></div></section><section class=dossier id='h-sem-scan-org'><div class=doshd><span class='chip s-muted'><span class=dot></span>sem dados</span><span class=name>sem-scan.org</span><span class=meta>0 ativo(s) · último scan —</span></div><div class=dosbody><aside class=dosside><div class=blk><h4>risco aberto<span class=c>0</span></h4><div class=risk><span class='chip s-ok'><span class=dot></span>nenhum</span></div></div><div class=blk><h4>saúde da coleta</h4><div class=health><span class=lghint>sem scan registrado ainda.</span></div></div></aside><div class=dosmain><div class=panehd><h4>Timeline priorizada</h4><span>0 evento(s) recentes · mais relevante primeiro</span></div><div class=empty>sem eventos recentes.</div><div class=trend data-days="30"><div class=hd><b>tendência · 30d</b><span class=lghint>sem registros DNS</span></div><div class=empty>sem eventos nos últimos 30 dias.</div></div><div class=empty>sem baseline ainda — rode um scan para este alvo.</div></div></div></section><footer>Padmé · lê o padme.db; só grava ações de finding (com CSRF)</footer></main></div><script>
+(function(){
+  var COL={added:'#2fb36d',changed:'#d9a03a',removed:'#e5534b'};
+  var KS=['added','changed','removed'];
+  function svg(series, active, W){
+    W=Math.max(260, Math.round(W||720)); var H=132,pl=26,pr=8,pt=10,pb=20,pw=W-pl-pr,ph=H-pt-pb,base=pt+ph;
+    var tot=series.map(function(d){var s=0;KS.forEach(function(k){if(active.has(k))s+=d[k];});return s;});
+    var max=Math.max.apply(null,[0].concat(tot));
+    var p='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">';
+    p+='<line x1="'+pl+'" y1="'+base+'" x2="'+(W-pr)+'" y2="'+base+'" stroke="#2a3240"/>';
+    if(max>0) p+='<text x="'+(pl-4)+'" y="'+(pt+4)+'" text-anchor="end" font-size="9" fill="#7c8696">'+max+'</text>';
+    var n=series.length, slot=n?pw/n:pw, bw=Math.max(1,slot-2), sc=max>0?ph/max:0;
+    series.forEach(function(d,i){
+      var x=pl+i*slot+(slot-bw)/2, yb=base;
+      KS.forEach(function(k){ if(!active.has(k))return; var h=d[k]*sc; if(h>0){var dr=h>2?h-2:h;
+        p+='<rect x="'+x.toFixed(1)+'" y="'+(yb-dr).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+dr.toFixed(1)+'" fill="'+COL[k]+'" rx="1.5"><title>'+d.day+': +'+d.added+' ~'+d.changed+' -'+d.removed+'</title></rect>';
+        yb-=h;} });
+    });
+    if(n){ var idxs=[0,n>>1,n-1].filter(function(v,i,a){return a.indexOf(v)===i;});
+      idxs.forEach(function(idx){ var lab=series[idx].day.slice(5), cx=pl+idx*slot+slot/2,
+        anc=idx===0?'start':(idx===n-1?'end':'middle');
+        p+='<text x="'+cx.toFixed(1)+'" y="'+(H-6)+'" text-anchor="'+anc+'" font-size="9" fill="#7c8696">'+lab+'</text>'; }); }
+    return p+'</svg>';
+  }
+
+  var charts=[];          // redesenho no resize (um listener só, não um por atualização)
+  var legend={};          // séries ligadas/desligadas por gráfico, sobrevivem à atualização
+  window.addEventListener('resize', function(){ charts.forEach(function(f){ f(); }); });
+
+  // Liga o comportamento do conteúdo. Roda no carregamento e de novo a cada
+  // atualização ao vivo (o conteúdo é trocado, os listeners precisam voltar).
+  function initPage(){
+    // aberto/fechado de cada <details> lembrado entre atualizações
+    document.querySelectorAll('details[data-persist]').forEach(function(d){
+      var key='padme:'+d.getAttribute('data-persist');
+      try{ if(localStorage.getItem(key)==='1') d.open=true; }catch(e){}
+      d.addEventListener('toggle', function(){
+        try{ localStorage.setItem(key, d.open?'1':'0'); }catch(e){}
+      });
+    });
+
+    // busca local por categoria: filtra as linhas e esconde grupos sem match.
+    // O texto é lembrado e reaplicado depois de cada atualização ao vivo.
+    document.querySelectorAll('.kfilter').forEach(function(inp){
+      var det=inp.closest('details');
+      var key='padme:f-'+(det&&det.getAttribute('data-persist')||'');
+      function apply(){
+        var q=inp.value.trim().toLowerCase();
+        if(q && det) det.open=true;
+        var any=false;
+        det.querySelectorAll('.kind').forEach(function(g){
+          var kind=(g.getAttribute('data-kind')||'').toLowerCase();
+          var shown=0;
+          g.querySelectorAll('.row').forEach(function(r){
+            var hit=!q || kind.indexOf(q)!==-1 || r.textContent.toLowerCase().indexOf(q)!==-1;
+            r.classList.toggle('hide', !hit);
+            if(hit) shown++;
+          });
+          g.classList.toggle('hide', shown===0);
+          if(shown) any=true;
+        });
+        inp.classList.toggle('nomatch', !!q && !any);
+      }
+      try{ var saved=localStorage.getItem(key); if(saved){ inp.value=saved; } }catch(e){}
+      inp.addEventListener('input', function(){
+        try{ localStorage.setItem(key, inp.value); }catch(e){}
+        apply();
+      });
+      if(inp.value) apply();
+    });
+
+    // falso positivo / aceitar risco exigem motivo (o servidor também valida)
+    document.querySelectorAll('form.actf').forEach(function(f){
+      f.addEventListener('submit', function(ev){
+        var btn=ev.submitter, r=f.querySelector('.actr');
+        var need=btn && (btn.value==='suppress'||btn.value==='accept');
+        if(need && r && !r.value.trim()){
+          ev.preventDefault(); r.classList.add('need'); r.focus();
+        }
+      });
+    });
+
+    charts=[];
+    document.querySelectorAll('.trend').forEach(function(el, i){
+      var dataEl=el.querySelector('.tdata'), chart=el.querySelector('.chart');
+      if(!dataEl||!chart) return;
+      var series; try{ series=JSON.parse(dataEl.textContent); }catch(e){ return; }
+      var id=(el.getAttribute('data-days')||'')+':'+i;
+      if(legend[id]) el.querySelectorAll('.lg').forEach(function(b){
+        b.classList.toggle('on', legend[id].indexOf(b.dataset.t)!==-1); });
+      function redraw(){
+        var active=new Set();
+        el.querySelectorAll('.lg.on').forEach(function(b){active.add(b.dataset.t);});
+        legend[id]=Array.from(active);
+        chart.innerHTML=svg(series, active, chart.clientWidth);
+      }
+      el.querySelectorAll('.lg').forEach(function(b){
+        b.addEventListener('click', function(){ b.classList.toggle('on'); redraw(); });
+      });
+      redraw();
+      charts.push(redraw);
+    });
+  }
+  initPage();
+
+  // ── ao vivo ───────────────────────────────────────────────────────────────
+  // O servidor avisa por /live (Server-Sent Events) quando o banco muda; aqui a
+  // página é buscada de novo e só o conteúdo é trocado: sem recarregar, sem
+  // perder a rolagem, o filtro ou o que estava aberto. Espera só enquanto você
+  // digita ou está com um menu de ação aberto. Sem /live (navegador antigo ou
+  // proxy que corta a conexão), cai para atualizar a cada 30 s.
+  function pill(state, text){
+    var p=document.getElementById('autopill');
+    if(!p) return;
+    p.className='pill live-'+state;
+    p.innerHTML='<span class=ldot></span>'+text;
+  }
+  function interacting(){
+    var a=document.activeElement;
+    var typing=a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT');
+    return typing || !!document.querySelector('details.act[open]');
+  }
+  var pending=false, busy=false, last=0, broken=0;
+  function refresh(){
+    if(busy) return;
+    if(interacting()){ pill('wait','em espera'); return; }
+    busy=true; pending=false;
+    fetch(location.href, {cache:'no-store', credentials:'same-origin'})
+      .then(function(r){ if(!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function(html){
+        var doc=new DOMParser().parseFromString(html, 'text/html');
+        var fresh=doc.querySelector('.app'), cur=document.querySelector('.app');
+        if(!fresh||!cur) throw new Error('sem conteúdo');
+        var y=window.scrollY;
+        cur.replaceWith(fresh);
+        initPage();
+        window.scrollTo(0, y);
+        last=Date.now();
+        pill('on', broken ? 'atualizando a cada 30 s' : 'ao vivo');
+      })
+      .catch(function(){ pill('err','sem conexão'); pending=true; })
+      .then(function(){ busy=false; });
+  }
+  setInterval(function(){
+    if(pending && Date.now()-last > 1500) refresh();       // agrupa rajadas de mudança
+    else if(broken && Date.now()-broken > 30000){ broken=Date.now(); refresh(); }
+  }, 1000);
+  if('EventSource' in window){
+    var es=new EventSource('/live');
+    es.addEventListener('change', function(){ pending=true; });
+    es.onopen=function(){ broken=0; pill('on','ao vivo'); };
+    es.onerror=function(){ if(!broken) broken=Date.now(); pill('err','reconectando'); };
+  } else {
+    broken=Date.now(); pill('on','atualizando a cada 30 s');
+  }
+})();
+</script></body></html>
