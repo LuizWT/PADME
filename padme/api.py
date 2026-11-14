@@ -37,7 +37,8 @@ from .findings import ACTIVE, STATUSES, sla_info
 from .notify.webhook import event_to_dict
 from .risk import Level, parse_level, severity
 from .storage import Storage, StorageOutdated
-from .webpanel import _SEC_RESPONSE_HEADERS, PanelServer, _bearer_ok
+from .web.auth import _bearer_ok
+from .web.server import _SEC_RESPONSE_HEADERS, PanelServer
 
 API_SCHEMA_VERSION = 1
 _PREFIX = "/api/v1"

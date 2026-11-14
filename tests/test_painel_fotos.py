@@ -21,11 +21,11 @@ from pathlib import Path
 
 import pytest
 
-from padme import webpanel as paginas  # importado antes de congelar o relógio
 from padme.config import Config
 from padme.findings import derive
 from padme.models import Kind, Record
 from padme.storage import Storage
+from padme.web import pages as paginas  # importado antes de congelar o relógio
 
 FOTOS = Path(__file__).parent / "fotos_painel"
 T0 = 1_790_000_000.0          # 2026-09-21 13:46:40 UTC
@@ -223,3 +223,16 @@ def test_fotos_sao_deterministicas(cfg):
     a = paginas._render(cfg, csrf=CSRF)
     b = paginas._render(cfg, csrf=CSRF)
     assert a == b
+
+
+def test_webpanel_antigo_continua_importavel():
+    import importlib
+    import sys as _sys
+
+    _sys.modules.pop("padme.webpanel", None)
+    with pytest.warns(DeprecationWarning, match="padme.web"):
+        antigo = importlib.import_module("padme.webpanel")
+    from padme import web
+    for nome in ("PanelServer", "make_handler", "render_export", "render_vantage",
+                 "serve", "start_background"):
+        assert getattr(antigo, nome) is getattr(web, nome)

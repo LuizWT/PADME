@@ -11,7 +11,8 @@ from padme.cli import _cmd_web, _resolve_web_token
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage
-from padme.webpanel import PanelServer, _bearer_ok, make_handler
+from padme.web.auth import _bearer_ok
+from padme.web.server import PanelServer, make_handler
 
 
 def _cfg_with_db():

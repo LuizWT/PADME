@@ -1,6 +1,6 @@
 """Estilo e script do painel (strings estáticas, sem lógica).
 
-Fora do `webpanel` para o módulo de renderização caber na cabeça: aqui só mora
+Fora dos módulos de renderização para eles caberem na cabeça: aqui só mora
 o CSS (tokens de cor validados p/ fundo escuro), o JS do gráfico de tendência
 e o logo (PNG em padme/data, servido inline como data: URI — a CSP só permite
 `img-src data:`, então nada é buscado fora da página).

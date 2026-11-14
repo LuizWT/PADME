@@ -11,7 +11,7 @@ from padme.api import API_SCHEMA_VERSION, make_handler, respond
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage
-from padme.webpanel import PanelServer
+from padme.web.server import PanelServer
 
 
 def _seed(db: str) -> None:

@@ -9,17 +9,17 @@ import time
 
 import pytest
 
-from padme import webpanel
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage
+from padme.web import server
 
 
 @pytest.fixture
 def painel(monkeypatch):
-    monkeypatch.setattr(webpanel, "_LIVE_POLL", 0.05)
-    monkeypatch.setattr(webpanel, "_LIVE_PING", 0.3)
-    monkeypatch.setattr(webpanel, "_LIVE_MAX", 3.0)
+    monkeypatch.setattr(server, "_LIVE_POLL", 0.05)
+    monkeypatch.setattr(server, "_LIVE_PING", 0.3)
+    monkeypatch.setattr(server, "_LIVE_MAX", 3.0)
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)
     s.apply_scan("a.com", [Record(Kind.PORT, "a.com:443", "open")])
@@ -28,7 +28,7 @@ def painel(monkeypatch):
 
     def subir(token=None):
         cfg = Config(targets=["a.com"], db_path=db)
-        srv = webpanel.PanelServer(("127.0.0.1", 0), webpanel.make_handler(cfg, False, token))
+        srv = server.PanelServer(("127.0.0.1", 0), server.make_handler(cfg, False, token))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         servers.append(srv)
         return srv.server_address[1]
@@ -114,13 +114,13 @@ def test_live_exige_o_mesmo_login_do_painel(painel):
 
 def test_assinatura_do_banco_muda_com_gravacao_e_nao_com_leitura(painel):
     db, _ = painel
-    antes = webpanel._db_stamp(db)
+    antes = server._db_stamp(db)
     ro = Storage(db, readonly=True)
     ro.all_state()
     ro.close()
-    assert webpanel._db_stamp(db) == antes              # o painel lendo não dispara nada
+    assert server._db_stamp(db) == antes              # o painel lendo não dispara nada
     s = Storage(db)
     s.apply_scan("a.com", [Record(Kind.PORT, "a.com:8080", "open")])
     s.close()
-    assert webpanel._db_stamp(db) != antes
-    assert webpanel._db_stamp(db + ".nao-existe") == (None, None)
+    assert server._db_stamp(db) != antes
+    assert server._db_stamp(db + ".nao-existe") == (None, None)

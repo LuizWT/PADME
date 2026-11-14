@@ -1,21 +1,21 @@
 """Métricas do painel: a lógica de DADOS por trás dos cartões, sem HTML.
 
 Problemas abertos, priorização da timeline, cobertura de explicabilidade e
-confiabilidade dos collectors (§27). Separado do `webpanel` (que só renderiza e
-serve) para ser testável e legível sozinho.
+confiabilidade dos collectors (§27). Separado dos módulos que renderizam e
+servem para ser testável e legível sozinho.
 """
 
 from __future__ import annotations
 
-from .evidence import evidence_of
-from .findings import (
+from ..evidence import evidence_of
+from ..findings import (
     ACTIVE,
     MUTED,
     OPEN,
     _evidence_facts,  # noqa: F401 — reexport (a derivação mora em findings)
     derive,
 )
-from .risk import Level, assess
+from ..risk import Level, assess
 
 
 def _prioritize_events(events: list):

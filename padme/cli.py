@@ -109,7 +109,7 @@ async def _cmd_scan(cfg: Config, args) -> int:
 def _start_panel(cfg: Config, args) -> None:
     """Painel web numa thread do próprio monitor: um terminal só. Se não der
     para abrir (porta ocupada, exposto sem token), avisa e o monitor segue."""
-    from .webpanel import start_background
+    from .web.server import start_background
     target = _panel_target(cfg, args.web_host, args.web_port, args.allow_no_auth)
     if isinstance(target, str):
         print(target + "\n  O monitor segue sem o painel.", file=sys.stderr)
@@ -267,7 +267,7 @@ def _panel_target(cfg: Config, host: str | None, port: int | None,
 
 
 async def _cmd_web(cfg: Config, args) -> int:
-    from .webpanel import serve
+    from .web.server import serve
     target = _panel_target(cfg, args.host, args.port, args.allow_no_auth)
     if isinstance(target, str):
         print(target, file=sys.stderr)

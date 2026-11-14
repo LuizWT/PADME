@@ -15,7 +15,9 @@ import pytest
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage, StorageOutdated
-from padme.webpanel import PanelServer, _auth_ok, _render, make_handler
+from padme.web.auth import _auth_ok
+from padme.web.pages import _render
+from padme.web.server import PanelServer, make_handler
 
 
 def _db_com_dados():

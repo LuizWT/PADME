@@ -30,7 +30,9 @@ from padme.findings import (
 )
 from padme.models import Event, EventType, Kind, Record, ScanResult
 from padme.storage import Storage
-from padme.webpanel import PanelServer, _render, _same_origin, make_handler
+from padme.web.auth import _same_origin
+from padme.web.pages import _render
+from padme.web.server import PanelServer, make_handler
 
 TK = {"cname": "acme.github.io", "service": "GitHub Pages", "reason": "CNAME dangling (NXDOMAIN)"}
 

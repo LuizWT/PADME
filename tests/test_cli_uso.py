@@ -53,7 +53,7 @@ def test_sem_comando_roda_o_monitor_com_painel(tmp_path, monkeypatch):
         chamadas["painel"] = (host, port, exposed)
 
     monkeypatch.setattr(cli, "run_monitor", fake_monitor)
-    monkeypatch.setattr("padme.webpanel.start_background", fake_start)
+    monkeypatch.setattr("padme.web.server.start_background", fake_start)
     assert cli.main(["-c", str(_cfg_file(tmp_path))]) == 0
     assert chamadas == {"once": False, "painel": ("127.0.0.1", 8787, False)}
 
@@ -83,7 +83,7 @@ def test_padme_no_web_direto(tmp_path, monkeypatch):
         return None
 
     monkeypatch.setattr(cli, "run_monitor", fake_monitor)
-    monkeypatch.setattr("padme.webpanel.start_background", lambda *a, **k: abriu.append(1))
+    monkeypatch.setattr("padme.web.server.start_background", lambda *a, **k: abriu.append(1))
     assert cli.main(["-c", str(_cfg_file(tmp_path)), "--no-web", "--level", "high"]) == 0
     assert abriu == []
 
@@ -102,7 +102,7 @@ def test_no_web_e_once_nao_abrem_o_painel(tmp_path, monkeypatch):
         return None
 
     monkeypatch.setattr(cli, "run_monitor", fake_monitor)
-    monkeypatch.setattr("padme.webpanel.start_background", lambda *a, **k: abriu.append(1))
+    monkeypatch.setattr("padme.web.server.start_background", lambda *a, **k: abriu.append(1))
     cfg = str(_cfg_file(tmp_path))
     assert cli.main(["-c", cfg, "monitor", "--no-web"]) == 0
     assert cli.main(["-c", cfg, "monitor", "--once"]) == 0
@@ -117,7 +117,7 @@ def test_painel_exposto_sem_token_nao_abre_mas_o_monitor_segue(tmp_path, monkeyp
 
     monkeypatch.delenv("PADME_WEB_TOKEN", raising=False)
     monkeypatch.setattr(cli, "run_monitor", fake_monitor)
-    monkeypatch.setattr("padme.webpanel.start_background", lambda *a, **k: abriu.append(1))
+    monkeypatch.setattr("padme.web.server.start_background", lambda *a, **k: abriu.append(1))
     cfg = str(_cfg_file(tmp_path, "web: {bind: 0.0.0.0}\n"))
     assert cli.main(["-c", cfg]) == 0
     assert rodou == [1] and abriu == []
@@ -134,7 +134,7 @@ def test_porta_ocupada_avisa_e_o_monitor_segue(tmp_path, monkeypatch, capsys):
         raise OSError(98, "Address already in use")
 
     monkeypatch.setattr(cli, "run_monitor", fake_monitor)
-    monkeypatch.setattr("padme.webpanel.start_background", ocupada)
+    monkeypatch.setattr("padme.web.server.start_background", ocupada)
     assert cli.main(["-c", str(_cfg_file(tmp_path))]) == 0
     assert rodou == [1] and "não abriu" in capsys.readouterr().err
 
@@ -142,7 +142,7 @@ def test_porta_ocupada_avisa_e_o_monitor_segue(tmp_path, monkeypatch, capsys):
 def test_painel_sobe_de_verdade_numa_thread(tmp_path):
     import urllib.request
 
-    from padme.webpanel import start_background
+    from padme.web.server import start_background
     cfg = Config.load(_cfg_file(tmp_path))
     srv = start_background(cfg, "127.0.0.1", 0)
     try:
