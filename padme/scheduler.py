@@ -74,12 +74,12 @@ async def retry_pending(storage: Storage, notifier: NotificationManager) -> None
                 by_target.setdefault(r["target"], []).append(r["event_id"])
         for target, ids in by_target.items():
             events = storage.events_by_ids(ids)
-            gone = set(ids) - {e.event_id for e in events}
+            gone = set(ids) - {e.event_id for e in events if e.event_id}
             if gone:  # evento apagado pela retenção: não há o que reenviar
                 storage.resolve_notifications(n.name, list(gone))
             # silenciado/aceito depois que o envio falhou: não reenvia
             statuses = {fid: r["status"] for fid, r in storage.finding_rows([target]).items()}
-            muted = [e.event_id for e in events if is_muted(target, e, statuses)]
+            muted = [e.event_id for e in events if e.event_id and is_muted(target, e, statuses)]
             if muted:
                 storage.resolve_notifications(n.name, muted)
                 events = [e for e in events if e.event_id not in set(muted)]
@@ -91,7 +91,7 @@ async def retry_pending(storage: Storage, notifier: NotificationManager) -> None
             except Exception as exc:  # noqa: BLE001 — canal quebrado não derruba o loop
                 log.debug("notification.%s: reenvio falhou: %s", n.name, type(exc).__name__)
                 ok = False
-            sent = [e.event_id for e in events]
+            sent = [e.event_id for e in events if e.event_id]
             if ok:
                 storage.resolve_notifications(n.name, sent)
                 log.info("[%s] notification.%s: %d alerta(s) pendente(s) reenviado(s).",
@@ -203,6 +203,8 @@ def _cancel_on_sigterm() -> bool:
     Ctrl+C (avisa o encerramento, fecha o banco). Devolve se instalou."""
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
+    if task is None:  # fora de uma task (não acontece no monitor)
+        return False
     try:
         loop.add_signal_handler(signal.SIGTERM, task.cancel)
     except (NotImplementedError, RuntimeError, ValueError):  # Windows / thread não-principal

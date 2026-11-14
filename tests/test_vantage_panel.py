@@ -8,7 +8,7 @@ import tempfile
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage
-from padme.webpanel import render_vantage
+from padme.web.pages import render_vantage
 
 
 def _setup(tmp):

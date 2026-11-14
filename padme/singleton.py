@@ -14,20 +14,28 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from contextlib import contextmanager
+from typing import IO
 
 log = logging.getLogger("padme")
 
-try:
-    import fcntl  # type: ignore
-
-    _MODE = "fcntl"
-except Exception:  # pragma: no cover — plataformas sem fcntl (Windows)
+# `sys.platform` (e não try/except) para o verificador de tipos saber qual
+# módulo existe em cada sistema.
+_MODE: str | None
+if sys.platform == "win32":  # pragma: no cover — só roda no Windows
     try:
-        import msvcrt  # type: ignore
+        import msvcrt
 
         _MODE = "msvcrt"
-    except Exception:  # pragma: no cover — nem um nem outro
+    except ImportError:
+        _MODE = None
+else:
+    try:
+        import fcntl
+
+        _MODE = "fcntl"
+    except ImportError:  # pragma: no cover — POSIX sem fcntl
         _MODE = None
 
 
@@ -35,24 +43,26 @@ class AlreadyRunning(RuntimeError):
     """Outra instância já segura o lock."""
 
 
-def _acquire(fh) -> None:
+def _acquire(fh: IO[str]) -> None:
     """Adquire o lock exclusivo não-bloqueante; levanta OSError se ocupado."""
-    if _MODE == "fcntl":
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    elif _MODE == "msvcrt":  # pragma: no cover — só roda no Windows
-        fh.seek(0)
-        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-
-
-def _release(fh) -> None:
-    if _MODE == "fcntl":
-        fcntl.flock(fh, fcntl.LOCK_UN)
-    elif _MODE == "msvcrt":  # pragma: no cover — só roda no Windows
-        try:
+    if sys.platform == "win32":  # pragma: no cover — só roda no Windows
+        if _MODE == "msvcrt":
             fh.seek(0)
-            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-        except OSError:
-            pass
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+    elif _MODE == "fcntl":
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _release(fh: IO[str]) -> None:
+    if sys.platform == "win32":  # pragma: no cover — só roda no Windows
+        if _MODE == "msvcrt":
+            try:
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            except OSError:
+                pass
+    elif _MODE == "fcntl":
+        fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 @contextmanager

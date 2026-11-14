@@ -23,13 +23,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from . import __version__, netcheck
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = None
-
 from .config import Config
 from .engine import Engine, build_notifiers
 from .findings import ACTIONS, ACTIVE, STATUS_LABEL, STATUSES, human_hours, sla_info
@@ -109,7 +105,7 @@ async def _cmd_scan(cfg: Config, args) -> int:
 def _start_panel(cfg: Config, args) -> None:
     """Painel web numa thread do próprio monitor: um terminal só. Se não der
     para abrir (porta ocupada, exposto sem token), avisa e o monitor segue."""
-    from .webpanel import start_background
+    from .web.server import start_background
     target = _panel_target(cfg, args.web_host, args.web_port, args.allow_no_auth)
     if isinstance(target, str):
         print(target + "\n  O monitor segue sem o painel.", file=sys.stderr)
@@ -267,7 +263,7 @@ def _panel_target(cfg: Config, host: str | None, port: int | None,
 
 
 async def _cmd_web(cfg: Config, args) -> int:
-    from .webpanel import serve
+    from .web.server import serve
     target = _panel_target(cfg, args.host, args.port, args.allow_no_auth)
     if isinstance(target, str):
         print(target, file=sys.stderr)
@@ -419,7 +415,7 @@ async def _cmd_health(cfg: Config, args) -> int:
         print(f"unhealthy: {exc}")
         return 1
     try:
-        last = [m.get("last_scan_at") for t in cfg.targets
+        last = [float(m["last_scan_at"]) for t in cfg.targets
                 if (m := storage.target_meta(t)) and m.get("last_scan_at")]
     finally:
         storage.close()
@@ -598,14 +594,14 @@ Exemplos:
 
 
 def _action_line(a: argparse.Action) -> tuple[str, str]:
+    metavar = " ".join(a.metavar) if isinstance(a.metavar, tuple) else a.metavar
+    choices = ("{" + ",".join(map(str, a.choices)) + "}") if a.choices else ""
     if a.option_strings:
         names = ", ".join(a.option_strings)
         if a.nargs != 0:
-            names += " " + (a.metavar or (("{" + ",".join(map(str, a.choices)) + "}")
-                                          if a.choices else a.dest.upper()))
+            names += " " + (metavar or choices or a.dest.upper())
     else:
-        names = a.metavar or (("{" + ",".join(map(str, a.choices)) + "}")
-                              if a.choices else a.dest)
+        names = metavar or choices or a.dest
     return names, (a.help or "").replace("%%", "%")
 
 
@@ -769,8 +765,6 @@ _NO_SCOPE = {"events", "export", "web", "api", "doctor", "merge", "backup", "hea
 
 def _load_env(config_path: Path) -> None:
     """Segredos do `.env`: o que está ao lado do config e o da pasta atual."""
-    if not load_dotenv:
-        return
     beside = config_path.parent / ".env"
     if beside.is_file():
         load_dotenv(beside)

@@ -23,7 +23,7 @@ import secrets
 from dataclasses import dataclass
 
 try:
-    import dns.asyncresolver  # type: ignore
+    import dns.asyncresolver
 
     _HAS_DNS = True
 except Exception:  # pragma: no cover

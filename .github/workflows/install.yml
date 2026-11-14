@@ -71,6 +71,26 @@ jobs:
         run: |
           set "PATH=%PATH%;%LOCALAPPDATA%\padme\bin"
           padme --version
+      - name: Trava de instância única no Windows (msvcrt)
+        shell: pwsh
+        run: |
+          $py = Join-Path $env:LOCALAPPDATA 'padme\venv\Scripts\python.exe'
+          @'
+          import os, tempfile
+          from padme.singleton import AlreadyRunning, _MODE, single_instance
+          assert _MODE == "msvcrt", _MODE
+          lock = os.path.join(tempfile.gettempdir(), "padme-ci.lock")
+          with single_instance(lock):
+              try:
+                  with single_instance(lock):
+                      raise SystemExit("a segunda instância não devia conseguir a trava")
+              except AlreadyRunning:
+                  pass
+          with single_instance(lock):   # liberada ao sair do bloco
+              pass
+          print("trava ok")
+          '@ | & $py -
+          if ($LASTEXITCODE -ne 0) { throw 'trava de instancia unica falhou' }
       - name: Reinstalar pelo modo "irm | iex" (Windows PowerShell 5.1)
         shell: powershell
         run: |
