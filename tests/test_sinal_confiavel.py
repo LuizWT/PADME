@@ -19,7 +19,7 @@ from padme.evidence import evidence_of
 from padme.models import CollectionResult, Event, EventType, Kind, Record, ScanResult
 from padme.risk import ISSUE_RESOLVED, Level, assess
 from padme.storage import Storage
-from padme.webpanel import _explainability
+from padme.web.metrics import _explainability
 
 SUB = Kind.SUBDOMAIN
 
@@ -245,7 +245,7 @@ def test_saude_persiste_inconclusivos_e_migra_para_v6():
 
 
 def test_painel_mostra_coleta_ok_com_inconclusivos():
-    from padme.webpanel import _health
+    from padme.web.overview import _health
     base = {"last_error_count": 0, "last_partial": 0, "last_scan_at": 0, "last_success_at": 0}
     assert "coleta ok · 3 inconclusivos" in _health({**base, "last_inconclusive": 3})
     assert "coleta ok · 1 inconclusivo<" in _health({**base, "last_inconclusive": 1})

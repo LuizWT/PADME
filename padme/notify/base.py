@@ -162,7 +162,7 @@ async def send_all(notifiers: list, target: str, events: list[Event]) -> list["N
     out: list[NotificationResult] = []
     for n, r in zip(notifiers, raw):
         name = getattr(n, "name", type(n).__name__)
-        if isinstance(r, Exception):
+        if isinstance(r, BaseException):
             log.error("notification.%s erro inesperado: %s", name, redact(str(r)))
             out.append(NotificationResult(name, ok=False, error=type(r).__name__))
         else:
@@ -225,7 +225,7 @@ class NotificationManager:
         out: list[NotificationResult] = []
         for n, r in zip(notifiers, raw):
             name = getattr(n, "name", type(n).__name__)
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 log.debug("notification.%s falhou (anúncio/resumo): %s", name, redact(str(r)))
                 out.append(NotificationResult(name, ok=False, error=type(r).__name__))
             else:

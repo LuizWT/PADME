@@ -334,7 +334,7 @@ def test_mx_inconclusivo_preserva():
 
 
 def test_painel_lista_include_orfao_como_critico(monkeypatch):
-    from padme.panel_metrics import _collect_problems
+    from padme.web.metrics import _collect_problems
     by_target = {"alvo.com": {"mailsec": [
         {"key": "alvo.com|SPF-ORPHAN|vendor-livre.net",
          "value": "vendor-livre.net (free) via _spf.vendor-livre.net",

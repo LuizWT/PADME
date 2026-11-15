@@ -81,7 +81,7 @@ async def _resolve_host(host: str, timeout: float) -> set[str]:
             timeout=timeout)
     except Exception:  # noqa: BLE001 — não resolveu: não dá pra validar
         return set()
-    return {info[4][0] for info in infos}
+    return {str(info[4][0]) for info in infos}
 
 
 def _host_of(url: str) -> str:

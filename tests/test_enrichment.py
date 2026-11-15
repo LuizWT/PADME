@@ -9,7 +9,7 @@ from padme.models import Event, EventType, Kind, Record
 from padme.notify.formatting import risk_suffix
 from padme.notify.webhook import event_to_dict
 from padme.storage import Storage
-from padme.webpanel import _render
+from padme.web.pages import _render
 
 
 def _rdp_event():

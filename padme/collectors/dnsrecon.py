@@ -30,9 +30,10 @@ from ..mailpolicy import (
 )
 from ..models import CollectionResult, Kind, Record
 
+_DEFINITIVE: tuple[type[Exception], ...]
 try:
-    import dns.asyncresolver  # type: ignore
-    import dns.resolver  # type: ignore
+    import dns.asyncresolver
+    import dns.resolver
 
     _HAS_DNS = True
     _DEFINITIVE = (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer)

@@ -103,7 +103,7 @@ def test_config_warnings():
 # ── §52 aviso de exposição do painel ────────────────────────────────────────
 def test_webpanel_banner_exposto():
     from padme.config import Config
-    from padme.webpanel import _render
+    from padme.web.pages import _render
 
     db = tempfile.mktemp(suffix=".db")
     s = Storage(db)

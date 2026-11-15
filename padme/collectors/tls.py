@@ -57,7 +57,8 @@ def _issuer_and_expiry(cert_bin: bytes) -> tuple[str, datetime | None, list[str]
     for oid in (NameOID.ORGANIZATION_NAME, NameOID.COMMON_NAME):
         attrs = cert.issuer.get_attributes_for_oid(oid)
         if attrs:
-            issuer = attrs[0].value
+            v = attrs[0].value
+            issuer = v if isinstance(v, str) else v.decode("utf-8", "replace")
             break
     # not_valid_after_utc em cryptography >= 42; fallback pro naive (UTC)
     not_after = getattr(cert, "not_valid_after_utc", None)

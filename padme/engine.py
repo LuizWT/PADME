@@ -217,6 +217,8 @@ class Engine:
         """Fontes passivas mudam devagar e têm cota: no máx. uma consulta a cada
         `passive_every_hours` por alvo. Sem registro (ou ilegível) -> consulta."""
         raw = self.storage.get_meta(_PASSIVE_META + target)
+        if raw is None:
+            return True
         try:
             last = float(raw)
         except (TypeError, ValueError):
@@ -299,8 +301,9 @@ class Engine:
         observados — com o port-scan inconclusivo não dá para saber se o TLS de
         uma porta sumiu ou só não foi sondado."""
         col = self.cfg.collectors
-        extra = sorted({r.metadata.get("port") for r in ports_cr.records
-                        if r.kind == Kind.PORT} & (IMPLICIT_TLS_PORTS - {443}))
+        extra = sorted({p for r in ports_cr.records if r.kind == Kind.PORT
+                        for p in [r.metadata.get("port")] if isinstance(p, int)}
+                       & (IMPLICIT_TLS_PORTS - {443}))
         records, ok, error = list(base.records), base.ok and ports_cr.ok, base.error
         for p in extra:
             cr = await _safe(
@@ -390,7 +393,7 @@ async def _resolve_ips_quick(host: str, timeout: float) -> set[str]:
             loop.getaddrinfo(host, None, proto=socket.IPPROTO_TCP), timeout=timeout)
     except Exception:  # noqa: BLE001
         return set()
-    return {info[4][0] for info in infos}
+    return {str(info[4][0]) for info in infos}
 
 
 def _dns_hosts(records: list[Record]) -> set[str]:
@@ -446,10 +449,10 @@ def annotate_liveness(records: list[Record],
     dns_hosts = _dns_hosts(records)
     prev = previous or {}
 
-    def quiet_proven(host: str) -> bool:
-        if _dns_gone(host, observed, dns_hosts):
+    def quiet_proven(host: str, seen: set[tuple[str, str]]) -> bool:
+        if _dns_gone(host, seen, dns_hosts):
             return True
-        return bool(live_kinds) and all((k.value, host) in observed for k in live_kinds)
+        return bool(live_kinds) and all((k.value, host) in seen for k in live_kinds)
 
     out: list[Record] = []
     for r in records:
@@ -458,7 +461,7 @@ def annotate_liveness(records: list[Record],
             continue
         if r.key in live:
             value = "live"
-        elif observed is None or quiet_proven(r.key):
+        elif observed is None or quiet_proven(r.key, observed):
             value = "quiet"
         else:
             value = prev.get(r.key) or "quiet"
@@ -497,10 +500,10 @@ def build_notifiers(cfg: Config) -> list:
 
     em = cfg.email
     if em.enabled:
-        n = EmailNotifier(em.smtp_host, em.smtp_port, em.username, em.password,
-                          em.from_addr, em.to, em.use_tls, level=parse_level(em.level))
-        if n.configured:
-            out.append(n)
+        mail = EmailNotifier(em.smtp_host, em.smtp_port, em.username, em.password,
+                             em.from_addr, em.to, em.use_tls, level=parse_level(em.level))
+        if mail.configured:
+            out.append(mail)
         else:
             log.warning("E-mail habilitado mas smtp_host/from/to ausentes — ignorado.")
 

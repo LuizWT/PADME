@@ -133,6 +133,6 @@ def test_tendencia_ignora_dns():
 
 
 def test_painel_mostra_diff_de_conjunto_legivel():
-    from padme.webpanel import _changes_html
+    from padme.web.html import _changes_html
     html = _changes_html({"values": {"old": ["1.1.1.1", "2.2.2.2"], "new": ["1.1.1.1"]}})
     assert "values: 1.1.1.1, 2.2.2.2 → 1.1.1.1" in html and "[" not in html

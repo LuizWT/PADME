@@ -41,3 +41,26 @@ markers = [
 # regras estilísticas ruidosas (linhas longas intencionais, blind-except
 # defensivo) que não indicam defeito neste projeto pequeno.
 select = ["F", "I", "W"]
+
+[tool.mypy]
+# `mypy` (sem argumentos) checa o pacote inteiro. Os módulos da lista abaixo
+# rodam no modo estrito; os demais entram nela aos poucos, um por vez.
+python_version = "3.11"
+packages = ["padme"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["padme.web", "padme.web.*", "padme.paths", "padme.updater", "padme.initcfg"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+check_untyped_defs = true
+warn_return_any = true
+no_implicit_reexport = true
+extra_checks = true

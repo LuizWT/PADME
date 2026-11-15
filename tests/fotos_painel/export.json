@@ -1,0 +1,183 @@
+application/json; charset=utf-8
+[
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "cert_expiry",
+    "key": "api.acme.com:443",
+    "value": "expira em 6 dia(s)",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "days_left": 6,
+      "not_after": "2026-09-27"
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "dns",
+    "key": "api.acme.com|A",
+    "value": "203.0.113.12",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "values": [
+        "203.0.113.12"
+      ]
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "http",
+    "key": "api.acme.com",
+    "value": "403 | nginx | Proibido",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "server": "nginx",
+      "status": 403,
+      "title": "Proibido"
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "httpsec",
+    "key": "api.acme.com",
+    "value": "falta: csp, hsts",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "missing": [
+        "csp",
+        "hsts"
+      ]
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "mailsec",
+    "key": "acme.com|SPF-ORPHAN|vendor-livre.net",
+    "value": "vendor-livre.net (free) via _spf.vendor-livre.net",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "availability": "free",
+      "registrable": "vendor-livre.net",
+      "type": "spf-orphan"
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "ns",
+    "key": "acme.com",
+    "value": "ns1.dns.net,ns2.dns.net",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {}
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "port",
+    "key": "api.acme.com:22",
+    "value": "open · SSH-2.0-OpenSSH_9.7p1",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "port": 22,
+      "product": "OpenSSH",
+      "service": "ssh",
+      "version": "9.7p1"
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "subdomain",
+    "key": "api.acme.com",
+    "value": "live",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {}
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "subdomain",
+    "key": "blog.acme.com",
+    "value": "quiet",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {}
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "subdomain",
+    "key": "novo.acme.com",
+    "value": "live",
+    "first_seen": "20/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {}
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "takeover",
+    "key": "blog.acme.com",
+    "value": "GitHub Pages",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "cname": "acme.github.io",
+      "reason": "CNAME dangling (NXDOMAIN)",
+      "service": "GitHub Pages"
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "tls",
+    "key": "api.acme.com:443",
+    "value": "LE | 2026-12-01 | ab12",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {
+      "fingerprint": "ab12",
+      "issuer": "LE",
+      "not_after": "2026-12-01",
+      "sans": [
+        "api.acme.com"
+      ]
+    }
+  },
+  {
+    "source": "casa",
+    "target": "acme.com",
+    "kind": "wildcard",
+    "key": "*.acme.com",
+    "value": "198.51.100.7",
+    "first_seen": "16/09 14:13",
+    "last_seen": "20/09 14:13",
+    "metadata": {}
+  },
+  {
+    "source": "casa",
+    "target": "loja.dev",
+    "kind": "http",
+    "key": "loja.dev",
+    "value": "200 | cloudflare | Loja",
+    "first_seen": "16/09 14:13",
+    "last_seen": "16/09 14:13",
+    "metadata": {
+      "server": "cloudflare",
+      "status": 200,
+      "title": "Loja"
+    }
+  }
+]

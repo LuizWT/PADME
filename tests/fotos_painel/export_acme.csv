@@ -1,0 +1,15 @@
+text/csv; charset=utf-8
+source,target,kind,key,value,first_seen,last_seen,metadata
+casa,acme.com,cert_expiry,api.acme.com:443,expira em 6 dia(s),16/09 14:13,20/09 14:13,"{""days_left"": 6, ""not_after"": ""2026-09-27""}"
+casa,acme.com,dns,api.acme.com|A,203.0.113.12,16/09 14:13,20/09 14:13,"{""values"": [""203.0.113.12""]}"
+casa,acme.com,http,api.acme.com,403 | nginx | Proibido,16/09 14:13,20/09 14:13,"{""server"": ""nginx"", ""status"": 403, ""title"": ""Proibido""}"
+casa,acme.com,httpsec,api.acme.com,"falta: csp, hsts",16/09 14:13,20/09 14:13,"{""missing"": [""csp"", ""hsts""]}"
+casa,acme.com,mailsec,acme.com|SPF-ORPHAN|vendor-livre.net,vendor-livre.net (free) via _spf.vendor-livre.net,16/09 14:13,20/09 14:13,"{""availability"": ""free"", ""registrable"": ""vendor-livre.net"", ""type"": ""spf-orphan""}"
+casa,acme.com,ns,acme.com,"ns1.dns.net,ns2.dns.net",16/09 14:13,20/09 14:13,{}
+casa,acme.com,port,api.acme.com:22,open · SSH-2.0-OpenSSH_9.7p1,16/09 14:13,20/09 14:13,"{""port"": 22, ""product"": ""OpenSSH"", ""service"": ""ssh"", ""version"": ""9.7p1""}"
+casa,acme.com,subdomain,api.acme.com,live,16/09 14:13,20/09 14:13,{}
+casa,acme.com,subdomain,blog.acme.com,quiet,16/09 14:13,20/09 14:13,{}
+casa,acme.com,subdomain,novo.acme.com,live,20/09 14:13,20/09 14:13,{}
+casa,acme.com,takeover,blog.acme.com,GitHub Pages,16/09 14:13,20/09 14:13,"{""cname"": ""acme.github.io"", ""reason"": ""CNAME dangling (NXDOMAIN)"", ""service"": ""GitHub Pages""}"
+casa,acme.com,tls,api.acme.com:443,LE | 2026-12-01 | ab12,16/09 14:13,20/09 14:13,"{""fingerprint"": ""ab12"", ""issuer"": ""LE"", ""not_after"": ""2026-12-01"", ""sans"": [""api.acme.com""]}"
+casa,acme.com,wildcard,*.acme.com,198.51.100.7,16/09 14:13,20/09 14:13,{}

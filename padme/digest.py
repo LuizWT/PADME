@@ -138,7 +138,7 @@ def build(cfg, storage, start: float, end: float | None = None) -> dict:
                                if (v or {}).get("status") in ("partial", "error")),
         })
     total_changes = {k: sum(t["changes"][k] for t in targets) for k in ("added", "changed", "removed")}
-    sev = Counter()
+    sev: Counter[str] = Counter()
     for t in targets:
         sev.update(t["open_by_severity"])
     return {
@@ -269,6 +269,6 @@ async def maybe_send(cfg, storage, notifier) -> list | None:
     """Chamado pelo monitor depois de cada ciclo e quando acorda para o horário
     do resumo. Barato quando não é a hora (só lê um valor do banco)."""
     ok, start = due(cfg, storage)
-    if not ok or not notifier:
+    if not ok or start is None or not notifier:
         return None
     return await send(cfg, storage, notifier, start)

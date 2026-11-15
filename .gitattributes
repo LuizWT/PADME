@@ -2,3 +2,6 @@
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
 *.sh text eol=lf
+
+# fotos do painel: comparadas byte a byte, o git não mexe no fim de linha
+tests/fotos_painel/** -text

@@ -7,7 +7,8 @@ import tempfile
 from padme.config import Config
 from padme.models import Kind, Record
 from padme.storage import Storage
-from padme.webpanel import _render, _trend_svg, render_export
+from padme.web.overview import _trend_svg
+from padme.web.pages import _render, render_export
 
 
 def test_render_export():
@@ -72,7 +73,7 @@ def test_render_mostra_service_product_version_da_porta():
 
 
 def test_port_fp_sem_service_nem_product_vazio():
-    from padme.webpanel import _port_fp
+    from padme.web.html import _port_fp
     assert _port_fp({"port": 4444, "banner": "algo-proprietario"}) == ""
     assert _port_fp(None) == ""
     # só service (porta conhecida, banner sem produto) já rende badge
@@ -80,7 +81,7 @@ def test_port_fp_sem_service_nem_product_vazio():
 
 
 def test_stat_tiles_destaca_criticos():
-    from padme.webpanel import _stat_tiles
+    from padme.web.overview import _stat_tiles
     kinds = {
         "subdomain": [{"key": "a.x.com", "value": "live"},
                       {"key": "b.x.com", "value": "quiet"}],
@@ -146,7 +147,7 @@ def test_render_mostra_evidencia_em_added():
 
 def test_explainability_conta_os_tres_pilares():
     from padme.models import Event, EventType, Kind
-    from padme.webpanel import _explainability
+    from padme.web.metrics import _explainability
     # takeover (CRITICAL) completo: razão + proveniência (_collector) + evidência
     ok = Event("a.com", EventType.ADDED, Kind.TAKEOVER, "blog.a.com", None, "GitHub Pages",
                metadata={"_collector": "takeover", "cname": "x.github.io", "reason": "NXDOMAIN"})
@@ -160,7 +161,7 @@ def test_explainability_conta_os_tres_pilares():
 
 def test_explainability_none_sem_evento_grave():
     from padme.models import Event, EventType, Kind
-    from padme.webpanel import _explainability
+    from padme.web.metrics import _explainability
     baixo = Event("a.com", EventType.ADDED, Kind.DNS, "a.com|A|1.2.3.4", None, "1.2.3.4",
                   metadata={"_collector": "dns"})
     assert _explainability({"a.com": [baixo]}) is None
@@ -181,7 +182,7 @@ def test_render_mostra_kpi_de_explicabilidade():
 
 
 def test_collector_reliability_consolida_e_aponta_degradado():
-    from padme.webpanel import _collector_reliability
+    from padme.web.metrics import _collector_reliability
     meta = {
         "a.com": {"collectors_health": {
             "dns": {"status": "ok"}, "http": {"status": "ok"},
@@ -197,7 +198,7 @@ def test_collector_reliability_consolida_e_aponta_degradado():
 
 
 def test_collector_reliability_none_sem_saude():
-    from padme.webpanel import _collector_reliability
+    from padme.web.metrics import _collector_reliability
     assert _collector_reliability({"a.com": {}}) is None
     assert _collector_reliability({}) is None
 
@@ -222,7 +223,7 @@ def test_trend_svg_vazio_nao_quebra():
 
 def test_prioritize_events_por_relevancia():
     from padme.models import Event, EventType, Kind
-    from padme.webpanel import _prioritize_events
+    from padme.web.metrics import _prioritize_events
     # DNS (DEBUG) mais recente vs TAKEOVER (CRITICAL) mais antigo
     dns_novo = Event("a.com", EventType.CHANGED, Kind.DNS, "a.com|A|1.2.3.4",
                      "1.1.1.1", "1.2.3.4", detected_at="2026-09-29T10:00:00+00:00")
@@ -253,7 +254,7 @@ def test_problems_panel_mostra_evidencia():
 
 # ── correções do painel (tile zero, filtro, persistência) ────────────────────
 def test_esc_preserva_zero_e_false():
-    from padme.webpanel import _esc
+    from padme.web.html import _esc
     assert _esc(0) == "0"          # 0 NÃO vira "" (tile de portas abertas)
     assert _esc(False) == "False"
     assert _esc(None) == ""        # só None é vazio
@@ -261,7 +262,7 @@ def test_esc_preserva_zero_e_false():
 
 
 def test_stat_tile_zero_portas_mostra_zero():
-    from padme.webpanel import _stat_tiles
+    from padme.web.overview import _stat_tiles
     html = _stat_tiles({"http": [{"key": "https://a.com", "value": "200"}]})  # sem 'port'
     assert "<div class=num>0</div><div class=lab>portas abertas</div>" in html
 
@@ -283,7 +284,7 @@ def test_render_tem_filtro_e_details_persistente():
 
 
 def test_collector_table_degradado_primeiro():
-    from padme.panel_metrics import _collector_table
+    from padme.web.metrics import _collector_table
     rows = _collector_table({
         "a.com": {"collectors_health": {"dns": {"status": "ok"}, "ports": {"status": "error"}}},
         "b.com": {"collectors_health": {"dns": {"status": "ok"}, "ports": {"status": "ok"}}},
@@ -313,7 +314,7 @@ def test_render_layout_console():
 
 
 def test_logo_embutido_como_data_uri():
-    from padme.panel_assets import _LOGO
+    from padme.web.assets import _LOGO
     assert _LOGO.startswith("data:image/png;base64,")  # no pacote (package-data)
     out = _render(Config(targets=["a.com"], db_path=tempfile.mktemp(suffix=".db")))
     assert f"<img class=mark src='{_LOGO}'" in out     # sidebar

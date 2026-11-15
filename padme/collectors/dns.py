@@ -22,10 +22,11 @@ import socket
 
 from ..models import CollectionResult, Kind, Record
 
+_DEFINITIVE: tuple[type[Exception], ...]
 try:
-    import dns.asyncresolver  # type: ignore
-    import dns.exception  # type: ignore
-    import dns.resolver  # type: ignore
+    import dns.asyncresolver
+    import dns.exception
+    import dns.resolver
 
     _HAS_DNSPYTHON = True
     # Exceções DEFINITIVAS: o servidor respondeu que não há esse registro.
@@ -80,7 +81,7 @@ async def _collect_getaddrinfo(host: str, timeout: float) -> CollectionResult:
         return CollectionResult(records=[], ok=definitive)
     except Exception:
         return CollectionResult(records=[], ok=False)  # timeout etc.
-    ips = {info[4][0] for info in infos}
+    ips = {str(info[4][0]) for info in infos}
     v4 = [ip for ip in ips if ":" not in ip]
     v6 = [ip for ip in ips if ":" in ip]
     records = [dns_record(host, t, vals) for t, vals in (("A", v4), ("AAAA", v6)) if vals]

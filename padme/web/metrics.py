@@ -1,24 +1,27 @@
 """Métricas do painel: a lógica de DADOS por trás dos cartões, sem HTML.
 
 Problemas abertos, priorização da timeline, cobertura de explicabilidade e
-confiabilidade dos collectors (§27). Separado do `webpanel` (que só renderiza e
-serve) para ser testável e legível sozinho.
+confiabilidade dos collectors (§27). Separado dos módulos que renderizam e
+servem para ser testável e legível sozinho.
 """
 
 from __future__ import annotations
 
-from .evidence import evidence_of
-from .findings import (
+from typing import Any
+
+from ..evidence import evidence_of
+from ..findings import (
     ACTIVE,
     MUTED,
     OPEN,
     _evidence_facts,  # noqa: F401 — reexport (a derivação mora em findings)
     derive,
 )
-from .risk import Level, assess
+from ..models import Event
+from ..risk import Level, RiskAssessment, assess
 
 
-def _prioritize_events(events: list):
+def _prioritize_events(events: list[Event]) -> list[tuple[Event, RiskAssessment]]:
     """Ordena a timeline por RELEVÂNCIA (severidade do assess) e depois por
     recência — o que importa (takeover, exposição crítica) fica no topo em vez de
     soterrado sob ruído (mudança de DNS etc.). Cada linha mostra o timestamp, então
@@ -28,9 +31,9 @@ def _prioritize_events(events: list):
     return scored
 
 
-def _collect_problems(by_target: dict, meta: dict,
-                      statuses: dict[str, dict] | None = None,
-                      include_muted: bool = False) -> list[dict]:
+def _collect_problems(by_target: dict[str, Any], meta: dict[str, Any],
+                      statuses: dict[str, dict[str, Any]] | None = None,
+                      include_muted: bool = False) -> list[dict[str, Any]]:
     """Problemas abertos do estado atual, mais grave primeiro.
 
     `statuses`: {finding_id: linha da tabela findings} — anota status/idade em
@@ -38,7 +41,7 @@ def _collect_problems(by_target: dict, meta: dict,
     com `include_muted=True`). Sem `statuses` (banco antigo/teste), tudo conta
     como aberto, como antes do lifecycle."""
     statuses = statuses or {}
-    prob: list[dict] = []
+    prob: list[dict[str, Any]] = []
     for target, kinds in by_target.items():
         for f in derive(target, kinds):
             row = statuses.get(f["id"]) or {}
@@ -61,7 +64,7 @@ def _collect_problems(by_target: dict, meta: dict,
     return prob
 
 
-def _explainability(events_by_target: dict) -> dict | None:
+def _explainability(events_by_target: dict[str, Any]) -> dict[str, Any] | None:
     """Cobertura de explicabilidade (§27): dos eventos HIGH/CRITICAL recentes,
     quantos trazem os TRÊS pilares juntos — razão (reason code do risco),
     proveniência (`_collector`/`_source`) e evidência normalizada. Mede se o
@@ -101,7 +104,7 @@ def _explainability(events_by_target: dict) -> dict | None:
 _HEALTH_RANK = {"ok": 0, "partial": 1, "error": 2}
 
 
-def _collector_reliability(meta: dict) -> dict | None:
+def _collector_reliability(meta: dict[str, Any]) -> dict[str, Any] | None:
     """Confiabilidade dos collectors (§27) consolidada entre os alvos. Cada
     (alvo, collector) do último scan conta como uma observação; a cobertura é a
     fração `ok`. Aponta os collectors degradados (o pior status visto) — um
@@ -128,11 +131,11 @@ def _collector_reliability(meta: dict) -> dict | None:
             "degraded": worst, "has_error": has_error}
 
 
-def _collector_table(meta: dict) -> list[dict]:
+def _collector_table(meta: dict[str, Any]) -> list[dict[str, Any]]:
     """Saúde POR collector consolidada entre os alvos (linha da tabela da visão
     geral): quantos alvos o collector cobriu ok no último scan e o pior status
     visto. Ordena o degradado primeiro — é o que pede atenção."""
-    agg: dict[str, dict] = {}
+    agg: dict[str, dict[str, Any]] = {}
     for m in meta.values():
         for name, v in ((m or {}).get("collectors_health") or {}).items():
             st = (v or {}).get("status")

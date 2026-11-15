@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from typing import Any
 
 from ..models import CollectionResult, Kind, Record
 from ..portmap import SERVICE_BY_PORT
@@ -168,7 +169,7 @@ async def collect_host(host: str, ports: list[int], timeout: float,
         if state != "open":
             continue
         value = f"open · {ban}" if ban else "open"
-        md = {"port": p}
+        md: dict[str, Any] = {"port": p}
         if ban:
             md["banner"] = ban
         md.update(fingerprint(p, ban))  # service (da porta) + product/version (do banner)

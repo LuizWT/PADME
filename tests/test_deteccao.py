@@ -13,8 +13,8 @@ from padme.collectors import takeover, tls
 from padme.engine import Engine
 from padme.mailpolicy import dmarc_tag, spf_all_qualifier
 from padme.models import CollectionResult, Event, EventType, Kind, Record, ScanResult
-from padme.panel_metrics import _collect_problems
 from padme.risk import Confidence, Level, assess
+from padme.web.metrics import _collect_problems
 
 
 # ── base de fingerprints como dado do pacote ────────────────────────────────

@@ -26,6 +26,9 @@ jobs:
         run: ruff check padme tests scripts
       - name: Compileall
         run: python -m compileall -q padme
+      - name: Tipos (mypy)
+        if: matrix.python-version == '3.12'
+        run: mypy
       - name: Testes
         run: pytest -q
 
