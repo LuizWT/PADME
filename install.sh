@@ -5,6 +5,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/LuizWT/PADME/main/install.sh | sh
 #   sh install.sh --uninstall     # remove o programa (mantém config e banco)
 #
+# De onde instala: a pasta deste script, se for um checkout do Padmé; senão a
+# última versão do PyPI (padme-asm). PADME_REF=<branch|tag|commit> instala
+# aquele ponto do GitHub; PADME_SRC=<caminho|URL> força a origem.
+#
 # O que faz: acha um Python 3.11+, cria um ambiente isolado em
 # ~/.local/share/padme, instala o Padmé nele, cria o comando `padme` em
 # ~/.local/bin (e põe essa pasta no PATH) e, se ainda não houver config, roda
@@ -12,7 +16,7 @@
 set -eu
 
 REPO="LuizWT/PADME"
-REF="${PADME_REF:-main}"
+REF="${PADME_REF:-}"
 APP_HOME="${PADME_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/padme}"
 BIN_DIR="${PADME_BIN:-$HOME/.local/bin}"
 VENV="$APP_HOME/venv"
@@ -55,8 +59,11 @@ if ! "$PY" -c 'import venv, ensurepip' 2>/dev/null; then
 fi
 say "Python: $("$PY" -c 'import sys; print(sys.version.split()[0])') ($PY)"
 
-# 2) de onde instalar: a pasta deste script (clone ou zip baixado) ou o GitHub
-SRC="https://github.com/$REPO/archive/$REF.zip"
+# 2) de onde instalar: a pasta deste script (clone ou zip baixado), o PyPI ou,
+#    com PADME_REF, um ponto do GitHub
+GITHUB_ZIP="https://github.com/$REPO/archive/${REF:-main}.zip"
+SRC="padme-asm"
+[ -n "$REF" ] && SRC="$GITHUB_ZIP"
 HERE=""
 if [ -f "$0" ]; then   # rodando de um arquivo (não via "curl | sh")
     HERE=$(cd "$(dirname "$0")" && pwd)
@@ -73,8 +80,16 @@ if [ ! -x "$VENV/bin/python" ]; then
     "$PY" -m venv "$VENV" || fail "não consegui criar o ambiente em $VENV"
 fi
 "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade pip
-"$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade "$SRC" ||
-    fail "a instalação pelo pip falhou (veja a mensagem acima)."
+pip_install() { "$VENV/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade "$1"; }
+if ! pip_install "$SRC"; then
+    if [ "$SRC" = "padme-asm" ]; then
+        # PyPI fora do ar ou ainda sem versão publicada: o main do GitHub
+        say "Não deu para instalar pelo PyPI; instalando do GitHub ($GITHUB_ZIP)."
+        pip_install "$GITHUB_ZIP" || fail "a instalação pelo pip falhou (veja a mensagem acima)."
+    else
+        fail "a instalação pelo pip falhou (veja a mensagem acima)."
+    fi
+fi
 
 # 4) comando `padme` (chama o Python do ambiente: nada de "python padme")
 mkdir -p "$BIN_DIR"
@@ -124,4 +139,4 @@ else
 fi
 say "  padme              monitora e abre o painel em http://127.0.0.1:8787"
 say "  padme -h           todas as opções"
-say "  padme --update     atualiza para a versão mais recente"
+say "  padme --update     atualiza para a última versão publicada"

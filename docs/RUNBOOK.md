@@ -26,7 +26,7 @@ Convenção usada aqui (ajuste aos seus caminhos):
 sudo useradd --system --home-dir /var/lib/padme --shell /usr/sbin/nologin padme
 sudo mkdir -p /opt/padme /var/lib/padme
 sudo python3 -m venv /opt/padme/.venv
-sudo /opt/padme/.venv/bin/pip install "https://github.com/LuizWT/PADME/archive/main.zip"
+sudo /opt/padme/.venv/bin/pip install padme-asm   # atualizar depois: pip install -U padme-asm
 sudo /opt/padme/.venv/bin/padme -c /var/lib/padme/config.yaml init   # ou copie e edite o config.example.yaml
 sudo chown -R padme:padme /var/lib/padme
 sudo chmod 750 /var/lib/padme
@@ -163,7 +163,7 @@ docker compose logs -f
 Sem compose:
 
 ```bash
-docker build -t padme .
+docker build -t padme .       # ou a imagem publicada: docker pull ghcr.io/luizwt/padme
 docker run -d --name padme --restart unless-stopped \
     -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme
 ```

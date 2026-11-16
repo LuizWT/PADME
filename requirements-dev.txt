@@ -1,7 +1,9 @@
 # Ferramentas de desenvolvimento/CI, também fixas.
 -r requirements.txt
+build==1.6.1
 mypy==2.4.1
 pip-audit==2.10.1
 pytest==9.2.0
 ruff==0.17.4
+twine==7.0.0
 types-PyYAML==6.0.12.20261113

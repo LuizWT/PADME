@@ -12,7 +12,7 @@ def run(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else list(argv)
     if "--update" in args:
         from .updater import run as update
-        return update(force="--force" in args)
+        return update(force="--force" in args, dev="--dev" in args)
     from .cli import main
     return main(args)
 

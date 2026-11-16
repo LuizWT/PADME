@@ -11,6 +11,11 @@
 # O Dependabot (ecossistema docker) abre PR quando a tag ganha digest novo.
 FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
+# liga a imagem publicada em ghcr.io ao repositório (página do pacote, permissões)
+LABEL org.opencontainers.image.source="https://github.com/LuizWT/PADME" \
+      org.opencontainers.image.description="Padmé: monitora a superfície de ataque dos seus domínios" \
+      org.opencontainers.image.licenses="MIT"
+
 # stdout sem buffer (log aparece na hora) e sem .pyc no container.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

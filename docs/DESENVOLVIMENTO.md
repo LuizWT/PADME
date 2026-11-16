@@ -28,9 +28,10 @@ O CI (`.github/workflows/`) roda:
 
 | Workflow | Quando | O quê |
 |---|---|---|
-| `tests` | push, PR e toda segunda | ruff, mypy, pytest em Python 3.11 a 3.14, pip-audit, build e smoke test da imagem Docker |
+| `tests` | push, PR e toda segunda | ruff, mypy, pytest em Python 3.11 a 3.15, o pacote (build, `twine check`, instalação limpa), pip-audit, build e smoke test da imagem Docker |
 | `install` | push e PR que mexem no instalador ou no pacote | os instaladores de verdade em Ubuntu, macOS e Windows (incluindo o modo `irm \| iex` e a trava de instância única do Windows) |
 | `takeover base` | dia 1 de cada mês | regenera a base de takeover e abre PR se o upstream mudou |
+| `release` | tag `vX.Y.Z` | publica a versão: PyPI, release do GitHub e imagem no GHCR |
 
 ### Tipos
 
@@ -72,13 +73,40 @@ pytest -q tests/test_takeover_base.py
 Entra só o que o upstream marca como *Vulnerable* ou *Edge case* e tem alvo de
 CNAME e um sinal (NXDOMAIN ou assinatura no corpo).
 
-## Release
+## Versões e release
 
-Nunca compacte a pasta à mão (levaria `.env`, `config.yaml` e `padme.db`):
+A versão mora só em `padme/__init__.py` (`__version__`); o `pyproject.toml` lê
+de lá. Na série 0.x, *minor* traz recurso ou mudança de config e *patch* traz
+correção. Cada versão tem uma seção no [CHANGELOG](../CHANGELOG.md); um teste
+falha se `__version__` não tiver a sua.
 
-```bash
-sh scripts/release.sh            # gera padme-<versão>.tar.gz só com o que está no git
-```
+Para lançar uma versão:
+
+1. Numa PR: suba o `__version__`, renomeie `## [Não lançado]` para
+   `## [X.Y.Z] - AAAA-MM-DD` (deixe um `## [Não lançado]` vazio em cima) e
+   atualize os links do fim do arquivo.
+2. Depois do merge, crie a tag no `main`: `git tag vX.Y.Z && git push origin vX.Y.Z`
+   (ou uma release nova pela página do GitHub, criando a tag ali).
+3. O workflow `release` faz o resto: confere tag e changelog, testa, publica no
+   TestPyPI e no PyPI, cria a release do GitHub com as notas e publica a
+   imagem em `ghcr.io/luizwt/padme`.
+
+O build sai do workflow, nunca de uma pasta compactada à mão (que levaria
+`.env`, `config.yaml` e `padme.db`). Localmente:
+`python -m build && twine check --strict dist/*`.
+
+### Configuração única
+
+Feita uma vez, por quem é dono do projeto no PyPI e no GitHub:
+
+1. Contas no [PyPI](https://pypi.org) e no [TestPyPI](https://test.pypi.org).
+2. Em cada um, *Publishing* → *Add a new pending publisher*: projeto
+   `padme-asm`, dono `LuizWT`, repositório `PADME`, workflow `release.yml`,
+   ambiente `pypi`.
+3. No GitHub, *Settings* → *Environments* → `pypi` (opcional: exigir aprovação
+   antes de publicar).
+4. Depois da primeira release: em *Packages* → `padme` → *Package settings*,
+   deixe a imagem pública (o GHCR cria como privada).
 
 ## Estrutura
 
@@ -130,7 +158,7 @@ padme/
 └── data/              base de takeover
 install.sh             instalador Linux/macOS
 install.ps1            instalador Windows (install.bat chama este)
-scripts/               release, smoke test da imagem, gerador da base de takeover
+scripts/               notas do changelog, smoke test da imagem, gerador da base de takeover
 docs/                  esta documentação
 tests/                 suíte pytest
 ```
