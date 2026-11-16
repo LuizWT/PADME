@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -31,6 +31,30 @@ jobs:
         run: mypy
       - name: Testes
         run: pytest -q
+
+  pacote:
+    # O que vai para o PyPI: metadados válidos, README que o PyPI renderiza e os
+    # dados do pacote (base de takeover, logo do painel) dentro do wheel.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Ferramentas (versões fixas)
+        run: pip install -r requirements-dev.txt
+      - name: Gerar sdist e wheel
+        run: python -m build
+      - name: Conferir metadados (twine)
+        run: twine check --strict dist/*
+      - name: Instalar o wheel num ambiente limpo
+        run: |
+          versao=$(python -c "import padme; print(padme.__version__)")
+          python -m venv "$RUNNER_TEMP/limpo"
+          "$RUNNER_TEMP/limpo/bin/pip" install dist/*.whl
+          cd "$RUNNER_TEMP"
+          test "$("$RUNNER_TEMP/limpo/bin/padme" --version)" = "padme $versao"
+          "$RUNNER_TEMP/limpo/bin/python" -c "from padme.collectors.takeover import FINGERPRINTS; from padme.web.assets import _LOGO; assert FINGERPRINTS and _LOGO.startswith('data:image/png')"
 
   audit:
     # Uma ferramenta de segurança audita as próprias dependências: falha se o

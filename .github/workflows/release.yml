@@ -1,0 +1,112 @@
+name: release
+
+# Uma tag vX.Y.Z publica a versão:
+#   1. confere que a tag bate com padme.__version__ e que o CHANGELOG tem a
+#      seção da versão; roda lint, tipos, testes e auditoria;
+#   2. gera sdist e wheel e publica no TestPyPI e depois no PyPI pelo Trusted
+#      Publishing (OIDC: nenhum token guardado no repositório);
+#   3. cria a release no GitHub com as notas do CHANGELOG e os arquivos;
+#   4. publica a imagem Docker em ghcr.io/luizwt/padme (versão e latest).
+#
+# Configuração única (fora do repositório): o publicador confiável no PyPI e no
+# TestPyPI (workflow release.yml, ambiente "pypi") e o ambiente "pypi" no GitHub.
+# Passo a passo em docs/DESENVOLVIMENTO.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Instalar dependências (versões fixas)
+        run: pip install -r requirements-dev.txt
+      - name: A tag bate com a versão do pacote
+        run: |
+          versao=$(python -c "import padme; print(padme.__version__)")
+          if [ "${GITHUB_REF_NAME#v}" != "$versao" ]; then
+            echo "A tag é $GITHUB_REF_NAME, mas padme.__version__ é $versao." >&2
+            exit 1
+          fi
+      - name: O CHANGELOG tem a seção desta versão
+        run: python scripts/changelog.py "$GITHUB_REF_NAME"
+      - name: Lint, tipos, testes e auditoria
+        run: |
+          ruff check padme tests scripts
+          mypy
+          pytest -q
+          pip-audit -r requirements.txt
+
+  publicar:
+    # Gera os arquivos uma vez e usa os mesmos no TestPyPI, no PyPI e na release.
+    needs: verificar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/padme-asm/
+    permissions:
+      contents: write   # criar a release no GitHub
+      id-token: write   # Trusted Publishing no PyPI e no TestPyPI
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Ferramentas (versões fixas)
+        run: pip install -r requirements-dev.txt
+      - name: Gerar sdist e wheel
+        run: |
+          python -m build
+          twine check --strict dist/*
+      - name: Publicar no TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true   # rodar de novo depois de uma falha no PyPI não trava aqui
+      - name: Publicar no PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Release no GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/changelog.py "$GITHUB_REF_NAME" > notas.md
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Padmé ${GITHUB_REF_NAME#v}" --notes-file notas.md --verify-tag
+
+  docker:
+    needs: publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write   # ghcr.io
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build e smoke test da imagem
+        run: |
+          docker build -t padme:release .
+          sh scripts/docker-smoke.sh padme:release
+      - name: Publicar em ghcr.io/luizwt/padme
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          imagem=ghcr.io/luizwt/padme
+          versao=${GITHUB_REF_NAME#v}
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag padme:release "$imagem:$versao"
+          docker tag padme:release "$imagem:latest"
+          docker push "$imagem:$versao"
+          docker push "$imagem:latest"

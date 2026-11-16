@@ -7,6 +7,10 @@
   Remover:           install.bat -Uninstall   (mantem config e banco)
                      ou: $env:PADME_UNINSTALL=1; irm <mesmo endereco> | iex
 
+  De onde instala: a pasta deste script, se for um checkout do Padme; senao a
+  ultima versao do PyPI (padme-asm). PADME_REF=<branch|tag|commit> instala
+  aquele ponto do GitHub; PADME_SRC=<caminho|URL> forca a origem.
+
   O que faz: acha o Python 3.11+ (ou instala pelo winget, se voce aceitar),
   cria um ambiente isolado em %LOCALAPPDATA%\padme, instala o Padme nele, cria
   o comando `padme` e o coloca no PATH do seu usuario, e roda o `padme init`
@@ -21,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 # modo "irm | iex" nao aceita -Uninstall: vem pela variavel, usada uma vez so
 if ($env:PADME_UNINSTALL) { $Uninstall = $true; Remove-Item Env:PADME_UNINSTALL }
 $Repo = 'LuizWT/PADME'
-$Ref = if ($env:PADME_REF) { $env:PADME_REF } else { 'main' }
+$Ref = if ($env:PADME_REF) { $env:PADME_REF } else { '' }
 $DefaultHome = Join-Path $env:LOCALAPPDATA 'padme'
 $AppHome = if ($env:PADME_HOME) { $env:PADME_HOME } else { $DefaultHome }
 $Venv = Join-Path $AppHome 'venv'
@@ -111,7 +115,8 @@ $PyVersion = & $Py.Exe @PyExtra -c 'import sys; print(sys.version.split()[0])'
 Say "Python: $PyVersion ($($Py.Exe))"
 
 # 2) de onde instalar: a pasta deste script (zip baixado ou clone) ou o GitHub
-$Src = "https://github.com/$Repo/archive/$Ref.zip"
+$GithubZip = "https://github.com/$Repo/archive/$(if ($Ref) { $Ref } else { 'main' }).zip"
+$Src = if ($Ref) { $GithubZip } else { 'padme-asm' }
 if ($PSScriptRoot) {
     $Toml = Join-Path $PSScriptRoot 'pyproject.toml'
     if ((Test-Path $Toml) -and (Select-String -Path $Toml -Pattern 'padme-asm' -Quiet)) { $Src = $PSScriptRoot }
@@ -127,6 +132,11 @@ if (-not (Test-Path $VenvPy)) {
 }
 & $VenvPy -m pip install --quiet --disable-pip-version-check --upgrade pip
 & $VenvPy -m pip install --quiet --disable-pip-version-check --upgrade $Src
+if ($LASTEXITCODE -ne 0 -and $Src -eq 'padme-asm') {
+    # PyPI fora do ar ou ainda sem versao publicada: o main do GitHub
+    Say "Nao deu para instalar pelo PyPI; instalando do GitHub ($GithubZip)."
+    & $VenvPy -m pip install --quiet --disable-pip-version-check --upgrade $GithubZip
+}
 if ($LASTEXITCODE -ne 0) { Fail 'a instalacao pelo pip falhou (veja a mensagem acima).' }
 
 # 4) comando `padme`: um .cmd que chama o Python do ambiente (nada de "python padme").
@@ -163,4 +173,4 @@ Say '== Pronto =='
 if ($NewShell) { Say 'Abra um terminal NOVO (PowerShell ou Prompt de Comando) e digite:' } else { Say 'Digite:' }
 Say '  padme              monitora e abre o painel em http://127.0.0.1:8787'
 Say '  padme -h           todas as opcoes'
-Say '  padme --update     atualiza para a versao mais recente'
+Say '  padme --update     atualiza para a ultima versao publicada'

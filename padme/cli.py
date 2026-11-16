@@ -589,7 +589,7 @@ Exemplos:
   padme finding list            problemas abertos
   padme finding suppress ID --reason "falso positivo"
   padme digest --print          resumo do período no terminal
-  padme --update                atualiza para a versão mais recente do GitHub
+  padme --update                atualiza para a última versão publicada
 """
 
 
@@ -654,7 +654,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="config YAML (padrão: PADME_CONFIG, ./config.yaml ou a pasta do usuário)")
     p.add_argument("-v", "--verbose", action="store_true", help="log detalhado")
     p.add_argument("--update", action="store_true",
-                   help="atualiza o padme para a versão mais recente do GitHub")
+                   help="atualiza o padme para a última versão publicada")
+    p.add_argument("--dev", action="store_true",
+                   help="com --update: instala o último commit do main, antes de virar versão")
     p.add_argument("--force", action="store_true", help="com --update: reinstala mesmo se já estiver atualizado")
     p.add_argument("--version", action="version", version=f"padme {__version__}",
                    help="mostra a versão")
@@ -771,7 +773,7 @@ def _load_env(config_path: Path) -> None:
     load_dotenv(os.path.join(os.getcwd(), ".env"))
 
 
-_GLOBAL_FLAGS = {"-v", "--verbose", "--update", "--force"}
+_GLOBAL_FLAGS = {"-v", "--verbose", "--update", "--dev", "--force"}
 _GLOBAL_WITH_VALUE = {"-c", "--config"}
 
 
@@ -804,7 +806,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(_with_default_command(argv))
     if args.update:
         from .updater import run as update
-        return update(force=args.force)
+        return update(force=args.force, dev=args.dev)
     if args.command is None:
         parser.print_help()
         return 2

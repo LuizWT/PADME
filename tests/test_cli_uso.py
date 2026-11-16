@@ -248,9 +248,111 @@ def test_env_ao_lado_do_config_e_lido(tmp_path, monkeypatch):
 # ── --update ─────────────────────────────────────────────────────────────────
 def test_update_e_tratado_antes_de_importar_a_cli(monkeypatch):
     chamado = {}
-    monkeypatch.setattr(updater, "run", lambda force=False: chamado.setdefault("force", force) and 0)
-    entry(["--update", "--force"])
-    assert chamado == {"force": True}
+
+    def fake(force=False, dev=False):
+        chamado.update(force=force, dev=dev)
+        return 0
+
+    monkeypatch.setattr(updater, "run", fake)
+    assert entry(["--update", "--force"]) == 0
+    assert chamado == {"force": True, "dev": False}
+    assert entry(["--update", "--dev"]) == 0
+    assert chamado == {"force": False, "dev": True}
+
+
+def test_update_pela_cli_tambem_aceita_dev(monkeypatch):
+    chamado = {}
+    monkeypatch.setattr(updater, "run", lambda force=False, dev=False: chamado.update(dev=dev) or 0)
+    assert cli.main(["--update", "--dev"]) == 0 and chamado == {"dev": True}
+
+
+def _release_env(monkeypatch, tmp_path, status, version, instalada="0.2.0"):
+    chamadas = []
+    monkeypatch.setattr(updater, "_in_docker", lambda: False)
+    monkeypatch.setattr(updater, "install_kind", lambda: ("pip", None))
+    monkeypatch.setattr(updater, "latest_release", lambda timeout=10.0: (status, version))
+    monkeypatch.setattr(updater, "__version__", instalada)
+    monkeypatch.setattr(updater, "data_dir", lambda: tmp_path)
+    monkeypatch.setattr(updater, "_running_from_exe", lambda: False)
+    monkeypatch.setattr(updater, "_pip", lambda *a: chamadas.append(a) or 0)
+    monkeypatch.setattr(updater, "_new_requirements", lambda: ["httpx>=0.27"])
+    return chamadas
+
+
+def test_update_instala_a_ultima_versao_publicada(monkeypatch, tmp_path, capsys):
+    chamadas = _release_env(monkeypatch, tmp_path, "ok", "0.3.0")
+    assert updater.run() == 0
+    assert chamadas[0][-1] == "padme-asm==0.3.0" and "--no-deps" in chamadas[0]
+    assert chamadas[1][-1] == "httpx>=0.27"                 # só as dependências que faltam
+    assert updater._state()["version"] == "0.3.0"
+    out = capsys.readouterr().out
+    assert "0.3.0" in out and "CHANGELOG" in out
+
+
+def test_update_ja_na_ultima_versao_nao_baixa(monkeypatch, tmp_path, capsys):
+    chamadas = _release_env(monkeypatch, tmp_path, "ok", "0.2.0")
+    assert updater.run() == 0 and chamadas == []
+    assert "mais recente (0.2.0)" in capsys.readouterr().out
+
+
+def test_update_a_frente_do_pypi_nao_volta_versao(monkeypatch, tmp_path):
+    chamadas = _release_env(monkeypatch, tmp_path, "ok", "0.2.0", instalada="0.3.0")
+    assert updater.run() == 0 and chamadas == []
+
+
+def test_update_force_reinstala_a_mesma_versao(monkeypatch, tmp_path):
+    chamadas = _release_env(monkeypatch, tmp_path, "ok", "0.2.0")
+    assert updater.run(force=True) == 0
+    assert chamadas[0][-1] == "padme-asm==0.2.0"
+
+
+def test_update_sem_versao_publicada_orienta_o_dev(monkeypatch, tmp_path, capsys):
+    chamadas = _release_env(monkeypatch, tmp_path, "nao_publicado", None)
+    assert updater.run() == 1 and chamadas == []
+    assert "padme --update --dev" in capsys.readouterr().out
+
+
+def test_update_sem_rede_nao_mexe_em_nada(monkeypatch, tmp_path, capsys):
+    chamadas = _release_env(monkeypatch, tmp_path, "erro", None)
+    assert updater.run() == 1 and chamadas == []
+    assert "Nada foi mudado" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("versao, chave", [
+    ("0.2.0", (0, 2, 0)), ("0.10.2", (0, 10, 2)), ("1.0", (1, 0)),
+    ("0.3.0rc1", (0, 3, 0)), ("0.3.0.dev4", (0, 3, 0)), ("", ()),
+])
+def test_chave_de_versao(versao, chave):
+    assert updater.version_key(versao) == chave
+    assert updater.version_key("0.10.0") > updater.version_key("0.9.9")
+
+
+def test_latest_release_le_o_json_do_pypi(monkeypatch):
+    import io
+    import urllib.error
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen",
+                        lambda req, timeout=10.0: Resp(b'{"info": {"version": "0.4.1"}}'))
+    assert updater.latest_release() == ("ok", "0.4.1")
+
+    def nao_existe(req, timeout=10.0):
+        raise urllib.error.HTTPError(updater._PYPI, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", nao_existe)
+    assert updater.latest_release() == ("nao_publicado", None)
+
+    def sem_rede(req, timeout=10.0):
+        raise urllib.error.URLError("sem rede")
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", sem_rede)
+    assert updater.latest_release() == ("erro", None)
 
 
 def test_update_pip_ja_atualizado_nao_baixa(monkeypatch, tmp_path, capsys):
@@ -258,10 +360,10 @@ def test_update_pip_ja_atualizado_nao_baixa(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(updater, "install_kind", lambda: ("pip", None))
     monkeypatch.setattr(updater, "latest_commit", lambda timeout=10.0: "b" * 40)
     monkeypatch.setattr(updater, "data_dir", lambda: tmp_path)
-    updater._save_commit("b" * 40)
+    updater._save_state(sha="b" * 40)
     monkeypatch.setattr(updater, "_pip", lambda *a: pytest.fail("não devia chamar o pip"))
-    assert updater.run() == 0
-    assert "mais recente" in capsys.readouterr().out
+    assert updater.run(dev=True) == 0
+    assert "commit mais recente" in capsys.readouterr().out
 
 
 def test_update_pip_baixa_o_commit_exato_e_so_deps_faltantes(monkeypatch, tmp_path):
@@ -273,7 +375,7 @@ def test_update_pip_baixa_o_commit_exato_e_so_deps_faltantes(monkeypatch, tmp_pa
     monkeypatch.setattr(updater, "_running_from_exe", lambda: False)
     monkeypatch.setattr(updater, "_pip", lambda *a: chamadas.append(a) or 0)
     monkeypatch.setattr(updater, "_new_requirements", lambda: ["httpx>=0.27", "dnspython>=2.9"])
-    assert updater.run() == 0
+    assert updater.run(dev=True) == 0
     primeiro = chamadas[0]
     assert "--force-reinstall" in primeiro and "--no-deps" in primeiro
     assert primeiro[-1] == f"https://github.com/LuizWT/PADME/archive/{'c' * 40}.zip"
@@ -308,9 +410,12 @@ def test_update_no_windows_pelo_exe_continua_em_processo_filho(monkeypatch):
     monkeypatch.delenv(updater._CHILD_ENV, raising=False)
     monkeypatch.setattr(updater.subprocess, "Popen", lambda args, env=None: abertos.append((args, env)))
     monkeypatch.setattr(updater, "_pip", lambda *a: pytest.fail("o pai não instala nada"))
-    assert updater.run() == 0
+    assert updater.run(dev=True) == 0
     args, env = abertos[0]
-    assert args[1:] == ["-m", "padme", "--update"] and env[updater._CHILD_ENV] == "1"
+    assert args[1:] == ["-m", "padme", "--update", "--dev"] and env[updater._CHILD_ENV] == "1"
+    monkeypatch.setattr(updater, "latest_release", lambda timeout=10.0: ("ok", "9.9.9"))
+    assert updater.run() == 0
+    assert abertos[1][0][1:] == ["-m", "padme", "--update"]
 
 
 def test_dependencias_da_versao_nova_sem_extras(monkeypatch):
@@ -329,5 +434,5 @@ def test_update_sem_api_cai_para_o_branch(monkeypatch, tmp_path):
     monkeypatch.setattr(updater, "data_dir", lambda: tmp_path)
     monkeypatch.setattr(updater, "_running_from_exe", lambda: False)
     monkeypatch.setattr(updater, "_pip", lambda *a: chamadas.append(a) or 0)
-    assert updater.run() == 0
+    assert updater.run(dev=True) == 0
     assert chamadas[0][-1].endswith("/archive/main.zip")

@@ -1,13 +1,14 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/padme-logo-dark.png">
-    <img src="docs/assets/padme-logo-light.png" alt="Padmé — Attack Surface Monitoring Platform" width="560">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LuizWT/PADME/main/docs/assets/padme-logo-dark.png">
+    <img src="https://raw.githubusercontent.com/LuizWT/PADME/main/docs/assets/padme-logo-light.png" alt="Padmé — Attack Surface Monitoring Platform" width="560">
   </picture>
 </p>
 
 <p align="center">
   <img src="https://github.com/LuizWT/PADME/actions/workflows/tests.yml/badge.svg" alt="tests">
   <img src="https://github.com/LuizWT/PADME/actions/workflows/install.yml/badge.svg" alt="install">
+  <a href="https://pypi.org/project/padme-asm/"><img src="https://img.shields.io/pypi/v/padme-asm" alt="PyPI"></a>
 </p>
 
 O Padmé vigia a superfície de ataque dos **seus** domínios e avisa quando algo
@@ -57,8 +58,8 @@ Ou, numa pasta clonada: `sh install.sh`.
 > [!NOTE]
 > Depois de instalar, abra um terminal **novo** para o comando `padme` aparecer.
 
-Outras formas: [Docker](docs/RUNBOOK.md#2-docker) ou
-`pipx install https://github.com/LuizWT/PADME/archive/main.zip`.
+Outras formas: `pipx install padme-asm` (ou `pip install padme-asm` num ambiente
+seu) e [Docker](https://github.com/LuizWT/PADME/blob/main/docs/RUNBOOK.md#2-docker).
 
 ## Primeiros passos
 
@@ -90,7 +91,7 @@ sem alertar. A partir da segunda, cada diferença vira um evento.
 | `padme backup` | cópia consistente do banco |
 | `padme health` | o monitor está varrendo? (código de saída 0 ou 1) |
 | `padme merge` | compara exports de várias máquinas |
-| `padme --update` | atualiza para a versão mais recente do GitHub |
+| `padme --update` | atualiza para a última versão publicada (`--dev`: último commit do main) |
 
 **`padme -h`** lista todos os comandos com todas as opções. As opções do
 monitor valem direto no `padme`:
@@ -114,7 +115,7 @@ padme --once                  # uma varredura e sai (para cron ou agendador)
 - Por padrão só aceita conexões desta máquina. Para abrir na rede, defina um
   token: o Padmé se recusa a servir fora de localhost sem um.
 
-Detalhes, problemas (findings) e API: [docs/PAINEL-E-API.md](docs/PAINEL-E-API.md).
+Detalhes, problemas (findings) e API: [docs/PAINEL-E-API.md](https://github.com/LuizWT/PADME/blob/main/docs/PAINEL-E-API.md).
 
 ## Alertas
 
@@ -133,12 +134,12 @@ O `padme init` configura o Telegram. Para conferir os canais, `padme digest`
 manda um resumo agora e mostra `OK` ou `ERRO` em cada um.
 
 Como configurar cada canal, resumo diário/semanal, sinal de vida (heartbeat) e o
-formato do webhook: [docs/NOTIFICACOES.md](docs/NOTIFICACOES.md).
+formato do webhook: [docs/NOTIFICACOES.md](https://github.com/LuizWT/PADME/blob/main/docs/NOTIFICACOES.md).
 
 ## Configuração
 
 O `padme init` cria um config curto. Todas as opções, comentadas, estão em
-[`config.example.yaml`](config.example.yaml).
+[`config.example.yaml`](https://github.com/LuizWT/PADME/blob/main/config.example.yaml).
 
 | | Windows | Linux e macOS |
 |---|---|---|
@@ -171,12 +172,14 @@ PADME_WEB_TOKEN=um-valor-longo-e-aleatorio
 ## Atualizar e desinstalar
 
 ```bash
-padme --update            # baixa e instala a versão mais recente do GitHub
+padme --update            # instala a última versão publicada (PyPI)
+padme --update --dev      # instala o último commit do main, antes de virar versão
 ```
 
 Se o Padmé estiver rodando, reinicie-o depois. Instalado a partir de um clone
 (`pip install -e .`), o `--update` faz `git pull`. No Docker, a atualização é
-pela imagem.
+pela imagem. O que mudou em cada versão está no
+[CHANGELOG](https://github.com/LuizWT/PADME/blob/main/CHANGELOG.md).
 
 Para desinstalar (config e banco ficam):
 
@@ -189,12 +192,12 @@ Para desinstalar (config e banco ficam):
 
 | Documento | Conteúdo |
 |---|---|
-| [docs/DETECCAO.md](docs/DETECCAO.md) | o que é coletado, como uma mudança vira alerta, severidade, takeover, SPF/DMARC, comportamento na rede |
-| [docs/NOTIFICACOES.md](docs/NOTIFICACOES.md) | Telegram, Discord, e-mail, webhook, resumo periódico, heartbeat |
-| [docs/PAINEL-E-API.md](docs/PAINEL-E-API.md) | painel, ciclo de vida dos problemas, API JSON, várias máquinas |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | servidor 24/7: systemd, Docker, backup, rotação de segredos, proxy com TLS |
-| [docs/DESENVOLVIMENTO.md](docs/DESENVOLVIMENTO.md) | testes, CI, estrutura do código, release |
+| [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md) | o que é coletado, como uma mudança vira alerta, severidade, takeover, SPF/DMARC, comportamento na rede |
+| [docs/NOTIFICACOES.md](https://github.com/LuizWT/PADME/blob/main/docs/NOTIFICACOES.md) | Telegram, Discord, e-mail, webhook, resumo periódico, heartbeat |
+| [docs/PAINEL-E-API.md](https://github.com/LuizWT/PADME/blob/main/docs/PAINEL-E-API.md) | painel, ciclo de vida dos problemas, API JSON, várias máquinas |
+| [docs/RUNBOOK.md](https://github.com/LuizWT/PADME/blob/main/docs/RUNBOOK.md) | servidor 24/7: systemd, Docker, backup, rotação de segredos, proxy com TLS |
+| [docs/DESENVOLVIMENTO.md](https://github.com/LuizWT/PADME/blob/main/docs/DESENVOLVIMENTO.md) | testes, CI, estrutura do código, release |
 
 ## Licença
 
-[MIT](LICENSE)
+[MIT](https://github.com/LuizWT/PADME/blob/main/LICENSE)
