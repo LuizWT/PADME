@@ -14,16 +14,17 @@
 O Padmé vigia a superfície de ataque dos **seus** domínios e avisa quando algo
 muda: subdomínio novo, porta aberta, certificado trocado ou perto de vencer,
 serviço que subiu ou caiu, versão de serviço com **CVE conhecida**, SPF/DMARC
-enfraquecido e possível **subdomain takeover**. Ele guarda o estado num banco local e só alerta quando uma
-varredura encontra diferença em relação à anterior.
+enfraquecido, possível **subdomain takeover** e, se você ligar, arquivos e
+endpoints HTTP públicos por engano. Ele guarda o estado num banco local e só
+alerta quando uma varredura encontra diferença em relação à anterior.
 
 Os alertas vão para Telegram, Discord, e-mail ou webhook, e um painel web
 mostra tudo em tempo real.
 
 > [!WARNING]
 > Monitore **apenas** domínios que são seus ou que você tem autorização
-> explícita para testar. A coleta ativa (HTTP, TLS e principalmente a
-> varredura de portas) toca nos alvos.
+> explícita para testar. A coleta ativa (HTTP, TLS, checagem de exposições e
+> principalmente a varredura de portas) toca nos alvos.
 
 ## Instalação
 
@@ -152,6 +153,7 @@ targets:
 interval_seconds: 3600
 collectors:
   ports: false              # varredura de portas: a coleta mais ativa, desligada por padrão
+  exposures: false          # checagens HTTP fixas de arquivos/endpoints públicos, desligada por padrão
 ```
 
 Tokens e senhas ficam no `.env` e entram no YAML como `${VARIAVEL}`:
@@ -184,7 +186,7 @@ Para desinstalar (config e banco ficam):
 
 | Documento | Conteúdo |
 |---|---|
-| [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md) | o que é coletado, como uma mudança vira alerta, severidade, takeover, SPF/DMARC, comportamento na rede |
+| [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md) | o que é coletado, como uma mudança vira alerta, severidade, CVEs (OSV), exposições HTTP, takeover, SPF/DMARC, comportamento na rede |
 | [docs/NOTIFICACOES.md](https://github.com/LuizWT/PADME/blob/main/docs/NOTIFICACOES.md) | Telegram, Discord, e-mail, webhook, resumo periódico, heartbeat |
 | [docs/PAINEL-E-API.md](https://github.com/LuizWT/PADME/blob/main/docs/PAINEL-E-API.md) | painel, ciclo de vida dos problemas, API JSON, várias máquinas |
 | [docs/RUNBOOK.md](https://github.com/LuizWT/PADME/blob/main/docs/RUNBOOK.md) | servidor 24/7: systemd, Docker, backup, rotação de segredos, proxy com TLS |
