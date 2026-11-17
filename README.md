@@ -13,8 +13,8 @@
 
 O Padmé vigia a superfície de ataque dos **seus** domínios e avisa quando algo
 muda: subdomínio novo, porta aberta, certificado trocado ou perto de vencer,
-serviço que subiu ou caiu, SPF/DMARC enfraquecido e possível **subdomain
-takeover**. Ele guarda o estado num banco local e só alerta quando uma
+serviço que subiu ou caiu, versão de serviço com **CVE conhecida**, SPF/DMARC
+enfraquecido e possível **subdomain takeover**. Ele guarda o estado num banco local e só alerta quando uma
 varredura encontra diferença em relação à anterior.
 
 Os alertas vão para Telegram, Discord, e-mail ou webhook, e um painel web

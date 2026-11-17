@@ -20,6 +20,7 @@ _COMPARABLE_FIELDS = {
     Kind.TLS: ("issuer", "fingerprint", "expires_at", "sans"),
     Kind.MAILSEC: ("p", "sp", "pct", "t", "result", "via"),  # DMARC tags / SPF efetivo
     Kind.DNS: ("values",),       # conjunto de respostas do host|tipo
+    Kind.VULN: ("version", "cves", "max_severity"),
 }
 
 

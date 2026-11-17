@@ -144,6 +144,18 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- cache das consultas ao OSV (padme.osv): avaliação por pacote e versão. Como o
+-- `meta`, só o monitor/CLI usa; o painel read-only nunca lê. Criada no open de
+-- escrita (IF NOT EXISTS) também em bancos antigos.
+CREATE TABLE IF NOT EXISTS osv_cache (
+    ecosystem  TEXT NOT NULL,
+    package    TEXT NOT NULL,
+    version    TEXT NOT NULL,
+    fetched_at REAL NOT NULL,
+    result     TEXT NOT NULL,
+    PRIMARY KEY (ecosystem, package, version)
+);
 """
 
 # v7: pending_notifications; v8: DNS agregado; v9: findings + finding_history
@@ -622,6 +634,31 @@ class Storage:
     def get_meta(self, key: str) -> str | None:
         row = self._conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
+
+    # -- cache do OSV ----------------------------------------------------------
+    _OSV_CACHE_KEEP = 7 * 86400   # entradas mais velhas que isto saem a cada gravação
+
+    def osv_cache_get(self, ecosystem: str, package: str, version: str,
+                      max_age: float, now: float | None = None) -> dict | None:
+        """Avaliação guardada de (ecossistema, pacote, versão), ou None se não
+        houver ou tiver mais de `max_age` segundos."""
+        row = self._conn.execute(
+            "SELECT fetched_at, result FROM osv_cache WHERE ecosystem=? AND package=? AND version=?",
+            (ecosystem, package, version)).fetchone()
+        if row is None or (now if now is not None else time.time()) - row["fetched_at"] > max_age:
+            return None
+        data = _jload(row["result"])
+        return data if isinstance(data.get("vulns"), list) else None
+
+    def osv_cache_put(self, ecosystem: str, package: str, version: str, result: dict,
+                      now: float | None = None) -> None:
+        ts = now if now is not None else time.time()
+        self._conn.execute(
+            "INSERT OR REPLACE INTO osv_cache (ecosystem, package, version, fetched_at, result)"
+            " VALUES (?,?,?,?,?)",
+            (ecosystem, package, version, ts, json.dumps(result, ensure_ascii=False, sort_keys=True)))
+        self._conn.execute("DELETE FROM osv_cache WHERE fetched_at < ?", (ts - self._OSV_CACHE_KEEP,))
+        self._conn.commit()
 
     def set_meta(self, key: str, value: str) -> None:
         self._conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", (key, value))

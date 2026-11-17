@@ -62,13 +62,14 @@ async def check_dns_tcp(timeout: float = 5.0) -> tuple[bool | None, str]:
                    "muitos includes) ficarão inconclusivas")
 
 
-async def check_https(host: str = "data.iana.org", timeout: float = 5.0) -> tuple[bool, str]:
+async def check_https(host: str = "data.iana.org", timeout: float = 5.0,
+                      impact: str = "RDAP, CT logs e webhooks podem falhar") -> tuple[bool, str]:
     """HTTPS de saída chega a `host`:443? (RDAP usa o bootstrap da IANA; CT logs
     e webhooks também precisam de 443 de saída)."""
     if await _tcp_connect(host, 443, timeout):
         return True, f"HTTPS de saída para {host} OK"
-    return False, (f"HTTPS de saída para {host} bloqueado — RDAP, CT logs e "
-                   "webhooks podem falhar (coleta preserva o estado)")
+    return False, (f"HTTPS de saída para {host} bloqueado — {impact} "
+                   "(coleta preserva o estado)")
 
 
 async def run(cfg, timeout: float = 5.0) -> list[str]:
@@ -80,6 +81,9 @@ async def run(cfg, timeout: float = 5.0) -> list[str]:
     needs_https = (cfg.collectors.rdap or cfg.collectors.subdomains or cfg.webhook.enabled)
     if needs_https:
         checks.append(check_https(timeout=timeout))
+    if cfg.collectors.ports and cfg.collectors.osv:   # CVEs da versão (padme.osv)
+        checks.append(check_https("api.osv.dev", timeout=timeout,
+                                  impact="a consulta de CVEs no OSV fica inconclusiva"))
     for ok, detail in await asyncio.gather(*checks):
         if ok is None:
             mark = "  — "   # não deu para testar (ex.: sem resolvedor)

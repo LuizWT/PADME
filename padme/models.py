@@ -32,6 +32,7 @@ class Kind(str, Enum):
     TAKEOVER = "takeover"
     CERT_EXPIRY = "cert_expiry"
     WILDCARD = "wildcard"
+    VULN = "vuln"          # versão de serviço com CVE conhecida (OSV), por porta
 
 
 # Escopo de observação: a "célula" dentro da qual a AUSÊNCIA de um Record
@@ -47,6 +48,10 @@ class Kind(str, Enum):
 # sempre exatamente um HTTPSEC por host que respondeu (nunca falso REMOVED).
 # FAVICON tem escopo PRÓPRIO (recurso /favicon.ico separado): 404 = ausência
 # autoritativa (pode virar REMOVED real); timeout preserva (ver favicon.py).
+#
+# VULN tem escopo PRÓPRIO por host (`vuln`, host): só é observado quando o
+# port-scan do host foi observado E a consulta ao OSV respondeu. Com o OSV fora
+# do ar, os CVEs anteriores ficam (ver engine._vulns).
 _SCOPE_KIND = {
     Kind.CERT_EXPIRY: Kind.TLS,
     Kind.HTTPSEC: Kind.HTTP,
@@ -62,7 +67,7 @@ COLLECTOR_OF = {
     Kind.DNS: "dns", Kind.NS: "dnsrecon", Kind.MAILSEC: "dnsrecon",
     Kind.HTTP: "http", Kind.HTTPSEC: "http", Kind.FAVICON: "favicon",
     Kind.TLS: "tls", Kind.CERT_EXPIRY: "tls",
-    Kind.TAKEOVER: "takeover", Kind.PORT: "ports",
+    Kind.TAKEOVER: "takeover", Kind.PORT: "ports", Kind.VULN: "osv",
 }
 
 
@@ -79,7 +84,7 @@ def subject_host(kind: Kind, key: str, target: str) -> str:
         return key.split("|", 1)[0]
     if kind in (Kind.HTTP, Kind.HTTPSEC):
         return key.split("://", 1)[-1].split("/", 1)[0]
-    if kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT):
+    if kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT, Kind.VULN):
         return key.rsplit(":", 1)[0]
     return target
 
@@ -92,6 +97,7 @@ def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:
     - http                -> ('http', host)   host = entre '://' e o primeiro '/'
     - tls / cert_expiry   -> ('tls',  host)   host = key sem ':porta'
     - port                -> ('port', host)
+    - vuln                -> ('vuln', host)   key = host:porta, como a porta
     - takeover            -> ('takeover', host)   key já é o host
     """
     scope_kind = _SCOPE_KIND.get(kind, kind)
@@ -101,7 +107,7 @@ def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:
         host = key.split("|", 1)[0]
     elif kind in (Kind.HTTP, Kind.HTTPSEC):  # key = URL (scheme://host, IPv6 em [ ])
         host = key.split("://", 1)[-1].split("/", 1)[0].strip("[]")
-    elif kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT):
+    elif kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT, Kind.VULN):
         host = key.rsplit(":", 1)[0]
     else:  # takeover e quaisquer futuros host-scoped
         host = key

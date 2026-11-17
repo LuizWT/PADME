@@ -24,7 +24,7 @@ import time
 
 import httpx
 
-from . import netpolicy, ratelimit
+from . import netpolicy, osv, ratelimit
 from .collectors import (
     bruteforce,
     dns,
@@ -73,6 +73,7 @@ class Engine:
         # RDAP confirma domínio livre vs expirado (takeover genérico + SPF órfão);
         # só dispara em domínio já suspeito. Desligado -> cai no sinal do DNS.
         self._rdap = make_rdap(timeout=config.timeout) if config.collectors.rdap else None
+        self._osv_transport: httpx.AsyncBaseTransport | None = None  # testes trocam
 
     async def _pace(self, request: "httpx.Request") -> None:
         """Hook de requisição do httpx: aplica o rate-limit antes de cada envio
@@ -202,6 +203,7 @@ class Engine:
             # 2. host-level (concorrente)
             tasks = [self._scan_host(h, client, result) for h in sorted(hosts)]
             await asyncio.gather(*tasks)
+        await self._vulns(result)
 
         # 3. subdomínio conhecido que a descoberta não trouxe só sai com prova de DNS
         result.records = carry_forward_subdomains(
@@ -230,10 +232,62 @@ class Engine:
         async with self._client() as client:
             await asyncio.gather(*(self._scan_host(h, client, result, ip_host=True)
                                    for h in hosts))
+        await self._vulns(result)
         log.info("[%s] scan concluído: %d host(s), %d record(s), %d erro(s), %dms",
                  target, len(hosts), len(result.records), len(result.errors),
                  int((time.monotonic() - t0) * 1000))
         return result
+
+    async def _vulns(self, result: ScanResult) -> None:
+        """CVEs conhecidos das versões que o port-scan leu (padme.osv).
+
+        Uma consulta ao OSV por scan, só com os pacotes que não estão no cache.
+        Escopo: o (`vuln`, host) só é observado se o port-scan do host foi
+        observado e o OSV respondeu para todas as versões dele. Assim:
+          - OSV fora do ar: os CVEs anteriores do host ficam;
+          - porta fechou (port-scan observado): o CVE dela sai;
+          - versão corrigida: sai; versão que o banner não mostra mais, com a
+            porta ainda aberta: o CVE anterior fica (sumir não é prova de correção).
+        """
+        col = self.cfg.collectors
+        if not (col.ports and col.osv):
+            return
+        open_ports = {r.key: r for r in result.records if r.kind == Kind.PORT}
+        wanted: dict[str, osv.Package] = {}
+        for key, r in open_ports.items():
+            pkg = osv.package_of(r.metadata)
+            if pkg is not None:
+                wanted[key] = pkg
+        answers: dict[osv.Package, dict | None] = {}
+        if wanted:
+            try:
+                async with httpx.AsyncClient(timeout=self.cfg.timeout,
+                                             headers={"User-Agent": _USER_AGENT},
+                                             transport=self._osv_transport) as client:
+                    answers = await osv.lookup(set(wanted.values()), self.storage, client)
+            except Exception as exc:  # noqa: BLE001 — consulta externa não derruba o scan
+                log.warning("[%s] OSV: %s", result.target, type(exc).__name__)
+        failed: set[str] = set()
+        for key, pkg in sorted(wanted.items()):
+            ans = answers.get(pkg)
+            if ans is None:
+                failed.add(key.rsplit(":", 1)[0])
+                continue
+            if ans["vulns"]:
+                port = open_ports[key].metadata.get("port")
+                result.records.append(Record(
+                    Kind.VULN, key, osv.summary(pkg.name, pkg.version, ans["vulns"]),
+                    metadata=osv.record_metadata(port, pkg, ans)))
+        prev = self.storage.load_state_full(result.target)
+        for (kind, key), row in sorted(prev.items()):
+            if kind == Kind.VULN.value and key in open_ports and key not in wanted:
+                result.records.append(Record(Kind.VULN, key, row["value"],
+                                             metadata=row.get("metadata") or {}))
+        port_hosts = {sid for sk, sid in result.observed_scopes if sk == Kind.PORT.value}
+        for host in port_hosts - failed:
+            result.observed_scopes.add((Kind.VULN.value, host))
+        if wanted:  # consultivo: OSV fora do ar não deixa a coleta do alvo parcial
+            result.mark_collector("osv", not failed, advisory=True)
 
     def _passive_due(self, target: str) -> bool:
         """Fontes passivas mudam devagar e têm cota: no máx. uma consulta a cada

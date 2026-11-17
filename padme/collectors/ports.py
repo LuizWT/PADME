@@ -101,18 +101,33 @@ def _mysql_banner(data: bytes) -> str:
     tem forma de versão — sinal claro, sem adivinhação. Devolve '' se não for.
 
     MariaDB anuncia com um prefixo de replicação falso '5.5.5-' seguido da versão
-    real e do sufixo '-MariaDB'; extraímos a versão real."""
+    real e do sufixo '-MariaDB'; extraímos a versão real.
+
+    A revisão do pacote da distro, quando vem (`-0+deb12u1`, `-0ubuntu0.22.04.1`),
+    fica no banner: é ela que diz qual pacote está instalado (padme.osv). Outros
+    sufixos (`-log`, `+maria~focal` do repositório próprio da MariaDB) saem."""
     if len(data) >= 6 and data[3] == 0x00 and data[4] == 0x0A:
         end = data.find(b"\x00", 5)
         raw = data[5:(end if end != -1 else len(data))].decode("latin-1", "ignore")
         ver = "".join(c for c in raw if c.isprintable()).strip()
         if "mariadb" in ver.lower():
-            m = re.search(r"(\d+\.\d+\.\d+)-MariaDB", ver, re.IGNORECASE)
-            return f"MariaDB {m.group(1)}" if m else "MariaDB"
-        m = re.match(r"\d+\.\d+(?:\.\d+)?", ver)
+            m = re.search(r"(\d+\.\d+\.\d+)-MariaDB(?:-(\S+))?", ver, re.IGNORECASE)
+            if not m:
+                return "MariaDB"
+            return f"MariaDB {m.group(1)}{_distro_rev(m.group(2))}"
+        m = re.match(r"(\d+\.\d+(?:\.\d+)?)(?:-(\S+))?", ver)
         if m:
-            return f"MySQL {m.group(0)}"
+            return f"MySQL {m.group(1)}{_distro_rev(m.group(2))}"
     return ""
+
+
+# revisão de pacote Debian/Ubuntu: 0+deb12u1, 1:10.6.12-0ubuntu0.22.04.1 sem o epoch
+_DISTRO_REV = re.compile(r"[0-9][\w.~]*(?:\+deb\d+u\d+|ubuntu0\.\d\d\.\d\d(?:\.\d+)*)")
+
+
+def _distro_rev(suffix: str | None) -> str:
+    """'-<revisão>' quando o sufixo é revisão de pacote Debian/Ubuntu, senão ''."""
+    return f"-{suffix}" if suffix and _DISTRO_REV.fullmatch(suffix) else ""
 
 
 def _decode_banner(data: bytes) -> str:

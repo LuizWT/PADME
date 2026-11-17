@@ -49,6 +49,10 @@ collectors:
   ports: false        # ativo — connect-scan (ligue com consciência)
   ports_banner: true  # banner-grab leve nas portas abertas (SSH/SMTP/FTP…)
   ports_list: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
+  # CVEs da versão lida no banner (SSH, MySQL/MariaDB de pacote Debian/Ubuntu),
+  # consultados no OSV (osv.dev) com cache de 24h. Só ecossistema, pacote e versão
+  # saem da máquina, nunca host ou IP. Precisa de `ports: true`.
+  osv: true
   # Fontes passivas além do CT. Nome de fonte só entra se RESOLVE agora (fora do
   # curinga): fonte histórica traz muito nome morto. Suplementar: nada sai do
   # estado por ausência aqui, e fonte fora do ar não deixa a coleta "parcial".

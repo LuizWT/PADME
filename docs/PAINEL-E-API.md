@@ -74,8 +74,8 @@ simultâneas, timeout por conexão e cabeçalhos de segurança (CSP,
 
 ## Problemas (findings)
 
-Takeover, certificado expirando, curinga de DNS e política de e-mail fraca viram
-**problemas** com id estável: o mesmo problema mantém o id entre varreduras.
+Takeover, versão com CVE, certificado expirando, curinga de DNS e política de
+e-mail fraca viram **problemas** com id estável: o mesmo problema mantém o id entre varreduras.
 
 | Status | Quando | Conta como aberto | Notifica |
 |---|---|---|---|

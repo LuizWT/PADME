@@ -179,5 +179,54 @@ application/json; charset=utf-8
       "status": 200,
       "title": "Loja"
     }
+  },
+  {
+    "source": "casa",
+    "target": "loja.dev",
+    "kind": "port",
+    "key": "loja.dev:22",
+    "value": "open · SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u2",
+    "first_seen": "16/09 14:13",
+    "last_seen": "16/09 14:13",
+    "metadata": {
+      "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u2",
+      "port": 22,
+      "product": "OpenSSH",
+      "service": "ssh",
+      "version": "9.2p1"
+    }
+  },
+  {
+    "source": "casa",
+    "target": "loja.dev",
+    "kind": "vuln",
+    "key": "loja.dev:22",
+    "value": "openssh 1:9.2p1-2+deb12u2 · CVE-2024-6387 (high 8.1) · corrige em 1:9.2p1-2+deb12u3",
+    "first_seen": "16/09 14:13",
+    "last_seen": "16/09 14:13",
+    "metadata": {
+      "confidence": "high",
+      "cves": [
+        "CVE-2024-6387"
+      ],
+      "ecosystem": "Debian:12",
+      "fixed_in": "1:9.2p1-2+deb12u3",
+      "max_score": 8.1,
+      "max_severity": "high",
+      "package": "openssh",
+      "port": 22,
+      "product": "OpenSSH",
+      "source": "osv.dev",
+      "unfixed": 1,
+      "version": "1:9.2p1-2+deb12u2",
+      "vulns": [
+        {
+          "fixed": "1:9.2p1-2+deb12u3",
+          "id": "CVE-2024-6387",
+          "score": 8.1,
+          "severity": "high"
+        }
+      ]
+    }
   }
 ]

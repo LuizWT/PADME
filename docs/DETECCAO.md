@@ -6,6 +6,7 @@
 - [Severidade](#severidade)
 - [Subdomínios](#subdomínios)
 - [HTTP, TLS e portas](#http-tls-e-portas)
+- [Versões com CVE conhecida (OSV)](#versões-com-cve-conhecida-osv)
 - [Subdomain takeover](#subdomain-takeover)
 - [E-mail: SPF e DMARC](#e-mail-spf-e-dmarc)
 - [Alvos por IP ou faixa](#alvos-por-ip-ou-faixa)
@@ -19,7 +20,8 @@ DNS  A/AAAA/CNAME/MX/NS/SPF/DMARC   ─┤
 HTTP status/server/headers          ─┼─► registros ─► diff com o estado ─► eventos ─► canais
 TLS  emissor/validade/SANs          ─┤        (SQLite)
 takeover (CNAME + assinatura)       ─┤
-portas (connect-scan + banner)      ─┘
+portas (connect-scan + banner)      ─┤
+CVEs da versão do banner (OSV)      ─┘
 ```
 
 Cada fato observado vira um registro `(tipo, chave, valor)`. A cada varredura o
@@ -55,6 +57,7 @@ e uma confiança (quão certa é a observação), com o motivo em códigos está
 | Exemplo | Severidade |
 |---|---|
 | subdomain takeover, porta administrativa ou de banco recém-exposta (RDP, VNC, Redis...) | `critical` |
+| versão de serviço com CVE | a do pior CVE (CVSS): `critical`, `high`, `medium` ou `low` |
 | porta nova, subdomínio novo, certificado perto de expirar, curinga de DNS, SPF/DMARC fraco | `high` |
 | HTTP ou TLS mudou, serviço novo, takeover corrigido | `medium` |
 | remoções, mudanças menores, certificado renovado | `low` |
@@ -126,6 +129,56 @@ lido em portas de TLS implícito abertas (8443, 993, 465, 636...).
 **Portas** (`collectors.ports`, **desligado por padrão**): connect-scan na
 `ports_list`, com banner-grab leve (SSH, SMTP, FTP...) e versão exata do
 MySQL/MariaDB pelo handshake. Mudança de banner = versão de serviço mudou.
+
+## Versões com CVE conhecida (OSV)
+
+Com o scan de portas ligado, a versão que o banner mostra é consultada no
+[OSV](https://osv.dev) (`collectors.osv`, ligado por padrão). O resultado vira
+**um problema por porta**, com a lista de CVEs, a severidade do pior e a versão
+do pacote que corrige todos:
+
+```
+openssh 1:9.2p1-2+deb12u2 · CVE-2024-6387 (high 8.1) · corrige em 1:9.2p1-2+deb12u3
+```
+
+Só entra versão de **pacote de distro**, porque é ela que diz o que está
+instalado:
+
+| Banner | Pacote consultado | Confiança |
+|---|---|---|
+| `SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3` | `openssh` `1:9.2p1-2+deb12u3` no Debian 12 | `high` |
+| `MariaDB 10.11.6-0+deb12u1` (handshake) | `mariadb` `1:10.11.6-0+deb12u1` no Debian 12 | `high` |
+| `MySQL 8.0.36-0ubuntu0.22.04.1` (handshake) | `mysql-8.0` no Ubuntu 22.04 | `high` |
+| `SSH-2.0-OpenSSH_9.2p1 Debian-2` (sem `+debNN`) | a versão do Debian sai da versão upstream | `medium` |
+| `SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.10` | idem: só o Ubuntu 22.04 traz o 8.9p1 | `medium` |
+| `nginx/1.22.1`, `OpenSSH_9.6`, `MariaDB 10.6.12` | não consultado | |
+
+Versão "pelada" não é consultada: a distro corrige falhas sem mudar o número
+upstream, então `nginx/1.22.1 (Debian)` pode já estar corrigido, e o OSV
+indexa versões por pacote, não por produto. Os produtos e versões de distro
+conhecidos estão em `padme/data/osv_products.json` (Debian 10 a 13, Ubuntu
+20.04, 22.04 e 24.04).
+
+- **Só CVE com correção publicada** para a sua versão da distro. O que a
+  distro não corrigiu (ou marcou como sem importância) aparece só na contagem
+  `unfixed` do problema: atualizar não resolveria.
+- **Severidade**: a nota do vetor CVSS v3 do registro; sem ela, a do registro
+  do próprio CVE; com só CVSS v4, a classificação que o registro traz. Sem
+  nenhuma, `medium`.
+- **Quando alerta**: CVE novo numa versão em uso (publicado depois, ou versão
+  que mudou para uma pior) sai com a severidade do CVE novo. Lista que só
+  diminuiu é `low`; versão corrigida ou porta fechada resolve o problema.
+- **Sem prova, o CVE fica**: com o OSV fora do ar, com o scan de portas
+  inconclusivo ou com a porta aberta mas o banner sem a versão, o problema
+  anterior continua. A falha do OSV aparece na saúde da coleta e não deixa a
+  coleta do alvo parcial.
+- **Uma consulta por varredura**, em lote, só com o que não está no cache
+  (24h por pacote e versão, no próprio `padme.db`).
+
+> [!NOTE]
+> A consulta ao OSV leva só ecossistema, pacote e versão
+> (`Debian:12`, `openssh`, `1:9.2p1-2+deb12u3`). Nenhum host, IP ou banner sai
+> da máquina. Precisa de saída HTTPS para `api.osv.dev`.
 
 ## Subdomain takeover
 

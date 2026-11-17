@@ -149,6 +149,7 @@ padme/
 ├── mailpolicy.py      SPF efetivo e DMARC
 ├── domains.py         domínio registrável (PSL) e RDAP
 ├── portmap.py         portas: serviço, risco, TLS implícito
+├── osv.py             CVEs da versão do banner (OSV): pacote da distro, CVSS, cache
 ├── netpolicy.py       IP privado/reservado e redirects
 ├── netcheck.py        sondas de rede do doctor
 ├── ratelimit.py       ritmo das sondas
@@ -159,7 +160,7 @@ padme/
 ├── collectors/        subdomains, passive, bruteforce, wildcard, dns, dnsrecon,
 │                      http, favicon, tls, takeover, ports
 ├── notify/            telegram, discord/webhook, email, formatação, retry
-└── data/              base de takeover
+└── data/              base de takeover, produtos do OSV (osv_products.json)
 install.sh             instalador Linux/macOS
 install.ps1            instalador Windows (install.bat chama este)
 scripts/               notas do changelog, smoke test da imagem, gerador da base de takeover

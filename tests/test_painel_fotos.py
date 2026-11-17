@@ -99,6 +99,21 @@ def _banco(db: str, rel: _Relogio) -> None:
         s.apply_scan("loja.dev", [
             Record(Kind.HTTP, "loja.dev", "200 | cloudflare | Loja",
                    metadata={"status": 200, "server": "cloudflare", "title": "Loja"}),
+            Record(Kind.PORT, "loja.dev:22", "open · SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u2",
+                   metadata={"port": 22, "service": "ssh", "product": "OpenSSH",
+                             "version": "9.2p1",
+                             "banner": "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u2"}),
+            Record(Kind.VULN, "loja.dev:22",
+                   "openssh 1:9.2p1-2+deb12u2 · CVE-2024-6387 (high 8.1)"
+                   " · corrige em 1:9.2p1-2+deb12u3",
+                   metadata={"port": 22, "product": "OpenSSH", "package": "openssh",
+                             "ecosystem": "Debian:12", "version": "1:9.2p1-2+deb12u2",
+                             "cves": ["CVE-2024-6387"], "max_severity": "high",
+                             "max_score": 8.1, "fixed_in": "1:9.2p1-2+deb12u3",
+                             "unfixed": 1, "confidence": "high",
+                             "vulns": [{"id": "CVE-2024-6387", "severity": "high",
+                                        "score": 8.1, "fixed": "1:9.2p1-2+deb12u3"}],
+                             "source": "osv.dev"}),
         ])
         rel.t = T0 - 86400
         s.apply_scan("acme.com", [                         # mudanças e remoções
