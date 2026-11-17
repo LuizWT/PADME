@@ -76,6 +76,9 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true   # rodar de novo depois de uma falha no PyPI não trava aqui
+          # a atestação vai para dist/ e o passo do PyPI se recusa a gerar outra
+          # por cima ("already have publish attestations"): ela fica só no PyPI
+          attestations: false
       - name: Publicar no PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -89,11 +92,12 @@ jobs:
         run: |
           python scripts/changelog.py "$GITHUB_REF_NAME" > notas.md
           titulo="Padmé ${GITHUB_REF_NAME#v}"
+          # só o pacote: a atestação do PyPI também fica em dist/
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "$titulo" --notes-file notas.md
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release upload "$GITHUB_REF_NAME" dist/*.whl dist/*.tar.gz --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* \
+            gh release create "$GITHUB_REF_NAME" dist/*.whl dist/*.tar.gz \
               --title "$titulo" --notes-file notas.md --verify-tag
           fi
 

@@ -95,6 +95,13 @@ Para lançar uma versão:
    GitHub e publica a imagem em `ghcr.io/luizwt/padme`. Acompanhe em *Actions*
    → *release*; um passo vermelho para o resto sem publicar pela metade.
 
+Se o workflow falhar **antes do PyPI** (nada em pypi.org/project/padme-asm),
+corrija numa PR e, depois do merge, recrie a tag no `main` novo: apague a
+release (*Releases* → a release → *Delete*) e a tag (*Tags* → `vX.Y.Z` →
+*Delete tag*) e crie de novo como no passo 2. O *Re-run* não serve aqui: ele usa
+o workflow da tag antiga. Se o PyPI já aceitou a versão, ela não pode ser
+publicada de novo, e a correção sai numa versão nova.
+
 O build sai do workflow, nunca de uma pasta compactada à mão (que levaria
 `.env`, `config.yaml` e `padme.db`). Localmente:
 `python -m build && twine check --strict dist/*`.
