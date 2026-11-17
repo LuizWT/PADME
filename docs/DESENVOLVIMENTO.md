@@ -85,11 +85,15 @@ Para lançar uma versão:
 1. Numa PR: suba o `__version__`, renomeie `## [Não lançado]` para
    `## [X.Y.Z] - AAAA-MM-DD` (deixe um `## [Não lançado]` vazio em cima) e
    atualize os links do fim do arquivo.
-2. Depois do merge, crie a tag no `main`: `git tag vX.Y.Z && git push origin vX.Y.Z`
-   (ou uma release nova pela página do GitHub, criando a tag ali).
+2. Depois do merge, crie a tag `vX.Y.Z` no `main`, de um destes jeitos:
+   - pelo terminal: `git checkout main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z`;
+   - pela página do GitHub: *Releases* → *Draft a new release* → em *Choose a
+     tag*, digite `vX.Y.Z` e escolha criar a tag no publish, com alvo `main` →
+     *Publish release*. **Não precisa escrever notas**: o workflow preenche.
 3. O workflow `release` faz o resto: confere tag e changelog, testa, publica no
-   TestPyPI e no PyPI, cria a release do GitHub com as notas e publica a
-   imagem em `ghcr.io/luizwt/padme`.
+   TestPyPI e no PyPI, põe as notas do CHANGELOG e os arquivos na release do
+   GitHub e publica a imagem em `ghcr.io/luizwt/padme`. Acompanhe em *Actions*
+   → *release*; um passo vermelho para o resto sem publicar pela metade.
 
 O build sai do workflow, nunca de uma pasta compactada à mão (que levaria
 `.env`, `config.yaml` e `padme.db`). Localmente:

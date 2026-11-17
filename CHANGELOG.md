@@ -7,21 +7,7 @@ mudança de config e *patch* traz correção.
 
 ## [Não lançado]
 
-### Adicionado
-
-- Alvos por IP (`203.0.113.7`, `2001:db8::1`) e por faixa (`203.0.113.0/28`),
-  com teto de hosts por alvo (`collectors.max_hosts_per_target`, padrão 256).
-  Para eles rodam portas, HTTP, TLS e DNS reverso; os nomes descobertos são só
-  registrados.
-
-### Corrigido
-
-- Uma faixa em `targets` (`1.2.3.0/24`) virava calada um IP só (`1.2.3.0`), e um
-  IP era tratado como domínio (consulta de CT, SPF e DMARC para um número).
-- `padme init` com um alvo que o config recusa não deixa mais um arquivo
-  inválido para trás.
-
-## [0.2.0] - 2026-11-16
+## [0.2.0] - 2026-11-17
 
 Primeira versão publicada no PyPI (`pip install padme-asm`). A 0.1.0 nunca saiu
 como versão; esta reúne tudo o que foi construído até aqui.
@@ -58,11 +44,22 @@ como versão; esta reúne tudo o que foi construído até aqui.
   seu nível, e fila de reenvio para alertas graves.
 - API JSON somente leitura (`padme api`), multi-vantage (`padme merge`),
   `padme backup`, `padme doctor` com sondas de rede e heartbeat.
+- Alvos por IP (`203.0.113.7`, `2001:db8::1`) e por faixa (`203.0.113.0/28`),
+  com teto de hosts por alvo (`collectors.max_hosts_per_target`, padrão 256).
+  Para eles rodam portas, HTTP, TLS e DNS reverso; os nomes descobertos são só
+  registrados.
 
 ### Mudado
 
 - README curto; os detalhes técnicos foram para `docs/`.
 - O painel foi dividido no pacote `padme.web`, e o mypy entrou no CI.
+
+### Corrigido (em relação ao código do GitHub)
+
+- Uma faixa em `targets` (`1.2.3.0/24`) virava calada um IP só (`1.2.3.0`), e um
+  IP era tratado como domínio (consulta de CT, SPF e DMARC para um número).
+- `padme init` com um alvo que o config recusa não deixa mais um arquivo
+  inválido para trás.
 
 ### Segurança
 
