@@ -109,6 +109,34 @@ padme --once                  # uma varredura e sai (para cron ou agendador)
 
 Detalhes, problemas (findings) e API: [docs/PAINEL-E-API.md](https://github.com/LuizWT/PADME/blob/main/docs/PAINEL-E-API.md).
 
+## Exposições HTTP
+
+Opcional e **desligada por padrão**. Não tem comando próprio: ligue no config e
+ela roda junto com o `padme` e o `padme scan`.
+
+```yaml
+collectors:
+  exposures: true
+  exposures_every_hours: 24   # no máximo uma bateria por host
+```
+
+- Faz uma bateria pequena e fixa de GETs sem parâmetros, a partir de uma lista
+  curada em `padme/data/exposures.json`. Não é wordlist: não há payloads nem
+  varredura de caminhos arbitrários.
+- Só roda em host que já respondeu ao coletor HTTP, e no máximo uma vez a cada
+  `exposures_every_hours` por host.
+- Status `200` sozinho não vira problema: a resposta precisa casar a assinatura
+  e o tipo de conteúdo da entrada. Páginas de "não encontrado" disfarçadas,
+  redirects para login e páginas de login não contam.
+- O conteúdo da resposta **nunca é gravado** (banco, log, painel ou canais): a
+  evidência guarda só o caminho, o status, o tipo e o tamanho.
+- Severidade: `critical` para segredo ou código, `high` para status ou
+  diagnóstico, `medium` para listagem de diretório. O problema traz a correção
+  sugerida e some quando um ciclo completo não acha mais a assinatura.
+- Valem os mesmos limites da coleta ativa: IP privado, redirects e rate limit.
+
+Detalhes: [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md#exposições-http).
+
 ## Alertas
 
 Canais: **Telegram**, **Discord**, **e-mail** (SMTP) e **webhook** JSON (n8n e
@@ -116,8 +144,8 @@ automações). Cada canal tem o seu nível mínimo:
 
 | `level` | O canal recebe |
 |---|---|
-| `critical` | só o crítico: takeover, porta de administração ou banco exposta |
-| `high` | acima + porta ou subdomínio novo, certificado vencendo, SPF/DMARC fraco |
+| `critical` | só o crítico: takeover, porta de administração ou banco exposta, CVE crítico, segredo exposto |
+| `high` | acima + porta ou subdomínio novo, certificado vencendo, SPF/DMARC fraco, CVE alto |
 | `medium` (padrão) | acima + HTTP/TLS mudou, serviço novo, takeover corrigido |
 | `low` | acima + remoções e mudanças menores |
 | `debug` | tudo, inclusive registros DNS |
