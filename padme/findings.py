@@ -82,6 +82,20 @@ def derive(target: str, kinds: dict) -> list[dict]:
     """Findings do estado atual de UM alvo. `kinds`: {kind: [linha do state]},
     com linhas {key, value, metadata}. Ordem: mais grave primeiro."""
     out: list[dict] = []
+    for it in kinds.get("exposure", []):
+        md = it.get("metadata") or {}
+        sev = str(md.get("severity") or "medium").lower()
+        rank, cls, label = {
+            "critical": (4, "s-crit", "crítico"),
+            "high": (3, "s-serious", "alto"),
+            "medium": (2, "s-warn", "médio"),
+        }.get(sev, (2, "s-warn", "médio"))
+        detail = md.get("description") or it["value"]
+        if md.get("remediation"):
+            detail = f"{detail} Corrija: {md['remediation']}"
+        out.append(_item(target, Kind.EXPOSURE, it["key"], "", rank, cls, label,
+                         "EXPOSIÇÃO HTTP", it["key"].split("|", 1)[0], detail,
+                         _evidence_facts(Kind.EXPOSURE, it["key"], it["value"], md)))
     for it in kinds.get("takeover", []):
         out.append(_item(target, Kind.TAKEOVER, it["key"], "", 4, "s-crit", "crítico",
                          "TAKEOVER", it["key"], it["value"],

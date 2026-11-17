@@ -66,6 +66,12 @@ def evidence_of(kind: Kind, key: str, value: str | None, metadata: dict | None) 
         return _ev({"type": "takeover_check", "cname": md.get("cname"),
                     "service": md.get("service"), "reason": md.get("reason") or val})
 
+    if kind == Kind.EXPOSURE:
+        return _ev({"type": "http_exposure_check", "signature": md.get("signature"),
+                    "path": md.get("path"), "status": md.get("status"),
+                    "content_type": md.get("content_type"), "size": md.get("size"),
+                    "severity": md.get("severity")})
+
     if kind == Kind.NS:
         return _ev({"type": "dns_ns", "nameserver": md.get("nameserver") or val})
 

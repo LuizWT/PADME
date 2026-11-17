@@ -5,6 +5,7 @@
 - [Como uma mudança vira alerta](#como-uma-mudança-vira-alerta)
 - [Severidade](#severidade)
 - [Subdomínios](#subdomínios)
+- [Exposições HTTP](#exposições-http)
 - [HTTP, TLS e portas](#http-tls-e-portas)
 - [Versões com CVE conhecida (OSV)](#versões-com-cve-conhecida-osv)
 - [Subdomain takeover](#subdomain-takeover)
@@ -18,6 +19,7 @@
 subdomínios (CT + fontes passivas) ─┐
 DNS  A/AAAA/CNAME/MX/NS/SPF/DMARC   ─┤
 HTTP status/server/headers          ─┼─► registros ─► diff com o estado ─► eventos ─► canais
+exposições HTTP (assinaturas fixas) ─┤        (SQLite)
 TLS  emissor/validade/SANs          ─┤        (SQLite)
 takeover (CNAME + assinatura)       ─┤
 portas (connect-scan + banner)      ─┤
@@ -111,6 +113,30 @@ collectors:
 O **curinga de DNS** (`*.alvo.com`) é detectado com nomes aleatórios; sem isso o
 bruteforce traria milhares de falsos positivos num apex catch-all. Cada host é
 marcado `live` (responde HTTP) ou `quiet`, e o rótulo só muda com prova.
+
+## Exposições HTTP
+
+Com `collectors.exposures: true`, o Padmé faz uma bateria pequena e curada de
+GETs sem parâmetros (arquivos de controle de versão, `.env`, páginas de status,
+diagnóstico e duas localizações de listagem). A lista fica em
+`padme/data/exposures.json`; ela não é uma wordlist e não há payloads ou
+varredura de caminhos arbitrários. A bateria só roda para um host que já
+respondeu ao coletor HTTP e, por padrão, no máximo a cada 24 horas por host.
+
+Status `200` sozinho nunca gera achado: é obrigatório casar a assinatura de
+corpo e o tipo de conteúdo da entrada. Antes da lista há um GET a um caminho
+aleatório para reconhecer soft-404; respostas idênticas são ignoradas, salvo
+assinaturas explicitamente fortes. Redirects para login e páginas de login não
+contam. Cada corpo é limitado a 4 KiB, e os limites de IP privado, redirects,
+rate limit global e intervalo por host continuam valendo.
+
+O estado usa `Kind.EXPOSURE` e escopo próprio por host. Um ciclo completo sem
+assinatura (inclusive respostas 404) resolve o problema; timeout ou erro deixa
+o estado anterior intacto. A evidência contém apenas id da assinatura, caminho,
+status, tipo de conteúdo, tamanho e severidade. O conteúdo da resposta nunca é
+gravado no banco, logs, painel ou canais de notificação. A severidade base é
+`critical` para segredos/código, `high` para status/diagnóstico e `medium` para
+listagem de diretório. A correção sugerida aparece no finding.
 
 ## HTTP, TLS e portas
 

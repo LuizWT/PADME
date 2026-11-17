@@ -301,6 +301,8 @@ class CollectorsConfig:
     cert_expiry_days: int = 14  # avisa quando o cert está a <= N dias de expirar
     max_response_bytes: int = 262144  # teto de corpo HTTP lido por host (256 KiB)
     takeover: bool = True     # CNAME dangling + fingerprint de serviços
+    exposures: bool = False   # arquivos/endpoints HTTP expostos (base curada)
+    exposures_every_hours: int = 24
     rdap: bool = True         # consulta RDAP p/ confirmar domínio livre vs expirado
     ports: bool = False       # ativo — desligado por padrão
     ports_banner: bool = True # banner-grab leve nas portas abertas
@@ -419,6 +421,9 @@ class Config:
                 cert_expiry_days=_as_int(col.get("cert_expiry_days"), "collectors.cert_expiry_days", 14),
                 max_response_bytes=_as_int(col.get("max_response_bytes"), "collectors.max_response_bytes", 262144),
                 takeover=_as_bool(col.get("takeover"), True),
+                exposures=_as_bool(col.get("exposures"), False),
+                exposures_every_hours=_as_int(col.get("exposures_every_hours"),
+                                              "collectors.exposures_every_hours", 24),
                 rdap=_as_bool(col.get("rdap"), True),
                 ports=_as_bool(col.get("ports"), False),
                 ports_banner=_as_bool(col.get("ports_banner"), True),
@@ -600,6 +605,8 @@ def _validate(cfg: "Config") -> None:
         errs.append("collectors.cert_expiry_days deve ser >= 0")
     if c.max_response_bytes <= 0:
         errs.append("collectors.max_response_bytes deve ser > 0")
+    if c.exposures_every_hours < 1:
+        errs.append("collectors.exposures_every_hours deve ser >= 1")
     for p in c.ports_list:
         if not (1 <= p <= 65535):
             errs.append(f"collectors.ports_list: porta fora de 1..65535: {p}")

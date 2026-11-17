@@ -16,6 +16,7 @@ MARK = {EventType.ADDED: "+", EventType.REMOVED: "-", EventType.CHANGED: "~"}
 
 KIND_LABEL = {
     Kind.TAKEOVER: "TAKEOVER",
+    Kind.EXPOSURE: "EXPOSIÇÃO",
     Kind.CERT_EXPIRY: "CERT",
     Kind.VULN: "CVE",
     Kind.NS: "NS",
@@ -32,7 +33,7 @@ KIND_LABEL = {
 
 # ordem de exibição: o mais crítico primeiro
 KIND_ORDER = [
-    Kind.TAKEOVER, Kind.VULN, Kind.CERT_EXPIRY, Kind.NS, Kind.MAILSEC, Kind.WILDCARD,
+    Kind.TAKEOVER, Kind.EXPOSURE, Kind.VULN, Kind.CERT_EXPIRY, Kind.NS, Kind.MAILSEC, Kind.WILDCARD,
     Kind.SUBDOMAIN, Kind.PORT, Kind.HTTP, Kind.HTTPSEC, Kind.FAVICON, Kind.TLS, Kind.DNS,
 ]
 
@@ -48,6 +49,7 @@ DESC = {
     Kind.NS: {"added": "nameserver novo", "removed": "nameserver removido", "changed": "nameserver alterado (delegação / possível hijack)"},
     Kind.MAILSEC: {"added": "proteção de e-mail adicionada", "removed": "proteção de e-mail REMOVIDA (domínio spoofável)", "changed": "política de e-mail (SPF/DMARC) alterada"},
     Kind.TAKEOVER: {"added": "possível subdomain takeover", "removed": "takeover resolvido", "changed": "takeover alterado"},
+    Kind.EXPOSURE: {"added": "arquivo/endpoint HTTP exposto", "removed": "exposição HTTP resolvida", "changed": "exposição HTTP alterada"},
     Kind.VULN: {"added": "versão com CVE conhecida", "removed": "CVEs resolvidos (versão corrigida ou porta fechada)", "changed": "CVEs da versão mudaram"},
     Kind.CERT_EXPIRY: {"added": "certificado expira em breve", "removed": "certificado renovado", "changed": "situação do certificado mudou"},
     Kind.WILDCARD: {"added": "wildcard DNS ativo (enumeração ativa não confiável)", "removed": "wildcard DNS não responde mais", "changed": "IPs do wildcard mudaram"},

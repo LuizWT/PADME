@@ -117,6 +117,11 @@ def _stat_tiles(kinds: dict[str, Any], target: str = "") -> str:
     ]
     if kinds.get("takeover"):
         tiles.append(_tile(len(kinds["takeover"]), "takeover", "crítico", cls="crit"))
+    if kinds.get("exposure"):
+        critical = any((r.get("metadata") or {}).get("severity") == "critical"
+                       for r in kinds["exposure"])
+        tiles.append(_tile(len(kinds["exposure"]), "exposições HTTP", "corrigir",
+                           cls="crit" if critical else "warn"))
     if kinds.get("vuln"):
         worst = worst_vuln(kinds)
         tiles.append(_tile(len(kinds["vuln"]), "portas com CVE", f"pior: {worst}",

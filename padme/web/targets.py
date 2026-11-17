@@ -38,6 +38,10 @@ def _host_level(kinds: dict[str, Any], meta: dict[str, Any] | None) -> tuple[str
     worst_cve = worst_vuln(kinds)
     if kinds.get("takeover"):
         return "s-crit", "takeover"
+    if kinds.get("exposure"):
+        critical = any((r.get("metadata") or {}).get("severity") == "critical"
+                       for r in kinds["exposure"])
+        return ("s-crit" if critical else "s-serious"), "exposição HTTP"
     if worst_cve == "critical":
         return "s-crit", "CVE"
     if kinds.get("cert_expiry"):

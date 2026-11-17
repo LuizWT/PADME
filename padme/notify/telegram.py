@@ -54,7 +54,7 @@ def _event_line(e: Event) -> str:
     if e.event_type == EventType.CHANGED:
         return f"{mark} {_key_html(e)}{_desc(e)}\n    {_esc(e.old_value)} <b>→</b> {_esc(e.new_value)}"
 
-    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.WILDCARD, Kind.VULN):
+    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.EXPOSURE, Kind.CERT_EXPIRY, Kind.WILDCARD, Kind.VULN):
         return f"{mark} {_key_html(e)}{_desc(e)}\n    {_esc(e.new_value)}"
 
     if e.kind == Kind.SUBDOMAIN and e.event_type == EventType.ADDED and e.new_value:

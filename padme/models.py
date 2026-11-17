@@ -30,6 +30,7 @@ class Kind(str, Enum):
     FAVICON = "favicon"    # hash do favicon (pivot de infraestrutura, estilo Shodan)
     TLS = "tls"
     TAKEOVER = "takeover"
+    EXPOSURE = "exposure"
     CERT_EXPIRY = "cert_expiry"
     WILDCARD = "wildcard"
     VULN = "vuln"          # versão de serviço com CVE conhecida (OSV), por porta
@@ -67,7 +68,7 @@ COLLECTOR_OF = {
     Kind.DNS: "dns", Kind.NS: "dnsrecon", Kind.MAILSEC: "dnsrecon",
     Kind.HTTP: "http", Kind.HTTPSEC: "http", Kind.FAVICON: "favicon",
     Kind.TLS: "tls", Kind.CERT_EXPIRY: "tls",
-    Kind.TAKEOVER: "takeover", Kind.PORT: "ports", Kind.VULN: "osv",
+    Kind.TAKEOVER: "takeover", Kind.EXPOSURE: "exposure", Kind.PORT: "ports", Kind.VULN: "osv",
 }
 
 
@@ -78,6 +79,8 @@ def subject_host(kind: Kind, key: str, target: str) -> str:
     apex), porque o contexto de ativo é por host."""
     if kind in (Kind.SUBDOMAIN, Kind.TAKEOVER, Kind.FAVICON):
         return key
+    if kind == Kind.EXPOSURE:
+        return key.split("|", 1)[0]
     if kind in (Kind.NS, Kind.MAILSEC, Kind.WILDCARD):
         return target
     if kind == Kind.DNS:
@@ -109,8 +112,8 @@ def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:
         host = key.split("://", 1)[-1].split("/", 1)[0].strip("[]")
     elif kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT, Kind.VULN):
         host = key.rsplit(":", 1)[0]
-    else:  # takeover e quaisquer futuros host-scoped
-        host = key
+    else:  # takeover, exposição e quaisquer futuros host-scoped
+        host = key.split("|", 1)[0] if kind == Kind.EXPOSURE else key
     return (scope_kind.value, host)
 
 

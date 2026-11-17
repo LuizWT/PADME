@@ -83,6 +83,9 @@ def _base_severity(e: Event) -> Level:
     # fica LOW (acontece em todo ciclo de renovação).
     if k == Kind.TAKEOVER:
         return Level.MEDIUM if t == EventType.REMOVED else Level.CRITICAL
+    if k == Kind.EXPOSURE:
+        return Level.MEDIUM if t == EventType.REMOVED else parse_level(
+            (e.metadata or {}).get("severity"), Level.MEDIUM)
     if k == Kind.CERT_EXPIRY:
         return Level.LOW if t == EventType.REMOVED else Level.HIGH
     if k == Kind.WILDCARD:
@@ -138,6 +141,7 @@ CRITICAL_ASSET = "CRITICAL_ASSET"
 FORBIDDEN_PORT = "FORBIDDEN_PORT"
 UNEXPECTED_PORT = "UNEXPECTED_PORT"
 SUBDOMAIN_TAKEOVER = "SUBDOMAIN_TAKEOVER"
+EXPOSED_FILE = "EXPOSED_FILE"
 # DMARC_*/SPF_* vêm de mailpolicy (mesma interpretação no collector e no painel)
 MAIL_PROTECTION_REMOVED = "MAIL_PROTECTION_REMOVED"
 NAMESERVER_CHANGED = "NAMESERVER_CHANGED"
@@ -154,6 +158,7 @@ REASON_LABEL = {
     FORBIDDEN_PORT: "porta proibida pela política",
     UNEXPECTED_PORT: "porta fora do estado esperado",
     SUBDOMAIN_TAKEOVER: "subdomain takeover",
+    EXPOSED_FILE: "arquivo/endpoint HTTP exposto",
     DMARC_NOT_ENFORCED: "DMARC não bloqueia spoofing (p=none)",
     DMARC_SUBDOMAINS_NOT_ENFORCED: "DMARC não protege subdomínios (sp=none)",
     DMARC_PARTIAL: "DMARC parcial (pct<100 ou t=y)",
@@ -295,6 +300,12 @@ def assess(e: Event) -> RiskAssessment:
         reasons.append(SUBDOMAIN_TAKEOVER)
         level = max(level, Level.CRITICAL)
         rule_id = rule_id or "subdomain-takeover"
+
+    # ── EXPOSIÇÃO HTTP ────────────────────────────────────────────────────
+    if e.kind == Kind.EXPOSURE and e.event_type != EventType.REMOVED:
+        reasons.append(EXPOSED_FILE)
+        level = max(level, parse_level((e.metadata or {}).get("severity"), Level.MEDIUM))
+        rule_id = rule_id or "exposed-file"
 
     # ── E-MAIL (SPF/DMARC) ────────────────────────────────────────────────
     if e.kind == Kind.MAILSEC:

@@ -1,0 +1,101 @@
+{
+  "reviewed": "2026-11-17",
+  "checks": [
+    {
+      "id": "git-head",
+      "path": "/.git/HEAD",
+      "signature": {"contains": "ref: refs/heads/", "content_types": ["text/plain"]},
+      "severity": "critical",
+      "description": "Metadado do Git exposto publicamente.",
+      "remediation": "Remova .git do diretório publicado e bloqueie arquivos de controle de versão no servidor web."
+    },
+    {
+      "id": "env-file",
+      "path": "/.env",
+      "signature": {"regex": "(?m)^[A-Za-z_][A-Za-z0-9_]*\\s*=", "content_types": ["text/plain", "application/octet-stream"]},
+      "severity": "critical",
+      "description": "Arquivo de variáveis de ambiente acessível pela web.",
+      "remediation": "Retire .env do artefato publicado, gire os segredos e negue o caminho no servidor web."
+    },
+    {
+      "id": "git-config",
+      "path": "/.git/config",
+      "signature": {"contains": "[core]", "content_types": ["text/plain"]},
+      "severity": "critical",
+      "description": "Configuração interna do Git exposta publicamente.",
+      "remediation": "Não publique o diretório .git e bloqueie arquivos ocultos no servidor web."
+    },
+    {
+      "id": "svn-entries",
+      "path": "/.svn/entries",
+      "signature": {"contains": "svn", "content_types": ["text/plain", "application/xml"]},
+      "severity": "critical",
+      "description": "Metadado de controle de versão Subversion exposto.",
+      "remediation": "Remova .svn do deploy e bloqueie diretórios de controle de versão."
+    },
+    {
+      "id": "apache-status",
+      "path": "/server-status",
+      "signature": {"contains": "Apache Server Status", "content_types": ["text/html"]},
+      "severity": "high",
+      "description": "Página de status do Apache acessível pela Internet.",
+      "remediation": "Restrinja mod_status à rede de administração ou desabilite-o no virtual host público."
+    },
+    {
+      "id": "nginx-status",
+      "path": "/nginx_status",
+      "signature": {"contains": "Active connections:", "content_types": ["text/plain"]},
+      "severity": "high",
+      "description": "Status do Nginx acessível pela Internet.",
+      "remediation": "Restrinja stub_status à rede de administração ou remova a localização pública."
+    },
+    {
+      "id": "phpinfo",
+      "path": "/phpinfo.php",
+      "signature": {"contains": "PHP Version", "content_types": ["text/html"]},
+      "severity": "high",
+      "description": "phpinfo() expõe detalhes do runtime e da configuração.",
+      "remediation": "Remova a página phpinfo de produção e desabilite endpoints de diagnóstico públicos."
+    },
+    {
+      "id": "actuator-env",
+      "path": "/actuator/env",
+      "signature": {"contains": "propertySources", "content_types": ["application/json"]},
+      "severity": "critical",
+      "description": "Endpoint Spring Boot Actuator expõe propriedades de ambiente.",
+      "remediation": "Proteja ou desabilite actuator/env e remova segredos da resposta de configuração."
+    },
+    {
+      "id": "actuator-configprops",
+      "path": "/actuator/configprops",
+      "signature": {"contains": "contexts", "content_types": ["application/json"]},
+      "severity": "high",
+      "description": "Endpoint de propriedades de configuração acessível publicamente.",
+      "remediation": "Restrinja o Actuator à rede de administração e aplique autenticação."
+    },
+    {
+      "id": "debug-vars",
+      "path": "/debug/vars",
+      "signature": {"contains": "memstats", "content_types": ["application/json"]},
+      "severity": "high",
+      "description": "Endpoint de métricas internas de debug exposto.",
+      "remediation": "Desabilite endpoints de debug em produção ou exija autenticação e rede privada."
+    },
+    {
+      "id": "directory-listing",
+      "path": "/backup/",
+      "signature": {"regex": "(?is)<title>\\s*Index of /backup/\\s*</title>|<h1>Index of /backup/</h1>", "content_types": ["text/html"]},
+      "severity": "medium",
+      "description": "Listagem de diretório de backups acessível pela web.",
+      "remediation": "Desabilite autoindex/listagem e remova backups do diretório público."
+    },
+    {
+      "id": "directory-listing-uploads",
+      "path": "/uploads/",
+      "signature": {"regex": "(?is)<title>\\s*Index of /uploads/\\s*</title>|<h1>Index of /uploads/</h1>", "content_types": ["text/html"]},
+      "severity": "medium",
+      "description": "Listagem de diretório de uploads acessível pela web.",
+      "remediation": "Desabilite autoindex/listagem e configure o armazenamento de uploads fora do web root."
+    }
+  ]
+}

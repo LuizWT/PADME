@@ -29,6 +29,7 @@ from .collectors import (
     bruteforce,
     dns,
     dnsrecon,
+    exposure,
     favicon,
     http,
     passive,
@@ -51,6 +52,7 @@ log = logging.getLogger("padme")
 
 _USER_AGENT = "Padme-ASM/0.1 (+attack-surface-monitor)"
 _PASSIVE_META = "passive.fetched_at:"  # meta: última consulta às fontes passivas, por alvo
+_EXPOSURE_META = "exposure.fetched_at:"  # última bateria concluída por host
 
 # collector -> Kind do escopo que ele observa (a "célula" onde ausência = remoção real).
 # Não confundir com models._SCOPE_KIND (kind de um RECORD -> kind do escopo).
@@ -58,6 +60,7 @@ _COLLECTOR_SCOPE = {
     "dns": Kind.DNS,
     "http": Kind.HTTP,      # cobre HTTP e HTTPSEC (postura vem da mesma resposta)
     "favicon": Kind.FAVICON,
+    "exposure": Kind.EXPOSURE,
     "tls": Kind.TLS,        # cobre TLS e CERT_EXPIRY
     "takeover": Kind.TAKEOVER,
     "ports": Kind.PORT,
@@ -301,6 +304,17 @@ class Engine:
             return True
         return time.time() - last >= self.cfg.collectors.passive_every_hours * 3600
 
+    def _exposure_due(self, host: str) -> bool:
+        """A bateria de caminhos fixos é limitada por host, não por alvo."""
+        raw = self.storage.get_meta(_EXPOSURE_META + host)
+        if raw is None:
+            return True
+        try:
+            last = float(raw)
+        except (TypeError, ValueError):
+            return True
+        return time.time() - last >= self.cfg.collectors.exposures_every_hours * 3600
+
     async def _scan_host(
         self, host: str, client: httpx.AsyncClient, result: ScanResult,
         ip_host: bool = False,
@@ -322,7 +336,8 @@ class Engine:
                     host_ips = _ips_from_dns(cr.records)
 
             # trava anti-SSRF/rede interna: não sonda ativamente IP privado/reservado
-            active = col.http or col.tls or (col.takeover and not ip_host) or col.ports
+            active = (col.http or col.tls or (col.takeover and not ip_host)
+                      or (col.exposures and not ip_host) or col.ports)
             if active and not net.allow_private_ips:
                 ips = host_ips or await _resolve_ips_quick(host, self.cfg.timeout)
                 if ips and netpolicy.any_disallowed(ips):
@@ -348,6 +363,14 @@ class Engine:
                                          allow_private=net.allow_private_ips),
                     host, "favicon", result)
                 _absorb(cr, result, "favicon", host)
+            if col.exposures and http_ok and self._exposure_due(host):
+                cr = await _safe(
+                    exposure.collect_host(host, client, net.follow_redirects,
+                                          net.allow_private_ips),
+                    host, "exposure", result)
+                _absorb(cr, result, "exposure", host)
+                if cr.ok:
+                    self.storage.set_meta(_EXPOSURE_META + host, str(time.time()))
             tls_cr = None
             if col.tls:
                 tls_cr = await _safe(

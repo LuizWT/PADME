@@ -31,7 +31,7 @@ def _plain_line(e: Event) -> str:
         return f"  {mark} {host} {rtype} {val}{suffix}"
     if e.event_type == EventType.CHANGED:
         return f"  {mark} {e.key}{suffix}\n      {e.old_value} -> {e.new_value}"
-    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.CERT_EXPIRY, Kind.VULN):
+    if e.event_type == EventType.ADDED and e.new_value and e.kind in (Kind.HTTP, Kind.TAKEOVER, Kind.EXPOSURE, Kind.CERT_EXPIRY, Kind.VULN):
         return f"  {mark} {e.key}{suffix}\n      {e.new_value}"
     if e.kind == Kind.SUBDOMAIN and e.event_type == EventType.ADDED and e.new_value:
         return f"  {mark} {e.key}{suffix} [{e.new_value}]"
