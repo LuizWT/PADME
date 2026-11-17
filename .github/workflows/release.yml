@@ -78,13 +78,24 @@ jobs:
           skip-existing: true   # rodar de novo depois de uma falha no PyPI não trava aqui
       - name: Publicar no PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true   # idem: um re-run depois de falha mais adiante não trava aqui
       - name: Release no GitHub
+        # Quem cria a release pela página do GitHub (sem escrever notas) também
+        # dispara este workflow: aí a release já existe, e ela só ganha as notas
+        # do CHANGELOG e os arquivos.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python scripts/changelog.py "$GITHUB_REF_NAME" > notas.md
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "Padmé ${GITHUB_REF_NAME#v}" --notes-file notas.md --verify-tag
+          titulo="Padmé ${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "$titulo" --notes-file notas.md
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$titulo" --notes-file notas.md --verify-tag
+          fi
 
   docker:
     needs: publicar
