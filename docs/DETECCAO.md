@@ -162,6 +162,11 @@ conhecidos estão em `padme/data/osv_products.json` (Debian 10 a 13, Ubuntu
 - **Só CVE com correção publicada** para a sua versão da distro. O que a
   distro não corrigiu (ou marcou como sem importância) aparece só na contagem
   `unfixed` do problema: atualizar não resolveria.
+- **Um CVE conta uma vez**, venha do registro da distro (`DEBIAN-CVE-…`,
+  `UBUNTU-CVE-…`) ou de um aviso (DSA, DLA, USN). No Ubuntu, um CVE citado só
+  num USN não conta: o USN lista os CVEs de todas as versões do aviso, e quem
+  diz se ele vale para a sua é o registro `UBUNTU-CVE`. No Debian 11 (LTS) os
+  CVEs vêm só dos DLA.
 - **Severidade**: a nota do vetor CVSS v3 do registro; sem ela, a do registro
   do próprio CVE; com só CVSS v4, a classificação que o registro traz. Sem
   nenhuma, `medium`.

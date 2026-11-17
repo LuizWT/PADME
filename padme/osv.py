@@ -318,17 +318,35 @@ def fixed_version(rec: dict[str, Any], pkg: Package) -> str | None:
     return None
 
 
+# Avisos que listam os CVEs de TODAS as versões da distro cobertas pelo aviso: um
+# USN que afeta o 22.04 pode citar um CVE que só existe no 24.04. Nesses, o aviso
+# só complementa o registro por CVE da distro (UBUNTU-CVE-…, que cobre todas as
+# LTS). No Debian é o contrário: o DEBIAN-CVE só cobre as versões atuais, e o
+# Debian 11 (LTS) só aparece nos DLA, que são de uma versão só.
+_ADVISORY_ONLY_COMPLEMENTS = ("Ubuntu:",)
+
+
+def _is_advisory(rec: dict[str, Any]) -> bool:
+    """Aviso de segurança (DSA, DLA, USN) em vez de registro de um CVE."""
+    return not _CVE_RE.search(str(rec.get("id") or ""))
+
+
 def assess_package(pkg: Package, records: list[dict[str, Any]]) -> dict[str, Any]:
     """Junta os registros do OSV de um pacote por CVE (um CVE pode vir do
     registro da distro e de um aviso de segurança ao mesmo tempo). Devolve
     {"vulns": [com correção, pior primeiro], "unfixed": n}."""
     entries: dict[str, dict[str, Any]] = {}
-    for rec in records:
-        if not isinstance(rec, dict) or rec.get("withdrawn"):
-            continue
+    only_complement = pkg.ecosystem.startswith(_ADVISORY_ONLY_COMPLEMENTS)
+    valid = [r for r in records if isinstance(r, dict) and not r.get("withdrawn")]
+    # registros por CVE primeiro: no Ubuntu, são eles que dizem quais CVEs valem
+    valid.sort(key=_is_advisory)
+    for rec in valid:
         fixed = fixed_version(rec, pkg)
         sev, score = record_severity(rec)
+        advisory = _is_advisory(rec)
         for cid in cve_ids(rec):
+            if advisory and only_complement and cid not in entries:
+                continue
             e = entries.setdefault(cid, {"id": cid, "severity": "", "score": None,
                                          "fixed": None, "sources": []})
             e["fixed"] = e["fixed"] or fixed
