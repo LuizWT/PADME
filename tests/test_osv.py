@@ -1,9 +1,11 @@
 """CVEs por versão de serviço via OSV (padme.osv + engine._vulns).
 
-As respostas do OSV abaixo seguem o schema publicado do OSV (id, aliases,
-upstream, severity, affected[].package/ranges/events) e o formato do
-/v1/querybatch (results[].vulns[].id). Nenhum teste toca a rede: tudo passa por
-um httpx.MockTransport."""
+As respostas abaixo reproduzem, enxutas, a forma das respostas reais do
+api.osv.dev (conferidas em 2026-11-17): DEBIAN-CVE-*/UBUNTU-CVE-* com o CVE em
+`upstream`, avisos DSA/DLA/USN com os CVEs (e os ids da distro) em `upstream`,
+registro sem correção só com `introduced`, e o /v1/querybatch devolvendo
+results[].vulns[].id. Nenhum teste toca a rede: tudo passa por um
+httpx.MockTransport."""
 
 import asyncio
 import json
@@ -171,7 +173,7 @@ VULNS = {
     "DEBIAN-CVE-2024-6387": {"id": "DEBIAN-CVE-2024-6387", "upstream": ["CVE-2024-6387"],
                              "affected": [_aff("1:9.2p1-2+deb12u3")]},
     # aviso de segurança do mesmo CVE: junta, não conta duas vezes
-    "DSA-5724-1": {"id": "DSA-5724-1", "upstream": ["CVE-2024-6387"],
+    "DSA-5724-1": {"id": "DSA-5724-1", "upstream": ["CVE-2024-6387", "DEBIAN-CVE-2024-6387"],
                    "affected": [_aff("1:9.2p1-2+deb12u3")]},
     "CVE-2024-6387": {"id": "CVE-2024-6387", "severity": [
         {"type": "CVSS_V3", "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"}]},
@@ -304,6 +306,41 @@ def test_versao_sem_cve_corrigivel_nao_gera_vuln():
     pkg = _pkg("1:9.2p1-2+deb12u3")
     res = _lookup(fake, MemCache(), [pkg])[pkg]
     assert res == {"vulns": [], "unfixed": 1}
+
+
+def test_usn_so_complementa_o_registro_do_ubuntu():
+    """Um USN cita os CVEs de todas as versões do aviso: o CVE-2025-26466 não
+    existe no 22.04 (não há UBUNTU-CVE para ele aqui), mas está no USN-7270-1."""
+    eco = "Ubuntu:22.04:LTS"
+    pkg = osv.Package(eco, "openssh", "1:8.9p1-3ubuntu0.10", "OpenSSH", True)
+    recs = [
+        {"id": "USN-7270-1",
+         "upstream": ["CVE-2025-26465", "CVE-2025-26466",
+                      "UBUNTU-CVE-2025-26465", "UBUNTU-CVE-2025-26466"],
+         "related": ["UBUNTU-CVE-2025-26465", "UBUNTU-CVE-2025-26466"],
+         "affected": [_aff("1:8.9p1-3ubuntu0.11", eco=eco)]},
+        {"id": "UBUNTU-CVE-2025-26465", "upstream": ["CVE-2025-26465"],
+         "related": ["USN-7270-1"],
+         "severity": [{"type": "CVSS_V3",
+                       "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:N"},
+                      {"type": "Ubuntu", "score": "medium"}],
+         "affected": [_aff("1:8.9p1-3ubuntu0.11", eco=eco)]},
+    ]
+    res = osv.assess_package(pkg, recs)
+    assert [v["id"] for v in res["vulns"]] == ["CVE-2025-26465"]
+    assert sorted(res["vulns"][0]["sources"]) == ["UBUNTU-CVE-2025-26465", "USN-7270-1"]
+    assert res["vulns"][0]["severity"] == "medium" and res["unfixed"] == 0
+
+
+def test_dla_conta_no_debian_lts():
+    """O Debian 11 (LTS) não tem DEBIAN-CVE: os CVEs só vêm nos DLA."""
+    eco = "Debian:11"
+    pkg = osv.Package(eco, "openssh", "1:8.4p1-5+deb11u3", "OpenSSH")
+    recs = [{"id": "DLA-4057-1", "upstream": ["CVE-2025-26465", "DEBIAN-CVE-2025-26465"],
+             "affected": [_aff("1:8.4p1-5+deb11u4", eco=eco)]}]
+    res = osv.assess_package(pkg, recs)
+    assert [(v["id"], v["fixed"]) for v in res["vulns"]] == [("CVE-2025-26465",
+                                                               "1:8.4p1-5+deb11u4")]
 
 
 def test_correcao_de_outro_ecossistema_nao_conta():
