@@ -304,6 +304,7 @@ class CollectorsConfig:
     rdap: bool = True         # consulta RDAP p/ confirmar domínio livre vs expirado
     ports: bool = False       # ativo — desligado por padrão
     ports_banner: bool = True # banner-grab leve nas portas abertas
+    osv: bool = True          # CVEs da versão lida no banner (OSV; só pacote e versão saem)
     ports_list: list[int] = field(
         default_factory=lambda: [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5432, 6379, 8080, 8443]
     )
@@ -421,6 +422,7 @@ class Config:
                 rdap=_as_bool(col.get("rdap"), True),
                 ports=_as_bool(col.get("ports"), False),
                 ports_banner=_as_bool(col.get("ports_banner"), True),
+                osv=_as_bool(col.get("osv"), True),
                 ports_list=[_as_int(p, "collectors.ports_list", 0)
                             for p in col.get("ports_list", CollectorsConfig().ports_list)],
                 passive=_as_bool(col.get("passive"), True),

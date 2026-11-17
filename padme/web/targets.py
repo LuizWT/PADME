@@ -29,16 +29,22 @@ from .overview import (
     _health,
     _stat_tiles,
     _trend,
+    worst_vuln,
 )
 
 
 def _host_level(kinds: dict[str, Any], meta: dict[str, Any] | None) -> tuple[str, str]:
     """(classe de status, rótulo) do alvo — o mesmo no dossiê, na tabela e na sidebar."""
+    worst_cve = worst_vuln(kinds)
     if kinds.get("takeover"):
         return "s-crit", "takeover"
+    if worst_cve == "critical":
+        return "s-crit", "CVE"
     if kinds.get("cert_expiry"):
         return "s-serious", "cert"
-    if (meta or {}).get("last_partial") or kinds.get("wildcard"):
+    if worst_cve == "high":
+        return "s-serious", "CVE"
+    if (meta or {}).get("last_partial") or kinds.get("wildcard") or worst_cve:
         return "s-warn", "atenção"
     if not kinds:
         return "s-muted", "sem dados"

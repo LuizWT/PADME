@@ -37,6 +37,13 @@ def evidence_of(kind: Kind, key: str, value: str | None, metadata: dict | None) 
                     "service": md.get("service"), "product": md.get("product"),
                     "version": md.get("version"), "banner": md.get("banner")})
 
+    if kind == Kind.VULN:
+        return _ev({"type": "osv_lookup", "package": md.get("package"),
+                    "ecosystem": md.get("ecosystem"), "version": md.get("version"),
+                    "cves": (md.get("cves") or [])[:10] or None,
+                    "max_severity": md.get("max_severity"), "max_score": md.get("max_score"),
+                    "fixed_in": md.get("fixed_in"), "confidence": md.get("confidence")})
+
     if kind == Kind.HTTP:
         return _ev({"type": "http_response", "status": md.get("status"),
                     "server": md.get("server"), "scheme": md.get("scheme"),

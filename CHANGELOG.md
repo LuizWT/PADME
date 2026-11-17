@@ -7,6 +7,22 @@ mudança de config e *patch* traz correção.
 
 ## [Não lançado]
 
+### Adicionado
+
+- CVEs conhecidos da versão de serviço, pelo [OSV](https://osv.dev)
+  (`collectors.osv`, ligado por padrão; precisa de `collectors.ports`). A
+  versão de pacote Debian ou Ubuntu lida no banner do SSH e no handshake do
+  MySQL/MariaDB vira um problema por porta, com os CVEs que têm correção
+  publicada, a severidade do pior (CVSS) e a versão do pacote que corrige
+  todos. Só ecossistema, pacote e versão
+  saem da máquina; o resultado fica 24h em cache no banco.
+
+### Mudado
+
+- O banner do MySQL/MariaDB mantém a revisão do pacote da distro
+  (`MariaDB 10.11.6-0+deb12u1`). Quem já monitora uma porta dessas recebe um
+  evento `low` de banner alterado na primeira varredura.
+
 ## [0.2.0] - 2026-11-17
 
 Primeira versão publicada no PyPI (`pip install padme-asm`). A 0.1.0 nunca saiu

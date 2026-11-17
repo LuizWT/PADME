@@ -12,12 +12,12 @@ from ..evidence import evidence_of
 from ..models import Event
 from ..risk import Level
 
-_KIND_ORDER = ["takeover", "cert_expiry", "ns", "mailsec", "wildcard",
+_KIND_ORDER = ["takeover", "vuln", "cert_expiry", "ns", "mailsec", "wildcard",
                "subdomain", "port", "http", "httpsec", "favicon", "tls", "dns"]
 
 
 _KIND_LABEL = {
-    "takeover": "TAKEOVER", "cert_expiry": "CERT", "ns": "NS", "mailsec": "E-MAIL",
+    "takeover": "TAKEOVER", "vuln": "CVE", "cert_expiry": "CERT", "ns": "NS", "mailsec": "E-MAIL",
     "wildcard": "WILDCARD", "subdomain": "SUBDOMAIN", "port": "PORT",
     "http": "HTTP", "httpsec": "HEADERS", "favicon": "FAVICON", "tls": "TLS", "dns": "DNS",
 }

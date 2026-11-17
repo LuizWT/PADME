@@ -12,6 +12,7 @@ from ..findings import (
     DEFAULT_SLA_HOURS,
 )
 from ..models import Kind, scope_of
+from ..risk import CVE_RANK
 from ..targets import host_count, is_ip_target
 from .assets import _TREND_ADD, _TREND_CHG, _TREND_REM
 from .html import (
@@ -92,6 +93,13 @@ def _hosts_seen(kinds: dict[str, Any], target: str) -> set[str]:
     return seen
 
 
+def worst_vuln(kinds: dict[str, Any]) -> str:
+    """Pior severidade de CVE entre as portas do alvo ('' se não há nenhuma)."""
+    sevs = [str((r.get("metadata") or {}).get("max_severity") or "unknown")
+            for r in kinds.get("vuln") or []]
+    return max(sevs, key=lambda s: CVE_RANK.get(s, 0), default="")
+
+
 def _stat_tiles(kinds: dict[str, Any], target: str = "") -> str:
     if target and is_ip_target(target):   # alvo IP: não há subdomínio, há hosts
         first = _tile(len(_hosts_seen(kinds, target)), "hosts respondendo",
@@ -109,6 +117,10 @@ def _stat_tiles(kinds: dict[str, Any], target: str = "") -> str:
     ]
     if kinds.get("takeover"):
         tiles.append(_tile(len(kinds["takeover"]), "takeover", "crítico", cls="crit"))
+    if kinds.get("vuln"):
+        worst = worst_vuln(kinds)
+        tiles.append(_tile(len(kinds["vuln"]), "portas com CVE", f"pior: {worst}",
+                           cls="crit" if worst in ("critical", "high") else "warn"))
     if kinds.get("cert_expiry"):
         tiles.append(_tile(len(kinds["cert_expiry"]), "cert expirando", cls="warn"))
     if kinds.get("wildcard"):

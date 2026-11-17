@@ -1,0 +1,31 @@
+{
+  "_doc": "Produto do banner -> pacote da distro no OSV (padme/osv.py). 'package' é o pacote-fonte da distro (um nome só ou um por versão da distro); 'epoch' é o que o banner esconde ('1' vira '1:' na frente da versão); 'upstream' diz que versão upstream cada versão da distro traz, para descobrir a versão da distro quando o banner não diz (aí a confiança cai para medium). Versão da distro fora desta tabela não é consultada.",
+  "openssh": {
+    "debian": {
+      "package": "openssh",
+      "epoch": "1",
+      "upstream": {"10": "7.9p1", "11": "8.4p1", "12": "9.2p1", "13": "10.0p1"}
+    },
+    "ubuntu": {
+      "package": "openssh",
+      "epoch": "1",
+      "upstream": {"20.04": "8.2p1", "22.04": "8.9p1", "24.04": "9.6p1"}
+    }
+  },
+  "mariadb": {
+    "debian": {
+      "package": {"10": "mariadb-10.3", "11": "mariadb-10.5", "12": "mariadb", "13": "mariadb"},
+      "epoch": "1"
+    },
+    "ubuntu": {
+      "package": {"20.04": "mariadb-10.3", "22.04": "mariadb-10.6", "24.04": "mariadb"},
+      "epoch": "1"
+    }
+  },
+  "mysql": {
+    "ubuntu": {
+      "package": {"20.04": "mysql-8.0", "22.04": "mysql-8.0", "24.04": "mysql-8.0"},
+      "epoch": ""
+    }
+  }
+}

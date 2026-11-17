@@ -10,7 +10,7 @@ from padme import netcheck
 def _cfg(rdap=True, subdomains=False, webhook=False):
     return SimpleNamespace(
         timeout=5.0,
-        collectors=SimpleNamespace(rdap=rdap, subdomains=subdomains),
+        collectors=SimpleNamespace(rdap=rdap, subdomains=subdomains, ports=False, osv=True),
         webhook=SimpleNamespace(enabled=webhook),
     )
 
@@ -75,3 +75,22 @@ def test_run_sem_saida_https_so_checa_dns(monkeypatch):
     monkeypatch.setattr(netcheck, "_tcp_connect", connect)
     lines = asyncio.run(netcheck.run(_cfg(rdap=False, subdomains=False, webhook=False)))
     assert len(lines) == 1 and "TCP/53" in lines[0]
+
+
+def test_run_com_portas_e_osv_sonda_o_osv(monkeypatch):
+    monkeypatch.setattr(netcheck, "_system_resolvers", lambda: ["8.8.8.8"])
+    hosts = []
+
+    async def connect(host, port, timeout):
+        hosts.append(host)
+        return host != "api.osv.dev"
+    monkeypatch.setattr(netcheck, "_tcp_connect", connect)
+    cfg = _cfg(rdap=False, subdomains=False, webhook=False)
+    cfg.collectors.ports = True
+    lines = asyncio.run(netcheck.run(cfg))
+    assert "api.osv.dev" in hosts
+    assert any(line.startswith("  ! ") and "OSV" in line for line in lines)
+    cfg.collectors.osv = False
+    hosts.clear()
+    asyncio.run(netcheck.run(cfg))
+    assert "api.osv.dev" not in hosts

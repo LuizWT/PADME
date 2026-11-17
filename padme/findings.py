@@ -1,10 +1,10 @@
 """Findings: identidade estável e ciclo de vida dos problemas abertos.
 
 Um *finding* é um problema derivado do ESTADO atual da superfície (takeover,
-cert expirando, wildcard de DNS, política de e-mail fraca). Antes ele era
-recalculado a cada render, sem identidade nem memória — o painel mostrava o
-mesmo problema para sempre e não havia como dizer "já vi" ou "é falso
-positivo". Aqui ele ganha:
+cert expirando, versão com CVE, wildcard de DNS, política de e-mail fraca).
+Antes ele era recalculado a cada render, sem identidade nem memória — o painel
+mostrava o mesmo problema para sempre e não havia como dizer "já vi" ou "é
+falso positivo". Aqui ele ganha:
 
   - `finding_id` determinístico: hash de (alvo, kind, key[, código]). O mesmo
     problema mantém o mesmo id entre scans (o valor pode mudar — "expira em 6
@@ -49,6 +49,8 @@ STATUS_LABEL = {
 # classe de status do painel -> severidade do finding (chave do SLA)
 SEVERITY_OF_CLS = {"s-crit": "critical", "s-serious": "high", "s-warn": "medium"}
 DEFAULT_SLA_HOURS = {"critical": 24, "high": 72, "medium": 168}
+# pior severidade dos CVEs de uma porta -> (rank, classe, rótulo) do problema
+_VULN_CLS = {"critical": (4, "s-crit", "crítico"), "high": (3, "s-serious", "alto")}
 
 
 def finding_id(target: str, kind: str, key: str, code: str = "") -> str:
@@ -84,6 +86,13 @@ def derive(target: str, kinds: dict) -> list[dict]:
         out.append(_item(target, Kind.TAKEOVER, it["key"], "", 4, "s-crit", "crítico",
                          "TAKEOVER", it["key"], it["value"],
                          _evidence_facts(Kind.TAKEOVER, it["key"], it["value"], it.get("metadata"))))
+    for it in kinds.get("vuln", []):   # versão de serviço com CVE conhecida (OSV)
+        md = it.get("metadata") or {}
+        sev = str(md.get("max_severity") or "unknown")
+        rank, cls, label = _VULN_CLS.get(sev, (2, "s-warn", "atenção"))
+        out.append(_item(target, Kind.VULN, it["key"], "", rank, cls, label, "CVE",
+                         it["key"], it["value"],
+                         _evidence_facts(Kind.VULN, it["key"], it["value"], md)))
     for it in kinds.get("cert_expiry", []):
         expired = "EXPIRAD" in (it["value"] or "").upper()
         out.append(_item(target, Kind.CERT_EXPIRY, it["key"], "",

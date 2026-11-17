@@ -22,6 +22,8 @@ Severidade de cada evento (kind + tipo):
     cert renovado, wildcard
       some ou troca de IP     -> LOW
     dns                       -> DEBUG
+    vuln (CVE na versão)      -> pela pior severidade dos CVEs novos (CVSS);
+                                 CVE resolvido ou lista que só diminuiu -> LOW
 """
 
 from __future__ import annotations
@@ -87,6 +89,8 @@ def _base_severity(e: Event) -> Level:
         # curinga NOVO é o achado; troca do IP do catch-all (rotação de CDN) ou
         # curinga removido não é superfície nova.
         return Level.HIGH if t == EventType.ADDED else Level.LOW
+    if k == Kind.VULN:  # o nível sai dos CVEs, em assess(); a base não eleva nada
+        return Level.LOW
     if k == Kind.NS:  # mudança de nameserver do apex = delegação / possível hijack
         return Level.HIGH
     if k == Kind.MAILSEC:  # SPF/DMARC removido = domínio spoofável -> HIGH
@@ -139,6 +143,7 @@ MAIL_PROTECTION_REMOVED = "MAIL_PROTECTION_REMOVED"
 NAMESERVER_CHANGED = "NAMESERVER_CHANGED"
 CERT_EXPIRING = "CERT_EXPIRING"
 ISSUE_RESOLVED = "ISSUE_RESOLVED"
+KNOWN_VULNERABLE_VERSION = "KNOWN_VULNERABLE_VERSION"
 
 REASON_LABEL = {
     NEW_OPEN_PORT: "porta aberta nova",
@@ -159,7 +164,13 @@ REASON_LABEL = {
     NAMESERVER_CHANGED: "nameserver alterado (delegação/hijack)",
     CERT_EXPIRING: "certificado expirando",
     ISSUE_RESOLVED: "problema resolvido",
+    KNOWN_VULNERABLE_VERSION: "versão com CVE conhecida (OSV)",
 }
+
+# severidade do CVE (padme.osv) -> nível do alerta; sem nota conhecida = MEDIUM
+_CVE_LEVEL = {"critical": Level.CRITICAL, "high": Level.HIGH, "medium": Level.MEDIUM,
+              "low": Level.LOW}
+CVE_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "unknown": 0}  # pior = maior
 
 
 @dataclass
@@ -192,6 +203,34 @@ def _port_of(e: Event) -> int | None:
         return None
 
 
+def _vuln_level(e: Event) -> Level:
+    """Nível de um evento de CVE (ADDED/CHANGED). ADDED: o pior CVE da versão.
+    CHANGED: só o que é NOVO conta (CVE publicado depois, nota que subiu); uma
+    lista que só diminuiu (atualização corrigiu parte) é LOW."""
+    md = e.metadata or {}
+    sev_of = {str(v.get("id")): str(v.get("severity") or "unknown")
+              for v in md.get("vulns") or [] if isinstance(v, dict)}
+
+    def level_of(ids: set[str]) -> Level:
+        return max((_CVE_LEVEL.get(sev_of.get(i, "unknown"), Level.MEDIUM) for i in ids),
+                   default=Level.LOW)
+
+    if e.event_type == EventType.ADDED:
+        return level_of(set(sev_of) or set(md.get("cves") or []))
+    changes = md.get("_changes") or {}
+    level = Level.LOW
+    ch = changes.get("cves")
+    if isinstance(ch, dict):
+        new_ids = set(ch.get("new") or []) - set(ch.get("old") or [])
+        level = max(level, level_of(new_ids)) if new_ids else level
+    ch = changes.get("max_severity")
+    if isinstance(ch, dict):
+        old, new = str(ch.get("old") or "unknown"), str(ch.get("new") or "unknown")
+        if CVE_RANK.get(new, 0) > CVE_RANK.get(old, 0):
+            level = max(level, _CVE_LEVEL.get(new, Level.MEDIUM))
+    return level
+
+
 def _confidence(e: Event) -> Confidence:
     """Confiança na observação. Observação direta = CONFIRMED; takeover por
     inferência (dangling via NXDOMAIN, sem fingerprint) = HIGH; serviço que o
@@ -204,6 +243,11 @@ def _confidence(e: Event) -> Confidence:
             return Confidence.CONFIRMED  # RDAP confirmou domínio registrável agora
         reason = str(md.get("reason", "")).lower()
         return Confidence.CONFIRMED if "fingerprint" in reason else Confidence.HIGH
+    if e.kind == Kind.VULN:
+        # pacote e versão exatos do banner = HIGH; versão da distro deduzida pela
+        # versão upstream (banner sem o sufixo debNN) = MEDIUM
+        return (Confidence.MEDIUM if str((e.metadata or {}).get("confidence")) == "medium"
+                else Confidence.HIGH)
     if e.kind == Kind.MAILSEC and SPF_ORPHAN_SUFFIX in e.key:
         # include órfão: RDAP confirmou livre = CONFIRMED; só o sinal do DNS = HIGH
         return (Confidence.CONFIRMED if str((e.metadata or {}).get("availability", "")).lower()
@@ -271,6 +315,17 @@ def assess(e: Event) -> RiskAssessment:
             # qualquer um registra e envia autenticado pelo alvo (nível takeover).
             if SPF_INCLUDE_UNREGISTERED in reasons:
                 level = max(level, Level.CRITICAL)
+
+    # ── CVE NA VERSÃO (OSV) ───────────────────────────────────────────────
+    if e.kind == Kind.VULN:
+        if e.event_type == EventType.REMOVED:
+            reasons.append(ISSUE_RESOLVED)   # versão corrigida ou porta fechada
+        else:
+            reasons.append(KNOWN_VULNERABLE_VERSION)
+            vl = _vuln_level(e)
+            if vl > level:
+                level = vl
+                rule_id = rule_id or "known-cve"
 
     # ── NS / CERT (anotação explicativa; não muda o nível base) ───────────
     if e.kind == Kind.NS:
