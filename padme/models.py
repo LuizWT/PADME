@@ -99,8 +99,8 @@ def scope_of(kind: Kind, key: str, target: str) -> tuple[str, str]:
         return (scope_kind.value, target)
     if kind == Kind.DNS:
         host = key.split("|", 1)[0]
-    elif kind in (Kind.HTTP, Kind.HTTPSEC):  # key = URL (scheme://host)
-        host = key.split("://", 1)[-1].split("/", 1)[0]
+    elif kind in (Kind.HTTP, Kind.HTTPSEC):  # key = URL (scheme://host, IPv6 em [ ])
+        host = key.split("://", 1)[-1].split("/", 1)[0].strip("[]")
     elif kind in (Kind.TLS, Kind.CERT_EXPIRY, Kind.PORT):
         host = key.rsplit(":", 1)[0]
     else:  # takeover e quaisquer futuros host-scoped

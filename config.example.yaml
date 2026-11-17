@@ -9,9 +9,12 @@ scope_confirmed: false
 
 # Domínios apex a monitorar. Aceita formas tolerantes (https://x.com/path,
 # X.COM:443, *.x.com) — são normalizadas para o apex canônico e deduplicadas.
+# Também aceita IP (203.0.113.7) e faixa (203.0.113.0/28): para eles rodam
+# só portas, HTTP, TLS e DNS reverso (ver docs/DETECCAO.md, "Alvos por IP").
 targets:
   - exemplo.com
   # - outrodominio.com.br
+  # - 203.0.113.0/28
 
 # Ponto de observação (multi-vantage). Vazio = hostname da máquina. Aparece nos
 # exports e no `padme merge`, pra comparar a superfície vista de lugares diferentes.
@@ -60,6 +63,9 @@ collectors:
   passive_every_hours: 24     # consulta no máx. a cada N horas por alvo (cota das APIs)
   passive_timeout: 20         # s, prazo total por fonte (consultadas em paralelo)
   passive_max_candidates: 2000  # teto de nomes novos resolvidos por consulta
+  # Alvo IP/faixa: teto de hosts por alvo (256 = um /24). Faixa maior é
+  # recusada ao carregar o config, para não virar varredura de rede inteira.
+  max_hosts_per_target: 256
 
 # Política de rede (padrão SEGURO — anti-SSRF / rede interna).
 network:

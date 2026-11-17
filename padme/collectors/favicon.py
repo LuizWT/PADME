@@ -22,6 +22,7 @@ import hashlib
 import httpx
 
 from ..models import CollectionResult, Kind, Record
+from ..targets import url_host
 from .http import open_stream
 
 # favicons são pequenos; teto próprio pra não baixar um "favicon" de 50 MB.
@@ -55,7 +56,7 @@ async def collect_host(
     allow_private: bool = False,
 ) -> CollectionResult:
     for scheme in ("https", "http"):
-        url = f"{scheme}://{host}/favicon.ico"
+        url = f"{scheme}://{url_host(host)}/favicon.ico"
         try:
             status, data = await _fetch_bytes(client, url, follow_redirects, max_bytes,
                                               allow_private)

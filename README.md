@@ -157,6 +157,7 @@ O mínimo para funcionar:
 scope_confirmed: true       # você confirma que tem autorização; sem isso nada é varrido
 targets:
   - exemplo.com
+  - 203.0.113.0/28          # também aceita IP e faixa (até 256 hosts por alvo)
 interval_seconds: 3600
 collectors:
   ports: false              # varredura de portas: a coleta mais ativa, desligada por padrão

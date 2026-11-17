@@ -27,6 +27,7 @@ try:
     import dns.asyncresolver
     import dns.exception
     import dns.resolver
+    import dns.reversename
 
     _HAS_DNSPYTHON = True
     # Exceções DEFINITIVAS: o servidor respondeu que não há esse registro.
@@ -59,6 +60,24 @@ async def _collect_dnspython(host: str, timeout: float) -> CollectionResult:
         if values:
             records.append(dns_record(host, rtype, values))
     return CollectionResult(records=records, ok=ok)
+
+
+async def collect_ptr(ip: str, timeout: float) -> CollectionResult:
+    """DNS reverso (PTR) de um IP, para alvo IP/faixa. Só registra: um nome
+    achado aqui não entra no escopo de varredura (só `targets` entra).
+    NXDOMAIN/sem resposta = não há PTR (autoritativo); timeout = inconclusivo."""
+    if not _HAS_DNSPYTHON:
+        return CollectionResult(records=[], ok=False)
+    resolver = dns.asyncresolver.Resolver()
+    resolver.lifetime = timeout
+    try:
+        answer = await resolver.resolve(dns.reversename.from_address(ip), "PTR")
+    except _DEFINITIVE:
+        return CollectionResult(records=[], ok=True)
+    except Exception:  # noqa: BLE001 — timeout / SERVFAIL: desconhecido, preserva
+        return CollectionResult(records=[], ok=False)
+    names = sorted({r.to_text().rstrip(".").lower() for r in answer})
+    return CollectionResult(records=[dns_record(ip, "PTR", names)] if names else [], ok=True)
 
 
 def dns_record(host: str, rtype: str, values: list[str]) -> Record:

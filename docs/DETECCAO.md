@@ -8,6 +8,7 @@
 - [HTTP, TLS e portas](#http-tls-e-portas)
 - [Subdomain takeover](#subdomain-takeover)
 - [E-mail: SPF e DMARC](#e-mail-spf-e-dmarc)
+- [Alvos por IP ou faixa](#alvos-por-ip-ou-faixa)
 - [Como o Padmé se comporta na rede](#como-o-padmé-se-comporta-na-rede)
 
 ## Como uma mudança vira alerta
@@ -177,6 +178,37 @@ incluído passa a `+all`, sai um evento mesmo sem o seu registro mudar.
 > Respostas TXT grandes exigem **TCP/53** até o resolvedor. Se a rede bloquear,
 > o SPF desses domínios fica inconclusivo (estado preservado). O `padme doctor`
 > testa TCP/53 e aponta isso.
+
+## Alvos por IP ou faixa
+
+`targets` aceita, além de domínio, um IP (`203.0.113.7`, `2001:db8::1`) ou uma
+faixa (`203.0.113.0/28`). Como não há domínio, rodam só os coletores de host:
+
+| Coletor | Domínio | IP ou faixa |
+|---|---|---|
+| subdomínios, fontes passivas, bruteforce, curinga | sim | não |
+| DNS A/AAAA/CNAME/MX, NS, SPF/DMARC, takeover | sim | não |
+| DNS reverso (PTR) | não | sim |
+| portas e banner | sim | sim |
+| HTTP, cabeçalhos, favicon (80/443) | sim | sim |
+| TLS | sim | sim |
+
+- **Teto de hosts.** Uma faixa vira os seus hosts (sem endereço de rede e de
+  broadcast no IPv4), até `collectors.max_hosts_per_target` (padrão 256, um
+  /24). Faixa maior é recusada ao carregar o config, com a conta na mensagem;
+  um /64 de IPv6 nunca é expandido.
+- **Forma canônica.** `10.0.0.5/24` (com bits de host) é recusado com a forma
+  certa na mensagem (`10.0.0.0/24`), em vez de corrigido calado.
+- **Nomes descobertos não entram no escopo.** O PTR e os SANs do certificado de
+  um IP ficam registrados, mas só é varrido o que está em `targets`.
+- **Rede interna é decisão consciente.** Uma faixa só de endereços privados ou
+  reservados com `network.allow_private_ips: false` é erro ao carregar o
+  config (antes passaria calada, sem varrer nada).
+- **Sem portas, pouca coisa.** Com `collectors.ports: false` (o padrão), um
+  alvo IP só é olhado em HTTP e TLS na 443/80. O `padme init` avisa, e o
+  `padme doctor` mostra quantas conexões de porta a faixa custa por ciclo.
+- As regras de remoção são as mesmas: uma porta só sai do estado quando a
+  varredura daquele IP foi observada e não a achou.
 
 ## Como o Padmé se comporta na rede
 

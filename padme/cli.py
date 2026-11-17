@@ -35,6 +35,7 @@ from .paths import find_config
 from .risk import Level
 from .scheduler import run_monitor
 from .storage import Storage, StorageOutdated
+from .targets import host_count, is_ip_target
 
 _LEVEL_CHOICES = [lv.name.lower() for lv in Level]
 
@@ -366,6 +367,16 @@ async def _cmd_doctor(cfg: Config, args) -> int:
             if ch:
                 bits = " ".join(f"{name}={v.get('status')}" for name, v in sorted(ch.items()))
                 print(f"      collectors: {bits}")
+            if is_ip_target(t):
+                hosts = host_count(t)
+                if cfg.collectors.ports:
+                    nports = len(cfg.collectors.ports_list)
+                    print(f"      alvo IP: {hosts} host(s) × {nports} porta(s) = "
+                          f"{hosts * nports} conexões por ciclo (até "
+                          f"{cfg.network.max_parallel_connects} ao mesmo tempo)")
+                else:
+                    print(f"      alvo IP: {hosts} host(s); collectors.ports desligado, "
+                          "só HTTP e TLS em 80/443")
         pend = storage.pending_counts()
         if pend:
             bits = " ".join(f"{ch}={n}" for ch, n in sorted(pend.items()))
@@ -686,8 +697,8 @@ def build_parser() -> argparse.ArgumentParser:
     mp.set_defaults(func=_cmd_monitor)
 
     ip = cmd("init", "cria o config com algumas perguntas (domínios, autorização, Telegram)")
-    ip.add_argument("--target", action="append", metavar="DOMINIO",
-                    help="domínio a monitorar, sem perguntas (repita para vários)")
+    ip.add_argument("--target", action="append", metavar="ALVO",
+                    help="domínio, IP ou faixa a monitorar, sem perguntas (repita para vários)")
     ip.add_argument("--yes", action="store_true",
                     help="com --target: confirma que você tem autorização para monitorar")
     ip.add_argument("--force", action="store_true", help="sobrescreve um config existente")

@@ -11,6 +11,8 @@ from typing import Any
 from ..findings import (
     DEFAULT_SLA_HOURS,
 )
+from ..models import Kind, scope_of
+from ..targets import host_count, is_ip_target
 from .assets import _TREND_ADD, _TREND_CHG, _TREND_REM
 from .html import (
     _chip,
@@ -81,12 +83,26 @@ def _tile(num: object, lab: str, sub: str = "", cls: str = "") -> str:
             f"<div class=lab>{_esc(lab)}</div>{sub_html}</div>")
 
 
-def _stat_tiles(kinds: dict[str, Any]) -> str:
-    subs = kinds.get("subdomain", [])
-    live = sum(1 for s in subs if s["value"] == "live")
-    quiet = sum(1 for s in subs if s["value"] == "quiet")
+def _hosts_seen(kinds: dict[str, Any], target: str) -> set[str]:
+    """Hosts de um alvo IP/faixa que responderam (porta, HTTP ou TLS)."""
+    seen: set[str] = set()
+    for kind in (Kind.PORT, Kind.HTTP, Kind.TLS):
+        for r in kinds.get(kind.value, []):
+            seen.add(scope_of(kind, r["key"], target)[1])
+    return seen
+
+
+def _stat_tiles(kinds: dict[str, Any], target: str = "") -> str:
+    if target and is_ip_target(target):   # alvo IP: não há subdomínio, há hosts
+        first = _tile(len(_hosts_seen(kinds, target)), "hosts respondendo",
+                      f"de {host_count(target)} na faixa" if "/" in target else "")
+    else:
+        subs = kinds.get("subdomain", [])
+        live = sum(1 for s in subs if s["value"] == "live")
+        quiet = sum(1 for s in subs if s["value"] == "quiet")
+        first = _tile(len(subs), "subdomínios", f"{live} live · {quiet} quiet" if subs else "")
     tiles = [
-        _tile(len(subs), "subdomínios", f"{live} live · {quiet} quiet" if subs else ""),
+        first,
         _tile(len(kinds.get("http", [])), "serviços http"),
         _tile(len(kinds.get("port", [])), "portas abertas"),
         _tile(len(kinds.get("tls", [])), "certificados"),
