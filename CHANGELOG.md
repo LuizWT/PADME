@@ -7,6 +7,14 @@ mudança de config e *patch* traz correção.
 
 ## [Não lançado]
 
+### Adicionado
+
+- Checagem de exposições HTTP (`collectors.exposures`, desligada por padrão):
+  uma bateria pequena e fixa de GETs (lista em `padme/data/exposures.json`),
+  no máximo a cada `exposures_every_hours` (padrão 24h) por host que respondeu
+  HTTP. Só vira problema quando a assinatura de corpo e o tipo de conteúdo
+  casam; o conteúdo da resposta nunca é gravado.
+
 ## [0.2.0] - 2026-11-17
 
 Primeira versão publicada no PyPI (`pip install padme-asm`). A 0.1.0 nunca saiu
