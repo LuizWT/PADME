@@ -176,9 +176,10 @@ padme/
 ├── singleton.py       trava de instância única
 ├── logredact.py       segredos fora dos logs
 ├── collectors/        subdomains, passive, bruteforce, wildcard, dns, dnsrecon,
-│                      http, favicon, tls, takeover, ports
+│                      http, favicon, exposure, tls, takeover, ports
 ├── notify/            telegram, discord/webhook, email, formatação, retry
-└── data/              base de takeover, produtos do OSV (osv_products.json)
+└── data/              base de takeover, produtos do OSV (osv_products.json),
+                       exposições HTTP (exposures.json)
 install.sh             instalador Linux/macOS
 install.ps1            instalador Windows (install.bat chama este)
 scripts/               notas do changelog, smoke test da imagem, gerador da base de takeover
