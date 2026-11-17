@@ -46,15 +46,6 @@ curl -fsSL https://raw.githubusercontent.com/LuizWT/PADME/main/install.sh | sh
 
 Ou, numa pasta clonada: `sh install.sh`.
 
-### O que o instalador faz
-
-- Procura um Python 3.11 ou mais novo. No Windows, se não houver, oferece
-  instalar pelo `winget`.
-- Instala o Padmé num ambiente isolado, sem mexer no Python do sistema e sem
-  pedir administrador ou `sudo`.
-- Cria o comando **`padme`** e o coloca no PATH: nada de `python -m` na frente.
-- Roda o `padme init` para criar a configuração.
-
 > [!NOTE]
 > Depois de instalar, abra um terminal **novo** para o comando `padme` aparecer.
 
