@@ -69,3 +69,22 @@ def test_script_aceita_a_tag_e_falha_sem_secao(tmp_path, capsys):
     assert capsys.readouterr().out.strip() == "### Adicionado\n- coisa nova"
     assert cl.main(["changelog.py", "v9.9.9", str(arq)]) == 1
     assert "[9.9.9]" in capsys.readouterr().err
+
+
+def test_workflow_publica_no_testpypi_e_no_pypi_sem_conflito_de_atestacao():
+    """As duas publicações usam o mesmo dist/: a atestação que a primeira grava
+    lá faz a segunda recusar ("already have publish attestations"). E a release
+    do GitHub leva só o pacote, não as atestações."""
+    import yaml
+    wf = yaml.safe_load((RAIZ / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    steps = wf["jobs"]["publicar"]["steps"]
+    pubs = [s for s in steps if str(s.get("uses", "")).startswith("pypa/gh-action-pypi-publish")]
+    assert len(pubs) == 2
+    teste, real = pubs
+    assert "test.pypi.org" in teste["with"]["repository-url"]
+    assert "repository-url" not in real.get("with", {})
+    assert teste["with"].get("attestations") is False
+    assert real.get("with", {}).get("attestations", True) is not False   # PyPI com atestação
+    run = next(s for s in steps if s.get("name") == "Release no GitHub")["run"]
+    assert "dist/*.whl dist/*.tar.gz" in run
+    assert "dist/* " not in run and not run.rstrip().endswith("dist/*")
