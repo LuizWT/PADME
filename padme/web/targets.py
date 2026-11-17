@@ -156,7 +156,7 @@ def _host_card(target: str, kinds: dict[str, Any], events: list[Event], serie: l
             f"{_risk_block(probs)}</div>",
             f"<div class=blk><h4>saúde da coleta</h4>{_health(meta)}</div>"]
     if kinds:
-        side.append(f"<div class=blk><h4>cobertura</h4>{_stat_tiles(kinds)}</div>")
+        side.append(f"<div class=blk><h4>cobertura</h4>{_stat_tiles(kinds, target)}</div>")
     side.append("</aside>")
     main = ["<div class=dosmain>", _timeline(target, events), _trend(serie, trend_days)]
     if kinds:

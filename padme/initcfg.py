@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from .config import Config, _normalize_target
+from .targets import is_ip_target
 
 _TEMPLATE = """\
 # Config do Padmé, criado pelo `padme init`.
@@ -114,7 +115,7 @@ def _run(path: Path, targets: list[str] | None, yes: bool, force: bool) -> int:
 
     print(f"Configuração do Padmé — o arquivo vai para {path}\n")
     while True:
-        raw = targets or [_ask("Domínios a monitorar (separados por vírgula): ")]
+        raw = targets or [_ask("Domínios, IPs ou faixas a monitorar (separados por vírgula): ")]
         try:
             parsed = _parse_targets(raw)
         except ValueError as exc:
@@ -157,9 +158,17 @@ def _run(path: Path, targets: list[str] | None, yes: bool, force: bool) -> int:
     if token:
         _write_env(path.parent / ".env", "PADME_TELEGRAM_TOKEN", token)
         os.environ["PADME_TELEGRAM_TOKEN"] = token
-    Config.load(path)   # o que acabamos de escrever precisa carregar sem erro
+    try:
+        Config.load(path)   # o que acabamos de escrever precisa carregar sem erro
+    except ValueError as exc:   # ex.: faixa só privada com allow_private_ips: false
+        path.unlink(missing_ok=True)
+        print(f"\nNão criei o config: {exc}", file=sys.stderr)
+        return 2
 
     print(f"\nConfig criado: {path}")
+    if not ports and any(is_ip_target(t) for t in parsed):
+        print("Aviso: sem a varredura de portas, um alvo IP ou faixa só é olhado em HTTP e\n"
+              f"TLS (80/443). Para varrer as portas: collectors.ports: true em {path}.")
     if not scope:
         print("Escopo NÃO confirmado: o Padmé não vai varrer nada até você colocar\n"
               f"`scope_confirmed: true` em {path}.")

@@ -12,11 +12,13 @@ from typing import Any
 
 import yaml
 
+from . import targets as _targets
 from .collectors.passive import DEFAULT_SOURCES as _PASSIVE_DEFAULT
 from .collectors.passive import SOURCES as _PASSIVE_SOURCES
 from .context import AssetContext, ContextConfig
 from .digest import WEEKDAYS as _WEEKDAYS
 from .findings import DEFAULT_SLA_HOURS
+from .netpolicy import is_public_ip
 
 _TRUE = {"true", "1", "yes", "y", "on", "sim"}
 _FALSE = {"false", "0", "no", "n", "off", "nao", "não", ""}
@@ -67,9 +69,13 @@ def _as_float(v: Any, name: str, default: float) -> float:
 
 
 def _normalize_target(raw: str) -> str:
-    """Normaliza um alvo para APEX canônico. Aceita entradas tolerantes
-    (https://x.com/path, X.COM:443, *.x.com, x.com.) e devolve 'x.com'.
-    Levanta ValueError se não der pra extrair um domínio válido."""
+    """Normaliza um alvo: domínio vira o APEX canônico (aceita formas
+    tolerantes: https://x.com/path, X.COM:443, *.x.com, x.com. -> 'x.com');
+    IP e faixa viram a forma canônica do `ipaddress` (ver padme/targets.py).
+    Levanta ValueError se não der pra extrair um alvo válido."""
+    ip = _targets.parse(raw)
+    if ip is not None:
+        return ip
     t = str(raw).strip().lower()
     if "://" in t:
         t = t.split("://", 1)[1]
@@ -84,8 +90,10 @@ def _normalize_target(raw: str) -> str:
     except Exception:  # noqa: BLE001 — validação de label decide abaixo
         pass
     labels = t.split(".")
-    if not t or len(labels) < 2 or not all(_LABEL_RE.match(lb) for lb in labels):
-        raise ValueError(f"alvo inválido: {raw!r} (esperado um domínio apex, ex.: exemplo.com)")
+    if (not t or len(labels) < 2 or not all(_LABEL_RE.match(lb) for lb in labels)
+            or labels[-1].isdigit()):   # TLD nunca é só número: "1.2.3" não é domínio
+        raise ValueError(f"alvo inválido: {raw!r} (esperado um domínio apex, ex.: "
+                         "exemplo.com, um IP ou uma faixa, ex.: 203.0.113.0/28)")
     return t
 
 
@@ -306,6 +314,8 @@ class CollectorsConfig:
     passive_every_hours: int = 24     # consulta no máx. a cada N horas por alvo (cota)
     passive_timeout: float = 20.0     # s, prazo TOTAL por fonte (consultadas em paralelo)
     passive_max_candidates: int = 2000  # teto de nomes novos resolvidos por consulta
+    # alvo IP/faixa: teto de hosts por alvo (256 = um /24), contra varredura de rede inteira
+    max_hosts_per_target: int = _targets.DEFAULT_MAX_HOSTS
 
 
 @dataclass
@@ -422,6 +432,9 @@ class Config:
                 passive_timeout=_as_float(col.get("passive_timeout"), "collectors.passive_timeout", 20.0),
                 passive_max_candidates=_as_int(col.get("passive_max_candidates"),
                                                "collectors.passive_max_candidates", 2000),
+                max_hosts_per_target=_as_int(col.get("max_hosts_per_target"),
+                                             "collectors.max_hosts_per_target",
+                                             _targets.DEFAULT_MAX_HOSTS),
             ),
             network=NetworkConfig(
                 allow_private_ips=_as_bool(net.get("allow_private_ips"), False),
@@ -604,6 +617,21 @@ def _validate(cfg: "Config") -> None:
             errs.append("collectors.passive_timeout deve ser > 0")
         if c.passive_max_candidates < 1:
             errs.append("collectors.passive_max_candidates deve ser >= 1")
+    if c.max_hosts_per_target < 1:
+        errs.append("collectors.max_hosts_per_target deve ser >= 1")
+    for t in cfg.targets:
+        if not _targets.is_ip_target(t):
+            continue
+        qtd = _targets.host_count(t)
+        if qtd > c.max_hosts_per_target:
+            errs.append(f"targets: {t} tem {qtd} hosts, acima do teto de "
+                        f"{c.max_hosts_per_target} (collectors.max_hosts_per_target). "
+                        "Divida a faixa ou suba o teto conscientemente.")
+        elif not cfg.network.allow_private_ips and not any(
+                is_public_ip(h) for h in _targets.hosts_of(t)):
+            errs.append(f"targets: {t} só tem endereços privados ou reservados, que não "
+                        "são sondados com network.allow_private_ips: false. Ligue-o "
+                        "se for mesmo monitorar rede interna.")
     if cfg.network.max_parallel_connects <= 0:
         errs.append("network.max_parallel_connects deve ser > 0")
     if cfg.storage.event_retention_days < 0:

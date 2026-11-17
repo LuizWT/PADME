@@ -29,6 +29,7 @@ import httpx
 
 from .. import netpolicy
 from ..models import CollectionResult, Kind, Record
+from ..targets import url_host
 
 log = logging.getLogger("padme")
 
@@ -166,7 +167,7 @@ async def collect_host(
     records: list[Record] = []
     observed_any = False
     for scheme in ("https", "http"):
-        url = f"{scheme}://{host}"
+        url = f"{scheme}://{url_host(host)}"   # IPv6 entre colchetes
         try:
             r, body = await _fetch_limited(client, url, follow_redirects, max_bytes,
                                            allow_private)

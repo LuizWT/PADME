@@ -45,6 +45,7 @@ from .notify import DiscordNotifier, EmailNotifier, TelegramNotifier, WebhookNot
 from .portmap import IMPLICIT_TLS_PORTS
 from .risk import Level, parse_level
 from .storage import Storage
+from .targets import hosts_of, is_ip_target
 
 log = logging.getLogger("padme")
 
@@ -78,7 +79,25 @@ class Engine:
         (cobre todos os collectors que usam o client). No-op se desligado."""
         await self._rate.acquire(request.url.host)
 
+    def _client(self) -> httpx.AsyncClient:
+        """Cliente HTTP dos alvos: retry educado em 429/5xx transitório (§12),
+        pacing por requisição e verify=False (lê o certificado, não o valida);
+        verify e limits vão no transporte (ignorados no client com transport)."""
+        limits = httpx.Limits(max_connections=self.cfg.concurrency)
+        transport = ratelimit.RetryTransport(
+            httpx.AsyncHTTPTransport(verify=False, limits=limits, retries=0),
+            max_retries=self.cfg.network.max_retries,
+        )
+        return httpx.AsyncClient(
+            timeout=self.cfg.timeout,
+            headers={"User-Agent": _USER_AGENT},
+            transport=transport,
+            event_hooks={"request": [self._pace]},  # pacing responsável (§12)
+        )
+
     async def scan_target(self, target: str) -> ScanResult:
+        if is_ip_target(target):
+            return await self._scan_ip_target(target)
         result = ScanResult(target=target)
         t0 = time.monotonic()
         log.debug("[%s] scan iniciado", target)
@@ -89,21 +108,7 @@ class Engine:
                       if kind == Kind.SUBDOMAIN.value}
         # teto de connects de porta simultâneos no scan inteiro (todos os hosts)
         self._connect_limit = asyncio.Semaphore(self.cfg.network.max_parallel_connects)
-        limits = httpx.Limits(max_connections=self.cfg.concurrency)
-        headers = {"User-Agent": _USER_AGENT}
-
-        # transporte com retry educado em 429/5xx transitório (§12); verify=False
-        # e limits vão no transporte (ignorados no client quando há transport custom).
-        transport = ratelimit.RetryTransport(
-            httpx.AsyncHTTPTransport(verify=False, limits=limits, retries=0),
-            max_retries=self.cfg.network.max_retries,
-        )
-        async with httpx.AsyncClient(
-            timeout=self.cfg.timeout,
-            headers=headers,
-            transport=transport,
-            event_hooks={"request": [self._pace]},  # pacing responsável (§12)
-        ) as client:
+        async with self._client() as client:
             # 0. curinga de DNS: se o apex responde a qualquer nome, a
             # enumeração ativa não é confiável — detecta e usa pra filtrar.
             wc = wildcard.Wildcard()
@@ -213,6 +218,23 @@ class Engine:
                  int((time.monotonic() - t0) * 1000))
         return result
 
+    async def _scan_ip_target(self, target: str) -> ScanResult:
+        """Alvo IP ou faixa: sem descoberta de subdomínio, DNS de domínio, e-mail
+        nem takeover. Cada IP passa pelos coletores de host (PTR no lugar do DNS)
+        com as mesmas regras de escopo: um host só sai do estado com prova."""
+        result = ScanResult(target=target)
+        t0 = time.monotonic()
+        self._connect_limit = asyncio.Semaphore(self.cfg.network.max_parallel_connects)
+        hosts = hosts_of(target)
+        log.info("[%s] %d host(s) para inspecionar (alvo IP)", target, len(hosts))
+        async with self._client() as client:
+            await asyncio.gather(*(self._scan_host(h, client, result, ip_host=True)
+                                   for h in hosts))
+        log.info("[%s] scan concluído: %d host(s), %d record(s), %d erro(s), %dms",
+                 target, len(hosts), len(result.records), len(result.errors),
+                 int((time.monotonic() - t0) * 1000))
+        return result
+
     def _passive_due(self, target: str) -> bool:
         """Fontes passivas mudam devagar e têm cota: no máx. uma consulta a cada
         `passive_every_hours` por alvo. Sem registro (ou ilegível) -> consulta."""
@@ -226,22 +248,27 @@ class Engine:
         return time.time() - last >= self.cfg.collectors.passive_every_hours * 3600
 
     async def _scan_host(
-        self, host: str, client: httpx.AsyncClient, result: ScanResult
+        self, host: str, client: httpx.AsyncClient, result: ScanResult,
+        ip_host: bool = False,
     ) -> None:
         async with self._sem:
             col = self.cfg.collectors
             net = self.cfg.network
             body_cache: dict[str, str] = {}  # GET reaproveitado entre http e takeover
-            host_ips: set[str] = set()
+            host_ips: set[str] = {host} if ip_host else set()
 
-            # DNS primeiro (passivo) — também dá os IPs pra trava de IP privado
+            # DNS primeiro (passivo) — também dá os IPs pra trava de IP privado.
+            # Num IP, o DNS é o reverso (PTR): o nome só é registrado.
             if col.dns:
-                cr = await _safe(dns.collect_host(host, self.cfg.timeout), host, "dns", result)
+                lookup = (dns.collect_ptr(host, self.cfg.timeout) if ip_host
+                          else dns.collect_host(host, self.cfg.timeout))
+                cr = await _safe(lookup, host, "dns", result)
                 _absorb(cr, result, "dns", host)
-                host_ips = _ips_from_dns(cr.records)
+                if not ip_host:
+                    host_ips = _ips_from_dns(cr.records)
 
             # trava anti-SSRF/rede interna: não sonda ativamente IP privado/reservado
-            active = col.http or col.tls or col.takeover or col.ports
+            active = col.http or col.tls or (col.takeover and not ip_host) or col.ports
             if active and not net.allow_private_ips:
                 ips = host_ips or await _resolve_ips_quick(host, self.cfg.timeout)
                 if ips and netpolicy.any_disallowed(ips):
@@ -273,7 +300,7 @@ class Engine:
                     tls.collect_host(host, self.cfg.timeout, cert_expiry_days=col.cert_expiry_days,
                                      pace=self._rate.acquire),
                     host, "tls", result)
-            if col.takeover:
+            if col.takeover and not ip_host:   # takeover parte de um CNAME: só domínio
                 cr = await _safe(
                     takeover.collect_host(host, client, self.cfg.timeout, body_cache,
                                           net.follow_redirects, col.max_response_bytes,
