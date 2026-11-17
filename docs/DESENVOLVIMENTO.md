@@ -102,6 +102,10 @@ release (*Releases* → a release → *Delete*) e a tag (*Tags* → `vX.Y.Z` →
 o workflow da tag antiga. Se o PyPI já aceitou a versão, ela não pode ser
 publicada de novo, e a correção sai numa versão nova.
 
+Se só o job `docker` falhar (PyPI e release do GitHub já saíram), *Re-run
+failed jobs* refaz só a imagem. Na primeira publicação o GHCR pode recusar com
+`denied` enquanto cria o pacote; o re-run resolve.
+
 O build sai do workflow, nunca de uma pasta compactada à mão (que levaria
 `.env`, `config.yaml` e `padme.db`). Localmente:
 `python -m build && twine check --strict dist/*`.
@@ -111,13 +115,20 @@ O build sai do workflow, nunca de uma pasta compactada à mão (que levaria
 Feita uma vez, por quem é dono do projeto no PyPI e no GitHub:
 
 1. Contas no [PyPI](https://pypi.org) e no [TestPyPI](https://test.pypi.org).
-2. Em cada um, *Publishing* → *Add a new pending publisher*: projeto
+   São sites e contas separados.
+2. Nos **dois**, *Publishing* → *Add a new pending publisher*: projeto
    `padme-asm`, dono `LuizWT`, repositório `PADME`, workflow `release.yml`,
-   ambiente `pypi`.
+   ambiente `pypi`. Faltando no TestPyPI, a release para no primeiro passo com
+   `invalid-publisher`.
 3. No GitHub, *Settings* → *Environments* → `pypi` (opcional: exigir aprovação
    antes de publicar).
-4. Depois da primeira release: em *Packages* → `padme` → *Package settings*,
-   deixe a imagem pública (o GHCR cria como privada).
+
+No GHCR não há nada a configurar nem token a criar: o workflow publica com o
+token do próprio Actions. O pacote `padme` nasce na primeira release, ligado ao
+repositório pelo label `org.opencontainers.image.source` do `Dockerfile`, e
+herda o acesso dele (*Settings* → *Packages* → *Inherit access from source
+repository*, ligado por padrão). Com o repositório público, a imagem já nasce
+pública.
 
 ## Estrutura
 
