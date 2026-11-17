@@ -19,7 +19,7 @@
 subdomínios (CT + fontes passivas) ─┐
 DNS  A/AAAA/CNAME/MX/NS/SPF/DMARC   ─┤
 HTTP status/server/headers          ─┼─► registros ─► diff com o estado ─► eventos ─► canais
-exposições HTTP (assinaturas fixas) ─┤        (SQLite)
+exposições HTTP (assinaturas fixas) ─┤
 TLS  emissor/validade/SANs          ─┤        (SQLite)
 takeover (CNAME + assinatura)       ─┤
 portas (connect-scan + banner)      ─┤
@@ -275,6 +275,7 @@ faixa (`203.0.113.0/28`). Como não há domínio, rodam só os coletores de host
 | DNS reverso (PTR) | não | sim |
 | portas e banner | sim | sim |
 | HTTP, cabeçalhos, favicon (80/443) | sim | sim |
+| exposições HTTP (se ligada) | sim | sim |
 | TLS | sim | sim |
 
 - **Teto de hosts.** Uma faixa vira os seus hosts (sem endereço de rede e de

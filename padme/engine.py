@@ -337,7 +337,7 @@ class Engine:
 
             # trava anti-SSRF/rede interna: não sonda ativamente IP privado/reservado
             active = (col.http or col.tls or (col.takeover and not ip_host)
-                      or (col.exposures and not ip_host) or col.ports)
+                      or col.exposures or col.ports)
             if active and not net.allow_private_ips:
                 ips = host_ips or await _resolve_ips_quick(host, self.cfg.timeout)
                 if ips and netpolicy.any_disallowed(ips):
@@ -363,6 +363,7 @@ class Engine:
                                          allow_private=net.allow_private_ips),
                     host, "favicon", result)
                 _absorb(cr, result, "favicon", host)
+            # exposições: domínio e IP, só em host que respondeu HTTP
             if col.exposures and http_ok and self._exposure_due(host):
                 cr = await _safe(
                     exposure.collect_host(host, client, net.follow_redirects,
