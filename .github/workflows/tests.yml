@@ -30,7 +30,30 @@ jobs:
         if: matrix.python-version == '3.12'
         run: mypy
       - name: Testes
+        if: matrix.python-version != '3.12'
         run: pytest -q
+      - name: Testes com cobertura
+        # Uma versão basta para medir. A tabela vai para o resumo do job (a
+        # página da execução no Actions); o relatório HTML, com as linhas não
+        # cobertas de cada arquivo, vira um artefato para baixar.
+        if: matrix.python-version == '3.12'
+        run: |
+          coverage run -m pytest -q
+          coverage html -q --fail-under=0
+          {
+            echo "## Cobertura de testes"
+            echo
+            coverage report --format=markdown --fail-under=0
+          } >> "$GITHUB_STEP_SUMMARY"
+          coverage report
+      - name: Relatório de cobertura (HTML)
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v7
+        with:
+          name: cobertura-html
+          path: htmlcov/
+          if-no-files-found: ignore
+          retention-days: 14
 
   pacote:
     # O que vai para o PyPI: metadados válidos, README que o PyPI renderiza e os

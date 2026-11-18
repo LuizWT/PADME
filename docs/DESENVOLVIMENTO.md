@@ -7,7 +7,7 @@
 ```bash
 git clone https://github.com/LuizWT/PADME.git && cd PADME
 python3 -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt                # versões fixas + pytest, ruff, mypy, pip-audit
+pip install -r requirements-dev.txt                # versões fixas + pytest, coverage, ruff, mypy, pip-audit
 pip install -e .                                    # comando `padme` apontando para o código
 ```
 
@@ -19,6 +19,7 @@ Com `pip install -e .`, o `padme --update` atualiza o clone com `git pull`.
 ruff check padme tests scripts
 mypy                                                # tipos (config no pyproject.toml)
 pytest -q
+coverage run -m pytest -q && coverage report     # cobertura (falha abaixo do piso)
 pip-audit -r requirements.txt                       # CVEs nas dependências fixas
 docker build -t padme:ci . && sh scripts/docker-smoke.sh padme:ci
 shellcheck -s sh install.sh
@@ -28,10 +29,26 @@ O CI (`.github/workflows/`) roda:
 
 | Workflow | Quando | O quê |
 |---|---|---|
-| `tests` | push, PR e toda segunda | ruff, mypy, pytest em Python 3.11 a 3.15, o pacote (build, `twine check`, instalação limpa), pip-audit, build e smoke test da imagem Docker em amd64 e arm64 (emulada) |
+| `tests` | push, PR e toda segunda | ruff, mypy, pytest em Python 3.11 a 3.15 (com cobertura no 3.12), o pacote (build, `twine check`, instalação limpa), pip-audit, build e smoke test da imagem Docker em amd64 e arm64 (emulada) |
 | `install` | push e PR que mexem no instalador ou no pacote | os instaladores de verdade em Ubuntu, macOS e Windows (incluindo o modo `irm \| iex` e a trava de instância única do Windows) |
 | `takeover base` | dia 1 de cada mês | regenera a base de takeover e abre PR se o upstream mudou |
 | `release` | tag `vX.Y.Z` | publica a versão: PyPI, release do GitHub e imagem no GHCR (amd64 e arm64) |
+
+### Cobertura
+
+O job do Python 3.12 mede a cobertura (por linha e por ramo) e falha se o total
+ficar abaixo do piso `fail_under` do `[tool.coverage.report]` do
+`pyproject.toml`. O resultado aparece em dois lugares, na página da execução
+no Actions:
+
+- o **resumo do job**: a tabela por arquivo, do menos coberto ao mais coberto,
+  com as linhas que faltam;
+- o artefato **`cobertura-html`**: o relatório HTML, com cada arquivo marcado
+  linha a linha.
+
+Localmente, `coverage html` gera o mesmo relatório em `htmlcov/`. O piso sobe
+quando a cobertura sobe; baixá-lo para uma PR passar esconde exatamente o que
+a medição existe para mostrar.
 
 ### Tipos
 

@@ -34,6 +34,9 @@ mudança de config e *patch* traz correção.
 - A imagem Docker (`ghcr.io/luizwt/padme`) sai também para arm64 (Raspberry Pi
   de 64 bits, VPS ARM), na mesma tag. O CI constrói e testa as duas
   arquiteturas.
+- Cobertura de testes no CI: o job do Python 3.12 mede linhas e ramos, mostra
+  a tabela no resumo da execução, guarda o relatório HTML como artefato e
+  falha se o total cair abaixo do piso (`fail_under` no `pyproject.toml`).
 
 ## [0.2.0] - 2026-11-17
 

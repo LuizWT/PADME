@@ -106,3 +106,29 @@ def test_imagem_docker_sai_para_amd64_e_arm64():
     assert "--platform linux/amd64,linux/arm64" in runs and "--push" in runs
     ci = yaml.safe_load((wf / "tests.yml").read_text(encoding="utf-8"))
     assert ci["jobs"]["docker"]["strategy"]["matrix"]["platform"] == ["linux/amd64", "linux/arm64"]
+
+
+def test_ci_mede_cobertura_com_piso():
+    """Um job do CI mede a cobertura por ramo, mostra a tabela no resumo, guarda o
+    HTML e falha abaixo do piso; as outras versões rodam só o pytest."""
+    import yaml
+    proj = tomllib.loads((RAIZ / "pyproject.toml").read_text(encoding="utf-8"))
+    cov = proj["tool"]["coverage"]
+    assert cov["run"] == {"source": ["padme"], "branch": True}
+    assert cov["report"]["fail_under"] >= 85
+    dev = (RAIZ / "requirements-dev.txt").read_text(encoding="utf-8").splitlines()
+    assert any(linha.startswith("coverage==") for linha in dev)
+
+    job = yaml.safe_load((RAIZ / ".github" / "workflows" / "tests.yml")
+                         .read_text(encoding="utf-8"))["jobs"]["test"]
+    assert "3.12" in job["strategy"]["matrix"]["python-version"]
+    steps = {s.get("name"): s for s in job["steps"]}
+    assert steps["Testes"]["if"] == "matrix.python-version != '3.12'"
+    medir = steps["Testes com cobertura"]
+    assert medir["if"] == "matrix.python-version == '3.12'"
+    linhas = [linha.strip() for linha in medir["run"].strip().splitlines()]
+    assert linhas[0] == "coverage run -m pytest -q"
+    assert 'GITHUB_STEP_SUMMARY' in medir["run"]
+    assert linhas[-1] == "coverage report"        # o último aplica o piso (sem --fail-under=0)
+    html = steps["Relatório de cobertura (HTML)"]
+    assert html["uses"].startswith("actions/upload-artifact@") and "always()" in html["if"]
