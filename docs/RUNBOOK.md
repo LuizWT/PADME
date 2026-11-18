@@ -2,10 +2,10 @@
 
 [Voltar ao README](../README.md)
 
-Para rodar num servidor 24/7: systemd, Docker, backup, rotação de segredos,
-painel atrás de proxy com TLS e manutenção. Num computador pessoal, o
-instalador e o comando `padme` bastam; este guia é para servidor.
+Para rodar 24/7: Windows sem terminal, systemd, Docker, backup, rotação de
+segredos, painel atrás de proxy com TLS e manutenção.
 
+- [Windows: rodar sem terminal](#windows-rodar-sem-terminal)
 - [1. systemd](#1-systemd-sentinela-247)
 - [2. Docker](#2-docker)
 - [3. Backup do SQLite](#3-backup-do-sqlite)
@@ -49,6 +49,37 @@ EOF
 sudo chown padme:padme /var/lib/padme/.env
 sudo chmod 600 /var/lib/padme/.env
 ```
+
+---
+
+## Windows: rodar sem terminal
+
+Num computador com Windows, depois do instalador:
+
+```powershell
+padme service install     # registra e já inicia
+padme service status      # estado da tarefa
+padme service uninstall   # para e remove
+```
+
+O `install` cria a tarefa **Padme** no Agendador de Tarefas, com o seu usuário:
+
+- inicia quando você entra no Windows (30 s depois do logon) e já agora;
+- roda sem janela (`pythonw.exe` do ambiente do Padmé), com o painel em
+  http://127.0.0.1:8787 (`--no-web` para não abrir);
+- grava o log em `padme.log`, ao lado do config (`%APPDATA%\padme`), girando
+  em 1 MB;
+- reinicia sozinha se o processo cair, e a trava `padme.lock` impede dois
+  monitores ao mesmo tempo;
+- não pede senha nem administrador. Se a sua conta não puder criar tarefas,
+  rode o `install` uma vez num terminal de administrador.
+
+> [!NOTE]
+> A tarefa roda enquanto você está logado: suspender ou hibernar o computador
+> pausa o monitor, e ele volta sozinho. Com o serviço ligado, não rode outro
+> `padme` à mão: use o painel, ou `padme scan` para uma varredura avulsa.
+
+Para um servidor que fica sem ninguém logado, use o [Docker](#2-docker).
 
 ---
 

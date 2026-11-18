@@ -91,6 +91,43 @@ jobs:
           print("trava ok")
           '@ | & $py -
           if ($LASTEXITCODE -ne 0) { throw 'trava de instancia unica falhou' }
+      - name: padme service (tarefa no Agendador de Tarefas)
+        shell: pwsh
+        run: |
+          $env:Path = "$env:Path;" + (Join-Path $env:LOCALAPPDATA 'padme\bin')
+          padme service install --no-start
+          if ($LASTEXITCODE -ne 0) { throw 'service install falhou' }
+          [xml]$task = schtasks /Query /TN Padme /XML | Out-String
+          if ($LASTEXITCODE -ne 0) { throw 'tarefa nao registrada' }
+          $exec = $task.Task.Actions.Exec
+          if ($exec.Command -notmatch 'pythonw\.exe$') { throw "sem pythonw: $($exec.Command)" }
+          if ($exec.Arguments -notmatch '--log-file' -or $exec.Arguments -notmatch '--lock') { throw "argumentos: $($exec.Arguments)" }
+          if (-not $task.Task.Triggers.LogonTrigger) { throw 'sem gatilho de logon' }
+          padme service status
+          if ($LASTEXITCODE -ne 0) { throw 'service status falhou' }
+          padme service uninstall
+          if ($LASTEXITCODE -ne 0) { throw 'service uninstall falhou' }
+          schtasks /Query /TN Padme 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { throw 'tarefa nao foi removida' }
+          $global:LASTEXITCODE = 0
+      - name: O comando da tarefa roda sem janela e grava o log
+        shell: pwsh
+        run: |
+          $py = Join-Path $env:LOCALAPPDATA 'padme\venv\Scripts\python.exe'
+          @'
+          import subprocess
+          from padme import winservice
+          from padme.paths import find_config
+          cfg = find_config(None)
+          exe, args = winservice.monitor_command(cfg, no_web=True)
+          assert exe.lower().endswith("pythonw.exe"), exe
+          # o mesmo comando da tarefa, com --once para sair depois de uma varredura
+          r = subprocess.run([exe, *args, "--once"], timeout=600)
+          text = winservice.log_path(cfg).read_text(encoding="utf-8")
+          assert "scan conclu" in text, text[-2000:]   # so ASCII no script (stdin do python)
+          print("log ok:", winservice.log_path(cfg))
+          '@ | & $py -
+          if ($LASTEXITCODE -ne 0) { throw 'comando da tarefa falhou' }
       - name: Reinstalar pelo modo "irm | iex" (Windows PowerShell 5.1)
         shell: powershell
         run: |
