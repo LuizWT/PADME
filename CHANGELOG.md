@@ -25,6 +25,12 @@ mudança de config e *patch* traz correção.
   - no `padme finding show`;
   - nos alertas do Telegram, Discord e e-mail, os três que motivaram o aviso;
   - no webhook, o campo `references`.
+- `padme service install|status|uninstall` (Windows): o Padmé roda 24/7 sem
+  terminal, por uma tarefa no Agendador de Tarefas que inicia no logon, roda
+  sem janela, reinicia se cair e grava o log em `padme.log`, ao lado do config.
+  Não pede administrador.
+- `padme monitor --log-file ARQUIVO`: grava o log também num arquivo, que gira
+  com 1 MB e guarda 3.
 
 ## [0.2.0] - 2026-11-17
 

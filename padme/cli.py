@@ -451,6 +451,44 @@ def _actor(args) -> str:
         return "cli"
 
 
+def _setup_logging(verbose: bool, log_file: str | None) -> None:
+    """Log no terminal e, com `--log-file`, também num arquivo que gira. Sem
+    terminal (o `pythonw` do `padme service`), só no arquivo."""
+    level = logging.DEBUG if verbose else logging.INFO
+    handlers: list[logging.Handler] = []
+    if sys.stderr is not None:
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%H:%M:%S"))
+        handlers.append(h)
+    if log_file:
+        from logging.handlers import RotatingFileHandler
+        path = Path(log_file).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fh = RotatingFileHandler(path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s",
+                                          "%Y-%m-%d %H:%M:%S"))
+        handlers.append(fh)
+    logging.basicConfig(level=level, handlers=handlers or [logging.NullHandler()])
+
+
+def _cmd_service(config_path: Path, args) -> int:
+    """`padme service`: o install exige config válido e escopo confirmado (a
+    tarefa vai monitorar sozinha); status e uninstall funcionam sempre."""
+    from . import winservice
+    if args.action == "install" and sys.platform == "win32":
+        try:
+            cfg = Config.load(config_path)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Erro no config {config_path}: {exc}\nCrie um com:  padme init", file=sys.stderr)
+            return 2
+        if not cfg.scope_confirmed:
+            print(f"scope_confirmed está false em {config_path}: confirme a autorização "
+                  "antes de deixar o Padmé rodando sozinho.", file=sys.stderr)
+            return 3
+    return winservice.main(args.action, config_path, no_web=args.no_web,
+                           start=not args.no_start)
+
+
 def _sla_text(row: dict, sla_hours: dict) -> str:
     info = sla_info(row, time.time(), sla_hours)
     if not info or not info["limit_h"]:
@@ -606,13 +644,14 @@ _ARGPARSE_PT = (
 
 
 # ordem em que os comandos aparecem no `padme -h`
-_COMMAND_ORDER = ["monitor", "init", "web", "scan", "finding", "digest", "events",
+_COMMAND_ORDER = ["monitor", "init", "service", "web", "scan", "finding", "digest", "events",
                   "export", "doctor", "health", "backup", "api", "merge"]
 
 _EXAMPLES = """\
 Exemplos:
   padme                         monitora os alvos e abre o painel (http://127.0.0.1:8787)
   padme init                    cria o config com algumas perguntas
+  padme service install         Windows: roda 24/7, sem terminal aberto
   padme --no-web --once         uma varredura, sem painel, e sai (para cron)
   padme scan                    uma varredura agora, mostrando o que mudou
   padme finding list            problemas abertos
@@ -712,7 +751,16 @@ def build_parser() -> argparse.ArgumentParser:
     mp.add_argument("--once", action="store_true", help="uma varredura e sai, sem painel (para cron)")
     mp.add_argument("--lock", default=None, metavar="ARQUIVO",
                     help="trava de instância única: sai se já houver um padme rodando")
+    mp.add_argument("--log-file", default=None, metavar="ARQUIVO",
+                    help="grava o log também neste arquivo (gira com 1 MB, guarda 3)")
     mp.set_defaults(func=_cmd_monitor)
+
+    sv = cmd("service", "Windows: roda o Padmé 24/7, sem terminal (tarefa no logon)")
+    sv.add_argument("action", choices=["install", "status", "uninstall"],
+                    help="install registra e inicia; status mostra; uninstall remove")
+    sv.add_argument("--no-web", action="store_true", help="com install: sem o painel web")
+    sv.add_argument("--no-start", action="store_true",
+                    help="com install: só registra, inicia no próximo logon")
 
     ip = cmd("init", "cria o config com algumas perguntas (alvos, autorização, portas, Telegram)")
     ip.add_argument("--target", action="append", metavar="ALVO",
@@ -849,14 +897,13 @@ def main(argv: list[str] | None = None) -> int:
                     ports=args.ports)
 
     _load_env(config_path)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    _setup_logging(args.verbose, getattr(args, "log_file", None))
     # nunca vaza token/secret no log (mesmo com -v): sobe httpx p/ WARNING e
     # mascara segredos conhecidos em qualquer mensagem.
     install_secret_redaction()
+
+    if args.command == "service":
+        return _cmd_service(config_path, args)
 
     if not config_path.is_file():
         if args.command == "monitor" and not args.once and sys.stdin.isatty():

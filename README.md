@@ -51,7 +51,8 @@ padme         # começa a monitorar e abre o painel em http://127.0.0.1:8787
 ```
 
 Deixe o terminal aberto: o Padmé varre os alvos a cada hora (`interval_seconds`)
-e para com `Ctrl+C`. A primeira varredura de cada alvo é a **linha de base**:
+e para com `Ctrl+C`. No Windows, `padme service install` deixa ele rodando sem
+terminal, desde o logon. A primeira varredura de cada alvo é a **linha de base**:
 grava o que existe, sem alertar. A partir da segunda, cada diferença vira um
 evento.
 
@@ -77,6 +78,7 @@ hosts). Como cada detecção funciona, a severidade e o que evita alarme falso:
 |---|---|
 | `padme` | monitora em loop, alerta nos canais e serve o painel |
 | `padme init` | cria o config com algumas perguntas |
+| `padme service install` | Windows: roda 24/7 sem terminal, desde o logon (`status`, `uninstall`) |
 | `padme scan` | uma varredura agora, mostrando o que mudou |
 | `padme finding list` | problemas abertos (`show`, `ack`, `suppress`, `accept`, `reopen`) |
 | `padme digest --print` | resumo do período no terminal (sem `--print`, envia aos canais) |

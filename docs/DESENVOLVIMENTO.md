@@ -139,6 +139,7 @@ padme/
 ├── paths.py           onde ficam config e dados em cada sistema
 ├── initcfg.py         padme init
 ├── updater.py         padme --update
+├── winservice.py      padme service (Windows: tarefa no Agendador)
 ├── config.py          leitura e validação do YAML
 ├── engine.py          roda os coletores e calcula o diff
 ├── scheduler.py       ciclo de cada alvo (monitor e scan), reenvio, heartbeat
@@ -168,6 +169,7 @@ padme/
 ├── domains.py         domínio registrável (PSL) e RDAP
 ├── portmap.py         portas: serviço, risco, TLS implícito
 ├── osv.py             CVEs da versão do banner (OSV): pacote da distro, CVSS, cache
+├── vulnrefs.py        links dos CVEs no OSV (painel, alertas, CLI)
 ├── netpolicy.py       IP privado/reservado e redirects
 ├── netcheck.py        sondas de rede do doctor
 ├── ratelimit.py       ritmo das sondas
