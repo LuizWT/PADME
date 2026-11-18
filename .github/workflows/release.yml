@@ -6,7 +6,8 @@ name: release
 #   2. gera sdist e wheel e publica no TestPyPI e depois no PyPI pelo Trusted
 #      Publishing (OIDC: nenhum token guardado no repositório);
 #   3. cria a release no GitHub com as notas do CHANGELOG e os arquivos;
-#   4. publica a imagem Docker em ghcr.io/luizwt/padme (versão e latest).
+#   4. publica a imagem Docker em ghcr.io/luizwt/padme (versão e latest), para
+#      amd64 e arm64 (Raspberry Pi, VPS ARM), numa tag só.
 #
 # Configuração única (fora do repositório): o publicador confiável no PyPI e no
 # TestPyPI (workflow release.yml, ambiente "pypi") e o ambiente "pypi" no GitHub.
@@ -104,24 +105,31 @@ jobs:
   docker:
     needs: publicar
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write   # ghcr.io
     steps:
       - uses: actions/checkout@v7
-      - name: Build e smoke test da imagem
+      - uses: docker/setup-qemu-action@v3    # arm64 emulada no runner amd64
+      - uses: docker/setup-buildx-action@v3
+      - name: Build e smoke test da imagem (amd64)
         run: |
-          docker build -t padme:release .
-          sh scripts/docker-smoke.sh padme:release
-      - name: Publicar em ghcr.io/luizwt/padme
+          docker buildx build --platform linux/amd64 --load -t padme:release-amd64 .
+          sh scripts/docker-smoke.sh padme:release-amd64
+      - name: Build e smoke test da imagem (arm64, emulada)
+        env:
+          SMOKE_TIMEOUT: "180"
+        run: |
+          docker buildx build --platform linux/arm64 --load -t padme:release-arm64 .
+          sh scripts/docker-smoke.sh padme:release-arm64
+      - name: Publicar em ghcr.io/luizwt/padme (amd64 e arm64)
+        # mesma fonte e mesmo builder: reaproveita o cache dos dois builds acima
         env:
           GHCR_TOKEN: ${{ github.token }}
         run: |
           imagem=ghcr.io/luizwt/padme
           versao=${GITHUB_REF_NAME#v}
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker tag padme:release "$imagem:$versao"
-          docker tag padme:release "$imagem:latest"
-          docker push "$imagem:$versao"
-          docker push "$imagem:latest"
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            -t "$imagem:$versao" -t "$imagem:latest" --push .

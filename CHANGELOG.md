@@ -31,6 +31,9 @@ mudança de config e *patch* traz correção.
   Não pede administrador.
 - `padme monitor --log-file ARQUIVO`: grava o log também num arquivo, que gira
   com 1 MB e guarda 3.
+- A imagem Docker (`ghcr.io/luizwt/padme`) sai também para arm64 (Raspberry Pi
+  de 64 bits, VPS ARM), na mesma tag. O CI constrói e testa as duas
+  arquiteturas.
 
 ## [0.2.0] - 2026-11-17
 
