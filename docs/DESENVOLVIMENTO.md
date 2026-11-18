@@ -187,4 +187,4 @@ docs/                  esta documentação
 tests/                 suíte pytest
 ```
 
-O arquivo [`ideias.md`](../ideias.md) guarda evoluções adiadas de propósito e o porquê.
+O arquivo [`IDEIAS.md`](IDEIAS.md) guarda evoluções adiadas de propósito e o porquê.

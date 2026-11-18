@@ -11,41 +11,31 @@
   <a href="https://pypi.org/project/padme-asm/"><img src="https://img.shields.io/pypi/v/padme-asm" alt="PyPI"></a>
 </p>
 
-O Padmé vigia a superfície de ataque dos **seus** domínios e avisa quando algo
-muda: subdomínio novo, porta aberta, certificado trocado ou perto de vencer,
-serviço que subiu ou caiu, versão de serviço com **CVE conhecida**, SPF/DMARC
-enfraquecido, possível **subdomain takeover** e, se você ligar, arquivos e
-endpoints HTTP públicos por engano. Ele guarda o estado num banco local e só
-alerta quando uma varredura encontra diferença em relação à anterior.
-
-Os alertas vão para Telegram, Discord, e-mail ou webhook, e um painel web
-mostra tudo em tempo real.
+O Padmé vigia a superfície de ataque dos **seus** domínios e IPs e avisa quando
+algo muda. Ele guarda o estado num banco local e só alerta quando uma varredura
+encontra diferença em relação à anterior. Os alertas vão para Telegram,
+Discord, e-mail ou webhook, e um painel web mostra tudo em tempo real.
 
 > [!WARNING]
-> Monitore **apenas** domínios que são seus ou que você tem autorização
-> explícita para testar. A coleta ativa (HTTP, TLS, checagem de exposições e
-> principalmente a varredura de portas) toca nos alvos.
+> Monitore **apenas** alvos que são seus ou que você tem autorização explícita
+> para testar. A coleta ativa (HTTP, TLS, exposições e principalmente a
+> varredura de portas) toca nos alvos.
 
 ## Instalação
 
-### Windows
-
-1. Baixe o projeto ([PADME-main.zip](https://github.com/LuizWT/PADME/archive/refs/heads/main.zip)) e extraia.
-2. Dê dois cliques em **`install.bat`**.
-
-Ou, sem baixar nada, cole no PowerShell:
+**Windows:** baixe o [PADME-main.zip](https://github.com/LuizWT/PADME/archive/refs/heads/main.zip),
+extraia e dê dois cliques em **`install.bat`**. Ou, sem baixar nada, cole no
+PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/LuizWT/PADME/main/install.ps1 | iex
 ```
 
-### Linux e macOS
+**Linux e macOS:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LuizWT/PADME/main/install.sh | sh
 ```
-
-Ou, numa pasta clonada: `sh install.sh`.
 
 > [!NOTE]
 > Depois de instalar, abra um terminal **novo** para o comando `padme` aparecer.
@@ -56,15 +46,30 @@ seu) e [Docker](https://github.com/LuizWT/PADME/blob/main/docs/RUNBOOK.md#2-dock
 ## Primeiros passos
 
 ```bash
-padme init    # domínios, confirmação de autorização e, se quiser, Telegram
-padme         # começa a monitorar e abre o painel
+padme init    # alvos, confirmação de autorização e, se quiser, Telegram
+padme         # começa a monitorar e abre o painel em http://127.0.0.1:8787
 ```
 
-O painel fica em **http://127.0.0.1:8787**. Deixe o terminal aberto: o Padmé
-varre os alvos a cada hora (`interval_seconds`) e para com `Ctrl+C`.
+Deixe o terminal aberto: o Padmé varre os alvos a cada hora (`interval_seconds`)
+e para com `Ctrl+C`. A primeira varredura de cada alvo é a **linha de base**:
+grava o que existe, sem alertar. A partir da segunda, cada diferença vira um
+evento.
 
-A primeira varredura de cada domínio é a **linha de base**: grava o que existe,
-sem alertar. A partir da segunda, cada diferença vira um evento.
+## O que o Padmé detecta
+
+| Detecção | Padrão | Opção no config |
+|---|---|---|
+| subdomínio novo (Certificate Transparency e fontes passivas) | ligada | `collectors.subdomains` |
+| DNS, nameservers, SPF e DMARC fracos | ligada | `collectors.dns`, `collectors.dns_records` |
+| HTTP, cabeçalhos de segurança, TLS e certificado vencendo | ligada | `collectors.http`, `collectors.tls` |
+| subdomain takeover | ligada | `collectors.takeover` |
+| porta aberta e versão do serviço | **desligada** | `collectors.ports` |
+| CVE conhecida na versão do serviço ([OSV](https://osv.dev)) | ligada, se `ports` estiver | `collectors.osv` |
+| exposições HTTP: arquivos e endpoints públicos por engano | **desligada** | `collectors.exposures` |
+
+`targets` aceita domínio, IP (`203.0.113.7`) e faixa (`203.0.113.0/28`, até 256
+hosts). Como cada detecção funciona, a severidade e o que evita alarme falso:
+[docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md).
 
 ## Comandos
 
@@ -98,44 +103,13 @@ padme --once                  # uma varredura e sai (para cron ou agendador)
 
 ## Painel web
 
-- Abre junto com o monitor, em http://127.0.0.1:8787.
-- Atualiza **em tempo real**: quando uma varredura grava algo, a página se
-  atualiza sozinha, sem perder filtro nem rolagem.
-- Mostra os problemas abertos por risco, a atividade dos últimos 30 dias, a
-  saúde da coleta e um dossiê por domínio. Dá para reconhecer, silenciar ou
-  aceitar um problema por ali.
-- Por padrão só aceita conexões desta máquina. Para abrir na rede, defina um
-  token: o Padmé se recusa a servir fora de localhost sem um.
+Abre junto com o monitor e se atualiza **em tempo real**, sem perder filtro nem
+rolagem. Mostra os problemas abertos por risco, a atividade dos últimos 30 dias,
+a saúde da coleta e um dossiê por alvo, e dá para reconhecer, silenciar ou
+aceitar um problema por ali. Por padrão só aceita conexões desta máquina: fora
+de localhost, o Padmé exige um token.
 
 Detalhes, problemas (findings) e API: [docs/PAINEL-E-API.md](https://github.com/LuizWT/PADME/blob/main/docs/PAINEL-E-API.md).
-
-## Exposições HTTP
-
-Opcional e **desligada por padrão**. Não tem comando próprio: ligue no config e
-ela roda junto com o `padme` e o `padme scan`.
-
-```yaml
-collectors:
-  exposures: true
-  exposures_every_hours: 24   # no máximo uma bateria por host
-```
-
-- Faz uma bateria pequena e fixa de GETs sem parâmetros, a partir de uma lista
-  curada em `padme/data/exposures.json`. Não é wordlist: não há payloads nem
-  varredura de caminhos arbitrários.
-- Só roda em host que já respondeu ao coletor HTTP, e no máximo uma vez a cada
-  `exposures_every_hours` por host.
-- Status `200` sozinho não vira problema: a resposta precisa casar a assinatura
-  e o tipo de conteúdo da entrada. Páginas de "não encontrado" disfarçadas,
-  redirects para login e páginas de login não contam.
-- O conteúdo da resposta **nunca é gravado** (banco, log, painel ou canais): a
-  evidência guarda só o caminho, o status, o tipo e o tamanho.
-- Severidade: `critical` para segredo ou código, `high` para status ou
-  diagnóstico, `medium` para listagem de diretório. O problema traz a correção
-  sugerida e some quando um ciclo completo não acha mais a assinatura.
-- Valem os mesmos limites da coleta ativa: IP privado, redirects e rate limit.
-
-Detalhes: [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md#exposições-http).
 
 ## Alertas
 
@@ -150,38 +124,31 @@ automações). Cada canal tem o seu nível mínimo:
 | `low` | acima + remoções e mudanças menores |
 | `debug` | tudo, inclusive registros DNS |
 
-O `padme init` configura o Telegram. Para conferir os canais, `padme digest`
-manda um resumo agora e mostra `OK` ou `ERRO` em cada um.
-
-Como configurar cada canal, resumo diário/semanal, sinal de vida (heartbeat) e o
-formato do webhook: [docs/NOTIFICACOES.md](https://github.com/LuizWT/PADME/blob/main/docs/NOTIFICACOES.md).
+O `padme init` configura o Telegram, e `padme digest` manda um resumo agora,
+mostrando `OK` ou `ERRO` em cada canal. Os outros canais, o resumo
+diário/semanal, o sinal de vida (heartbeat) e o formato do webhook:
+[docs/NOTIFICACOES.md](https://github.com/LuizWT/PADME/blob/main/docs/NOTIFICACOES.md).
 
 ## Configuração
 
-O `padme init` cria um config curto. Todas as opções, comentadas, estão em
+O `padme init` cria um config curto; todas as opções, comentadas, estão no
 [`config.example.yaml`](https://github.com/LuizWT/PADME/blob/main/config.example.yaml).
+O config usado é, nesta ordem: `-c ARQUIVO`, a variável `PADME_CONFIG`, um
+`config.yaml` na pasta atual ou o da tabela abaixo (`padme -h` mostra qual está
+em uso).
 
 | | Windows | Linux e macOS |
 |---|---|---|
-| Config | `%APPDATA%\padme\config.yaml` | `~/.config/padme/config.yaml` |
-| Segredos (`.env`) e banco (`padme.db`) | na mesma pasta do config | na mesma pasta do config |
+| Config, segredos (`.env`) e banco (`padme.db`) | `%APPDATA%\padme` | `~/.config/padme` |
 | Programa | `%LOCALAPPDATA%\padme` | `~/.local/share/padme` |
-
-O config usado é, nesta ordem: `-c ARQUIVO`, a variável `PADME_CONFIG`, um
-`config.yaml` na pasta atual ou o da tabela acima. `padme -h` mostra qual está
-em uso.
 
 O mínimo para funcionar:
 
 ```yaml
-scope_confirmed: true       # você confirma que tem autorização; sem isso nada é varrido
+scope_confirmed: true   # você confirma que tem autorização; sem isso nada é varrido
 targets:
   - exemplo.com
-  - 203.0.113.0/28          # também aceita IP e faixa (até 256 hosts por alvo)
-interval_seconds: 3600
-collectors:
-  ports: false              # varredura de portas: a coleta mais ativa, desligada por padrão
-  exposures: false          # checagens HTTP fixas de arquivos/endpoints públicos, desligada por padrão
+  - 203.0.113.0/28
 ```
 
 Tokens e senhas ficam no `.env` e entram no YAML como `${VARIAVEL}`:
@@ -194,31 +161,28 @@ PADME_WEB_TOKEN=um-valor-longo-e-aleatorio
 ## Atualizar e desinstalar
 
 ```bash
-padme --update            # instala a última versão publicada (PyPI)
-padme --update --dev      # instala o último commit do main, antes de virar versão
+padme --update          # última versão publicada (PyPI)
+padme --update --dev    # último commit do main, antes de virar versão
 ```
 
-Se o Padmé estiver rodando, reinicie-o depois. Instalado a partir de um clone
-(`pip install -e .`), o `--update` faz `git pull`. No Docker, a atualização é
-pela imagem. O que mudou em cada versão está no
-[CHANGELOG](https://github.com/LuizWT/PADME/blob/main/CHANGELOG.md).
+Se o Padmé estiver rodando, reinicie-o depois. O que mudou em cada versão está
+no [CHANGELOG](https://github.com/LuizWT/PADME/blob/main/CHANGELOG.md).
 
-Para desinstalar (config e banco ficam):
-
-| Sistema | Comando |
-|---|---|
-| Windows | `install.bat -Uninstall`, ou no PowerShell: `$env:PADME_UNINSTALL=1; irm https://raw.githubusercontent.com/LuizWT/PADME/main/install.ps1 \| iex` |
-| Linux e macOS | `sh install.sh --uninstall`, ou: `curl -fsSL https://raw.githubusercontent.com/LuizWT/PADME/main/install.sh \| sh -s -- --uninstall` |
+Para desinstalar (config e banco ficam): `install.bat -Uninstall` no Windows ou
+`sh install.sh --uninstall` no Linux e macOS. Se instalou pela linha única, rode
+a mesma linha com `$env:PADME_UNINSTALL=1;` na frente (PowerShell) ou trocando o
+`sh` do fim por `sh -s -- --uninstall` (Linux e macOS).
 
 ## Documentação
 
 | Documento | Conteúdo |
 |---|---|
-| [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md) | o que é coletado, como uma mudança vira alerta, severidade, CVEs (OSV), exposições HTTP, takeover, SPF/DMARC, comportamento na rede |
+| [docs/DETECCAO.md](https://github.com/LuizWT/PADME/blob/main/docs/DETECCAO.md) | cada detecção, como uma mudança vira alerta, severidade, alvos por IP, comportamento na rede |
 | [docs/NOTIFICACOES.md](https://github.com/LuizWT/PADME/blob/main/docs/NOTIFICACOES.md) | Telegram, Discord, e-mail, webhook, resumo periódico, heartbeat |
 | [docs/PAINEL-E-API.md](https://github.com/LuizWT/PADME/blob/main/docs/PAINEL-E-API.md) | painel, ciclo de vida dos problemas, API JSON, várias máquinas |
 | [docs/RUNBOOK.md](https://github.com/LuizWT/PADME/blob/main/docs/RUNBOOK.md) | servidor 24/7: systemd, Docker, backup, rotação de segredos, proxy com TLS |
 | [docs/DESENVOLVIMENTO.md](https://github.com/LuizWT/PADME/blob/main/docs/DESENVOLVIMENTO.md) | testes, CI, estrutura do código, release |
+| [docs/IDEIAS.md](https://github.com/LuizWT/PADME/blob/main/docs/IDEIAS.md) | evoluções adiadas de propósito e quando entram |
 
 ## Licença
 
