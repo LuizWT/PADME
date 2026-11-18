@@ -436,3 +436,36 @@ def test_update_sem_api_cai_para_o_branch(monkeypatch, tmp_path):
     monkeypatch.setattr(updater, "_pip", lambda *a: chamadas.append(a) or 0)
     assert updater.run(dev=True) == 0
     assert chamadas[0][-1].endswith("/archive/main.zip")
+
+
+def test_init_pergunta_das_portas_explica_os_cves(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    perguntas: list[str] = []
+    respostas = iter(["acme.com", "s", "s", "n"])   # alvo, autorização, portas, Telegram
+
+    def ask(prompt=""):
+        perguntas.append(prompt)
+        return next(respostas)
+
+    monkeypatch.setattr("builtins.input", ask)
+    cfg = tmp_path / "config.yaml"
+    assert initcfg.run(cfg) == 0
+    pergunta_portas = next(p for p in perguntas if "portas" in p)
+    assert "CVE" in pergunta_portas and "OSV" in pergunta_portas
+    c = Config.load(cfg)
+    assert c.collectors.ports is True and c.collectors.osv is True
+    assert "busca de CVEs" not in capsys.readouterr().out   # ligou: nada a avisar
+
+
+def test_init_sem_perguntas_liga_portas_com_flag(tmp_path, capsys):
+    com = tmp_path / "com.yaml"
+    assert cli.main(["-c", str(com), "init", "--target", "acme.com", "--yes", "--ports"]) == 0
+    assert Config.load(com).collectors.ports is True
+    assert "busca de CVEs" not in capsys.readouterr().out
+
+    sem = tmp_path / "sem.yaml"
+    assert initcfg.run(sem, targets=["acme.com"], yes=True) == 0
+    assert Config.load(sem).collectors.ports is False
+    out = capsys.readouterr().out
+    assert "Nota: sem a varredura de portas, a busca de CVEs (OSV) não roda." in out
+    assert "collectors.ports: true" in out
