@@ -7,6 +7,13 @@ mudança de config e *patch* traz correção.
 
 ## [Não lançado]
 
+## [0.3.0] - 2026-11-18
+
+Exposições HTTP, o detalhe de cada CVE com link para o OSV, o Padmé 24/7 no
+Windows sem terminal e a imagem Docker também para arm64. Nenhuma opção do
+config muda de sentido, e as novas vêm desligadas. Para atualizar:
+`padme --update` ou `docker pull ghcr.io/luizwt/padme:0.3.0`.
+
 ### Adicionado
 
 - Checagem de exposições HTTP (`collectors.exposures`, desligada por padrão):
@@ -106,5 +113,6 @@ como versão; esta reúne tudo o que foi construído até aqui.
 
 - `dnspython` 2.9.2, por causa da CVE-2026-114605 e da CVE-2026-128089.
 
-[Não lançado]: https://github.com/LuizWT/PADME/compare/v0.2.0...HEAD
+[Não lançado]: https://github.com/LuizWT/PADME/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LuizWT/PADME/releases/tag/v0.3.0
 [0.2.0]: https://github.com/LuizWT/PADME/releases/tag/v0.2.0
