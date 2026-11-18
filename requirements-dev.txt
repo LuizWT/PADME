@@ -5,6 +5,6 @@ coverage==7.17.3
 mypy==2.4.1
 pip-audit==2.10.1
 pytest==9.2.0
-ruff==0.17.4
+ruff==0.17.5
 twine==7.0.0
 types-PyYAML==6.0.12.20261113
