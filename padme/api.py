@@ -5,7 +5,7 @@ automação: SIEM, ticketing, dashboards próprios. Tudo é **GET** e **somente
 leitura**. Ações de finding (reconhecer/silenciar/aceitar/reabrir) ficam na CLI
 (`padme finding`) e no painel; aqui elas só são LIDAS (status + auditoria).
 
-Design (ideias.md §4):
+Design:
   - versionada em `/api/v1`; `schema_version` em toda resposta (contrato aditivo);
   - mesma auth **Bearer** do painel; sem token, só serve em loopback;
   - reusa o servidor endurecido do painel (teto de conexões, timeout, headers);
