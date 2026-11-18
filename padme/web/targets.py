@@ -15,6 +15,7 @@ from .html import (
     _SEV,
     _changes_html,
     _chip,
+    _cve_fp,
     _diff_line,
     _esc,
     _port_fp,
@@ -147,7 +148,8 @@ def _assets(target: str, kinds: dict[str, Any], total: int) -> str:
         det.append(f"<div class=kind data-kind='{kind}'><b>{_KIND_LABEL[kind]} · {len(items)}</b>")
         for it in sorted(items, key=lambda x: x["key"]):
             v = f"<span class=v>{_esc(it['value'])}</span>" if it["value"] else ""
-            fp = _port_fp(it.get("metadata")) if kind == "port" else ""
+            fp = (_port_fp(it.get("metadata")) if kind == "port"
+                  else _cve_fp(it.get("metadata")) if kind == "vuln" else "")
             det.append(f"<div class=row><span class=k>{_esc(it['key'])}</span>{v}{fp}</div>")
         det.append("</div>")
     det.append("</details>")

@@ -159,6 +159,14 @@ td.st{min-width:150px}
 .stx{font-size:11.5px;color:var(--muted);margin-top:4px}
 .late{color:#f08a84;font-weight:600}
 details.act{margin-top:6px}
+details.cves{margin-top:4px;font-size:11.5px}
+details.cves>summary{cursor:pointer;color:var(--accent);user-select:none}
+details.cves ul{margin:4px 0 0;padding-left:18px;font-family:var(--mono);font-size:11px}
+details.cves li{margin:2px 0;color:var(--muted)}
+details.cves a,.row a.cvea{color:var(--accent);text-decoration:none}
+details.cves a:hover,.row a.cvea:hover{text-decoration:underline}
+.cvel{color:var(--ink2)}
+.cven{margin-top:3px;color:var(--muted)}
 details.act>summary{list-style:none;cursor:pointer;font-size:11.5px;color:var(--accent);user-select:none;
   display:inline-block}
 details.act>summary::-webkit-details-marker{display:none}

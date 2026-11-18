@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import hashlib
 
+from . import vulnrefs
 from .evidence import evidence_of
 from .mailpolicy import SPF_INCLUDE_UNREGISTERED
 from .mailpolicy import findings as mail_findings
@@ -104,9 +105,12 @@ def derive(target: str, kinds: dict) -> list[dict]:
         md = it.get("metadata") or {}
         sev = str(md.get("max_severity") or "unknown")
         rank, cls, label = _VULN_CLS.get(sev, (2, "s-warn", "atenção"))
-        out.append(_item(target, Kind.VULN, it["key"], "", rank, cls, label, "CVE",
-                         it["key"], it["value"],
-                         _evidence_facts(Kind.VULN, it["key"], it["value"], md)))
+        item = _item(target, Kind.VULN, it["key"], "", rank, cls, label, "CVE",
+                     it["key"], it["value"],
+                     _evidence_facts(Kind.VULN, it["key"], it["value"], md))
+        item["cves"] = vulnrefs.refs(md)            # lista completa, com link no OSV
+        item["unfixed"] = int(md.get("unfixed") or 0)
+        out.append(item)
     for it in kinds.get("cert_expiry", []):
         expired = "EXPIRAD" in (it["value"] or "").upper()
         out.append(_item(target, Kind.CERT_EXPIRY, it["key"], "",

@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from .. import vulnrefs
 from ..evidence import evidence_of
 from ..models import Event, EventType, Kind
 from ..risk import Level, assess
@@ -25,7 +26,7 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
-from .formatting import dns_parts, risk_suffix
+from .formatting import alert_cves, dns_parts, risk_suffix
 
 # Versão do contrato JSON do webhook genérico (consumidores tipo n8n).
 WEBHOOK_SCHEMA_VERSION = 1
@@ -70,6 +71,19 @@ def _md_desc(e: Event) -> str:
 
 
 def _md_line(e: Event) -> str:
+    return _md_base_line(e) + _md_cves(e)
+
+
+def _md_cves(e: Event) -> str:
+    """Alerta de versão: os CVEs como link mascarado do Discord."""
+    shown, more = alert_cves(e)
+    if not shown:
+        return ""
+    links = " · ".join(f"[{r['id']}](<{r['url']}>) ({r['label']})" for r in shown)
+    return f"\n    {links}" + (f" · +{more}" if more else "")
+
+
+def _md_base_line(e: Event) -> str:
     mark = _MARK[e.event_type]
     if e.kind == Kind.DNS and "|" in e.key:
         host, rtype, val = dns_parts(e)
@@ -110,7 +124,7 @@ def format_events_md(target: str, events: list[Event], when: datetime | None = N
 def event_to_dict(e: Event) -> dict:
     risk = assess(e)  # severidade final + confiança + o porquê (regras contextuais)
     md = e.metadata or {}
-    d = {
+    d: dict = {
         "event_id": e.event_id,
         "scan_id": e.scan_id,
         "detected_at": e.detected_at,
@@ -139,6 +153,12 @@ def event_to_dict(e: Event) -> dict:
         d["context"] = md["_context"]
     if md.get("_changes"):
         d["changes"] = md["_changes"]
+    # versão com CVE: a lista completa, cada um com o link no OSV (aditivo)
+    if e.kind == Kind.VULN and e.event_type != EventType.REMOVED:
+        refs = vulnrefs.refs(md)
+        if refs:
+            d["references"] = [{k: r[k] for k in ("id", "url", "severity", "score", "fixed")}
+                               for r in refs]
     return d
 
 

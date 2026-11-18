@@ -205,6 +205,13 @@ conhecidos estão em `padme/data/osv_products.json` (Debian 10 a 13, Ubuntu
   coleta do alvo parcial.
 - **Uma consulta por varredura**, em lote, só com o que não está no cache
   (24h por pacote e versão, no próprio `padme.db`).
+- **Cada CVE tem link para a página dele no OSV**
+  (`https://osv.dev/vulnerability/<id>`):
+  - no painel, a lista completa no problema e os piores no inventário do
+    dossiê;
+  - no `padme finding show`;
+  - nos alertas, os três que motivaram o aviso (num CVE novo, só o novo);
+  - no webhook, a lista completa em `references`.
 
 > [!NOTE]
 > A consulta ao OSV leva só ecossistema, pacote e versão

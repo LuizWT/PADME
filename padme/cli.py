@@ -460,6 +460,22 @@ def _sla_text(row: dict, sla_hours: dict) -> str:
     return f"vence em {human_hours(info['left_h'])}"
 
 
+def _print_cves(storage: Storage, target: str, key: str) -> None:
+    """`finding show` de um problema de versão: os CVEs com o link no OSV."""
+    from . import vulnrefs
+    row = storage.load_state_full(target).get(("vuln", key))
+    md = (row or {}).get("metadata") or {}
+    cves = vulnrefs.refs(md)
+    if not cves:
+        return
+    print(f"  CVEs com correção ({len(cves)}):")
+    for c in cves:
+        fixed = f" · corrige em {c['fixed']}" if c.get("fixed") else ""
+        print(f"    {c['id']:<16} {c['label']:<12} {c['url']}{fixed}")
+    if md.get("unfixed"):
+        print(f"    mais {md['unfixed']} sem correção publicada na distro")
+
+
 async def _cmd_finding(cfg: Config, args) -> int:
     storage = Storage(cfg.db_path)
     try:
@@ -500,6 +516,8 @@ async def _cmd_finding(cfg: Config, args) -> int:
                       f"{'' if row['present'] else ' (ausente no estado atual)'}"
                       f" · reaberto {row['reopen_count']}x · prazo: "
                       f"{_sla_text(row, cfg.findings.sla_hours)}")
+                if row["kind"] == "vuln" and row["present"]:
+                    _print_cves(storage, row["target"], row["key"])
                 print("  histórico:")
                 for h in storage.finding_history(row["finding_id"]):
                     frm = STATUS_LABEL.get(h["from_status"], h["from_status"] or "—")
