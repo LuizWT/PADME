@@ -14,6 +14,10 @@ mudança de config e *patch* traz correção.
   no máximo a cada `exposures_every_hours` (padrão 24h) por host que respondeu
   HTTP. Só vira problema quando a assinatura de corpo e o tipo de conteúdo
   casam; o conteúdo da resposta nunca é gravado.
+- `padme init --ports` liga a varredura de portas no modo sem perguntas
+  (`--target ... --yes`). No modo com perguntas, a pergunta das portas explica
+  que são elas que destravam a busca de CVEs, e o fim do init avisa quando a
+  busca fica desligada.
 
 ## [0.2.0] - 2026-11-17
 

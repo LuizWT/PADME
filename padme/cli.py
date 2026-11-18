@@ -696,11 +696,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="trava de instância única: sai se já houver um padme rodando")
     mp.set_defaults(func=_cmd_monitor)
 
-    ip = cmd("init", "cria o config com algumas perguntas (domínios, autorização, Telegram)")
+    ip = cmd("init", "cria o config com algumas perguntas (alvos, autorização, portas, Telegram)")
     ip.add_argument("--target", action="append", metavar="ALVO",
                     help="domínio, IP ou faixa a monitorar, sem perguntas (repita para vários)")
     ip.add_argument("--yes", action="store_true",
                     help="com --target: confirma que você tem autorização para monitorar")
+    ip.add_argument("--ports", action="store_true",
+                    help="com --target: liga a varredura de portas (e a busca de CVEs)")
     ip.add_argument("--force", action="store_true", help="sobrescreve um config existente")
 
     wb = cmd("web", "só o painel web, sem monitorar (ex.: em outra máquina)")
@@ -825,7 +827,8 @@ def main(argv: list[str] | None = None) -> int:
     config_path = find_config(args.config)
     if args.command == "init":
         from .initcfg import run as init
-        return init(config_path, targets=args.target, yes=args.yes, force=args.force)
+        return init(config_path, targets=args.target, yes=args.yes, force=args.force,
+                    ports=args.ports)
 
     _load_env(config_path)
     logging.basicConfig(

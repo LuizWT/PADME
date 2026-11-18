@@ -46,7 +46,7 @@ seu) e [Docker](https://github.com/LuizWT/PADME/blob/main/docs/RUNBOOK.md#2-dock
 ## Primeiros passos
 
 ```bash
-padme init    # alvos, confirmação de autorização e, se quiser, Telegram
+padme init    # alvos, autorização, portas (e com elas os CVEs) e, se quiser, Telegram
 padme         # começa a monitorar e abre o painel em http://127.0.0.1:8787
 ```
 

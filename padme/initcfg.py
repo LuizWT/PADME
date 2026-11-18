@@ -1,13 +1,14 @@
 """`padme init`: cria o config.yaml com algumas perguntas.
 
 Pensado para quem acabou de instalar: pergunta os domínios, confirma a
-autorização (sem ela o Padmé não varre nada) e, se quiser, o Telegram. O
+autorização (sem ela o Padmé não varre nada), se liga as portas (que também
+destravam a busca de CVEs pelo OSV) e, se quiser, o Telegram. O
 token do bot vai para o `.env` ao lado do config, nunca para o YAML. O
 resultado é um config curto; todas as outras opções estão documentadas em
 `config.example.yaml`.
 
 Também funciona sem perguntas (para scripts): `padme init --target a.com
---yes` cria o config com o escopo já confirmado.
+--yes` cria o config com o escopo já confirmado, e `--ports` liga as portas.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ interval_seconds: 3600     # tempo entre varreduras (segundos)
 db_path: padme.db          # relativo a este arquivo
 
 collectors:
-  ports: {ports}             # varredura de portas (mais ativa)
+  ports: {ports}             # portas abertas e CVEs da versão do serviço (OSV); a coleta mais ativa
 
 web:
   bind: 127.0.0.1          # painel só nesta máquina
@@ -91,16 +92,18 @@ def _write_env(env_path: Path, key: str, value: str) -> None:
 
 
 def run(path: Path, targets: list[str] | None = None, yes: bool = False,
-        force: bool = False) -> int:
+        force: bool = False, ports: bool = False) -> int:
+    """`ports=True` (`--ports`) liga a varredura de portas sem perguntar."""
     try:
-        return _run(path, targets, yes, force)
+        return _run(path, targets, yes, force, ports)
     except (_Closed, KeyboardInterrupt):
         print("\nConfiguração cancelada; nada foi criado. Rode `padme init` de novo quando quiser.",
               file=sys.stderr)
         return 2
 
 
-def _run(path: Path, targets: list[str] | None, yes: bool, force: bool) -> int:
+def _run(path: Path, targets: list[str] | None, yes: bool, force: bool,
+         ports_flag: bool) -> int:
     path = path.expanduser()
     if path.exists() and not force:
         print(f"Já existe um config em {path}.")
@@ -133,7 +136,9 @@ def _run(path: Path, targets: list[str] | None, yes: bool, force: bool) -> int:
 
     scope = yes or (interactive and _yes(
         "\nVocê é dono desses domínios ou tem AUTORIZAÇÃO para monitorá-los?"))
-    ports = interactive and _yes("Ligar a varredura de portas (mais ativa, desligada por padrão)?")
+    ports = ports_flag or (interactive and _yes(
+        "Ligar a varredura de portas? Ela acha as portas abertas e, pela versão dos\n"
+        "serviços, as CVEs conhecidas (OSV). É a coleta mais ativa, desligada por padrão."))
 
     telegram = ""
     token = ""
@@ -166,9 +171,13 @@ def _run(path: Path, targets: list[str] | None, yes: bool, force: bool) -> int:
         return 2
 
     print(f"\nConfig criado: {path}")
-    if not ports and any(is_ip_target(t) for t in parsed):
-        print("Aviso: sem a varredura de portas, um alvo IP ou faixa só é olhado em HTTP e\n"
-              f"TLS (80/443). Para varrer as portas: collectors.ports: true em {path}.")
+    if not ports:
+        if any(is_ip_target(t) for t in parsed):
+            print("Aviso: sem a varredura de portas, um alvo IP ou faixa só é olhado em HTTP e\n"
+                  "TLS (80/443), e a busca de CVEs (OSV) não roda.")
+        else:
+            print("Nota: sem a varredura de portas, a busca de CVEs (OSV) não roda.")
+        print(f"Para ligar: collectors.ports: true em {path}.")
     if not scope:
         print("Escopo NÃO confirmado: o Padmé não vai varrer nada até você colocar\n"
               f"`scope_confirmed: true` em {path}.")
