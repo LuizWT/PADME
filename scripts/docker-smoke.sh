@@ -4,9 +4,14 @@
 # Não sonda nada na rede: o alvo é .invalid e os collectors ficam desligados.
 #
 #   docker build -t padme:ci . && sh scripts/docker-smoke.sh padme:ci
+#
+# SMOKE_TIMEOUT (segundos, padrão 30): espera pelo primeiro ciclo. Para uma
+# imagem de outra arquitetura, emulada pelo QEMU (arm64 num runner amd64), use
+# mais.
 set -eu
 
 IMG="${1:-padme:ci}"
+TIMEOUT="${SMOKE_TIMEOUT:-30}"
 NAME="padme-smoke-$$"
 DATA="$(mktemp -d)"
 chmod 777 "$DATA"   # o container grava como uid 1000
@@ -57,10 +62,10 @@ docker run -d --name "$NAME" -v "$DATA:/data" "$IMG" monitor >/dev/null
 i=0
 until docker logs "$NAME" 2>&1 | grep -q "Ciclo #1"; do
     i=$((i + 1))
-    if [ "$i" -ge 30 ]; then docker logs "$NAME"; exit 1; fi
+    if [ "$i" -ge "$TIMEOUT" ]; then docker logs "$NAME"; exit 1; fi
     sleep 1
 done
-docker stop -t 20 "$NAME" >/dev/null
+docker stop -t "$TIMEOUT" "$NAME" >/dev/null
 code="$(docker inspect -f '{{.State.ExitCode}}' "$NAME")"
 if [ "$code" != "0" ]; then
     echo "exit $code (137 = SIGTERM ignorado, morreu no SIGKILL)" >&2

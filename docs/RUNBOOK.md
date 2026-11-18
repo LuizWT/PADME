@@ -199,6 +199,8 @@ docker run -d --name padme --restart unless-stopped \
     -v "$PWD/data:/data" --user "$(id -u):$(id -g)" padme
 ```
 
+- A imagem publicada (`ghcr.io/luizwt/padme`) sai para **amd64 e arm64**: o
+  mesmo `docker pull` serve num PC, num Raspberry Pi (64 bits) ou numa VPS ARM.
 - Outros comandos usam a mesma imagem: `docker compose run --rm padme finding list`.
 - `--user "$(id -u):$(id -g)"` faz o `padme.db` ficar com o seu usuário. No
   compose, ajuste `user:` se o seu `id -u`/`id -g` não for `1000`.

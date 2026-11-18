@@ -88,3 +88,21 @@ def test_workflow_publica_no_testpypi_e_no_pypi_sem_conflito_de_atestacao():
     run = next(s for s in steps if s.get("name") == "Release no GitHub")["run"]
     assert "dist/*.whl dist/*.tar.gz" in run
     assert "dist/* " not in run and not run.rstrip().endswith("dist/*")
+
+
+def test_imagem_docker_sai_para_amd64_e_arm64():
+    """A release publica as duas arquiteturas numa tag só, depois de um smoke
+    test em cada uma; o CI das PRs constrói e testa as mesmas duas."""
+    import yaml
+    wf = (RAIZ / ".github" / "workflows")
+    rel = yaml.safe_load((wf / "release.yml").read_text(encoding="utf-8"))
+    steps = rel["jobs"]["docker"]["steps"]
+    usados = {str(s.get("uses", "")).split("@")[0] for s in steps}
+    assert {"docker/setup-qemu-action", "docker/setup-buildx-action"} <= usados
+    runs = "\n".join(s.get("run", "") for s in steps)
+    for arch in ("amd64", "arm64"):
+        assert f"--platform linux/{arch} --load" in runs
+        assert f"docker-smoke.sh padme:release-{arch}" in runs
+    assert "--platform linux/amd64,linux/arm64" in runs and "--push" in runs
+    ci = yaml.safe_load((wf / "tests.yml").read_text(encoding="utf-8"))
+    assert ci["jobs"]["docker"]["strategy"]["matrix"]["platform"] == ["linux/amd64", "linux/arm64"]
