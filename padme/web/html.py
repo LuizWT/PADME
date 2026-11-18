@@ -8,6 +8,7 @@ import html
 from datetime import datetime
 from typing import Any
 
+from .. import vulnrefs
 from ..evidence import evidence_of
 from ..models import Event
 from ..risk import Level
@@ -64,6 +65,17 @@ def _proof_html(e: Event, value: str | None) -> str:
     facts = " · ".join(f"{k}={v}" for k, v in ev.items() if k != "type")
     full = f"{typ} — {facts}" if facts else typ
     return f"<span class=tag title='{_esc(full)}'>prova: {_esc(typ)}</span>"
+
+
+def _cve_fp(metadata: dict[str, Any] | None, limit: int = 3) -> str:
+    """Na linha do ativo de versão: os piores CVEs como link para o OSV."""
+    cves = vulnrefs.refs(metadata)
+    if not cves:
+        return ""
+    links = " ".join(f"<a class=cvea href='{_esc(c['url'])}' target=_blank "
+                     f"rel='noopener noreferrer'>{_esc(c['id'])}</a>" for c in cves[:limit])
+    more = f" <span class=prod>+{len(cves) - limit}</span>" if len(cves) > limit else ""
+    return f"<span class=fp>{links}{more}</span>"
 
 
 def _port_fp(metadata: dict[str, Any] | None) -> str:

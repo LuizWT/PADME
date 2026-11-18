@@ -91,6 +91,28 @@ def _actions(p: dict[str, Any], act: dict[str, Any] | None) -> str:
             f"{reason}<div class=actb>{btns}</div></form></details>")
 
 
+def _cve_list(p: dict[str, Any]) -> str:
+    """Problema de versão: a lista dos CVEs, cada um com link para o OSV,
+    recolhida (o pior já está na linha do problema)."""
+    cves = p.get("cves") or []
+    if not cves:
+        return ""
+    items = []
+    for c in cves:
+        fixed = f" · corrige em {_esc(c['fixed'])}" if c.get("fixed") else ""
+        items.append(f"<li><a href='{_esc(c['url'])}' target=_blank rel='noopener noreferrer'>"
+                     f"{_esc(c['id'])}</a> <span class=cvel>{_esc(c['label'])}</span>{fixed}</li>")
+    unfixed = p.get("unfixed") or 0
+    note = (f"<div class=cven>mais {unfixed} sem correção publicada na distro</div>"
+            if unfixed else "")
+    n = len(cves)
+    # data-persist: a lista aberta continua aberta nas atualizações ao vivo
+    persist = f" data-persist='cves-{_esc(p['id'])}'" if p.get("id") else ""
+    return (f"<details class=cves{persist}><summary>{n} CVE{'s' if n > 1 else ''} com correção"
+            "</summary>"
+            f"<ul>{''.join(items)}</ul>{note}</details>")
+
+
 def _problem_row(p: dict[str, Any], act: dict[str, Any] | None = None, sla_hours: dict[str, Any] | None = None,
                  now: float | None = None) -> str:
     sla_hours = DEFAULT_SLA_HOURS if sla_hours is None else sla_hours
@@ -102,7 +124,7 @@ def _problem_row(p: dict[str, Any], act: dict[str, Any] | None = None, sla_hours
     return ("<tr>"
             f"<td class=nw>{_chip(p['cls'], p['sev'])}</td>"
             f"<td><div class=who><span class=kd>{_esc(p['kind'])}</span>{_esc(p['who'])}{fid}</div>"
-            f"<div class=det>{_esc(p['det'])}</div>{proof_html}</td>"
+            f"<div class=det>{_esc(p['det'])}</div>{proof_html}{_cve_list(p)}</td>"
             f"<td class=st>{_status_cell(p, sla_hours, now)}{_actions(p, act)}</td>"
             f"<td class=tgt><a href='#h-{_slug(p['tgt'])}'>{_esc(p['tgt'])}</a></td>"
             "</tr>")

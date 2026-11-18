@@ -22,7 +22,7 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
-from .formatting import dns_parts
+from .formatting import alert_cves, dns_parts
 from .formatting import risk_suffix as _risk_suffix
 
 
@@ -45,6 +45,20 @@ def _desc(e: Event) -> str:
 
 def _event_line(e: Event) -> str:
     """marker + alvo + descrição técnica curta; detalhe na linha seguinte."""
+    return _base_line(e) + _cve_links(e)
+
+
+def _cve_links(e: Event) -> str:
+    """Alerta de versão: os CVEs com link para o OSV, numa linha a mais."""
+    shown, more = alert_cves(e)
+    if not shown:
+        return ""
+    links = " · ".join(f'<a href="{_esc(r["url"])}">{_esc(r["id"])}</a> ({_esc(r["label"])})'
+                       for r in shown)
+    return f"\n    {links}" + (f" · +{more}" if more else "")
+
+
+def _base_line(e: Event) -> str:
     mark = _MARK[e.event_type]
 
     if e.kind == Kind.DNS and "|" in e.key:

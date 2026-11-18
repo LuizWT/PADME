@@ -8,6 +8,7 @@ mas os DADOS (marcador, rótulo, ordem, descrição) vêm de um lugar só.
 
 from __future__ import annotations
 
+from .. import vulnrefs
 from ..mailpolicy import SPF_EFFECTIVE_SUFFIX
 from ..models import Event, EventType, Kind
 from ..risk import Confidence, assess
@@ -105,6 +106,20 @@ def risk_suffix(e: Event) -> str:
     if r.confidence != Confidence.CONFIRMED:
         parts.append(f"confiança {r.confidence.name.lower()}")
     return (" · " + " · ".join(parts)) if parts else ""
+
+
+ALERT_CVES = 3   # CVEs com link num alerta de versão; o resto vira "+N"
+
+
+def alert_cves(e: Event) -> tuple[list[dict], int]:
+    """CVEs a mostrar, com link no OSV, num alerta de versão (novo ou que
+    mudou): os que motivaram o alerta, pior primeiro. Devolve (mostrados,
+    quantos ficaram de fora). Vazio para outros tipos e para resolvido."""
+    if e.kind != Kind.VULN or e.event_type == EventType.REMOVED:
+        return [], 0
+    md = e.metadata or {}
+    rs = vulnrefs.refs(md, md.get("_changes"))
+    return rs[:ALERT_CVES], max(0, len(rs) - ALERT_CVES)
 
 
 def dns_parts(e: Event) -> tuple[str, str, str]:

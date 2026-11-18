@@ -175,6 +175,9 @@ heartbeat:
 
 - `event_id`, `scan_id` e `detected_at` (UTC) servem para deduplicar.
 - Em `changed`, o campo `changes` traz o diff por campo.
+- Num problema de versão com CVE (`"kind": "vuln"`), `references` lista os CVEs,
+  pior primeiro: `id`, `url` (a página no OSV), `severity`, `score` e `fixed`
+  (a versão do pacote que corrige).
 - O resumo periódico chega com `"type": "digest"`, com `title`, `text` e
   `digest` (os números por alvo).
 - O contrato é aditivo: campos novos podem aparecer; `schema_version` só muda

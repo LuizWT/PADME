@@ -18,11 +18,19 @@ from .formatting import DESC as _DESC
 from .formatting import KIND_LABEL as _KIND_LABEL
 from .formatting import KIND_ORDER as _KIND_ORDER
 from .formatting import MARK as _MARK
-from .formatting import dns_parts
+from .formatting import alert_cves, dns_parts
 from .formatting import risk_suffix as _risk_suffix
 
 
 def _plain_line(e: Event) -> str:
+    shown, more = alert_cves(e)   # alerta de versão: um CVE por linha, com o link no OSV
+    cves = "".join(f"\n      {r['id']} ({r['label']}): {r['url']}" for r in shown)
+    if more:
+        cves += f"\n      e mais {more}"
+    return _plain_base_line(e) + cves
+
+
+def _plain_base_line(e: Event) -> str:
     mark = _MARK[e.event_type]
     desc = _DESC.get(e.kind, {}).get(e.event_type.value, "")
     suffix = (f" — {desc}" if desc else "") + _risk_suffix(e)

@@ -18,6 +18,13 @@ mudança de config e *patch* traz correção.
   (`--target ... --yes`). No modo com perguntas, a pergunta das portas explica
   que são elas que destravam a busca de CVEs, e o fim do init avisa quando a
   busca fica desligada.
+- Detalhe dos CVEs de um problema de versão, cada um com link para a página
+  no OSV:
+  - no painel, a lista completa (com a versão que corrige cada um) e os
+    piores no inventário do dossiê;
+  - no `padme finding show`;
+  - nos alertas do Telegram, Discord e e-mail, os três que motivaram o aviso;
+  - no webhook, o campo `references`.
 
 ## [0.2.0] - 2026-11-17
 
